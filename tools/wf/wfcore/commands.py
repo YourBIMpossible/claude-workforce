@@ -1,7 +1,6 @@
 """wf sub-commands (FB1.4 D4–D6). Each returns a JSON-able dict; errors raise WfError subclasses."""
 from __future__ import annotations
 
-import fnmatch
 import json
 import os
 import re
@@ -10,7 +9,7 @@ import time
 from typing import Any
 
 from . import db as dbm
-from . import export, markers, paths, txn
+from . import checkpointcmp, export, markers, pathpolicy, paths, txn
 from .canon import canonical, sha256_file, sha256_obj, sha256_text
 from .db import OpLog, WfRefused, WfRejected, WfUsage
 from .faults import Faults
@@ -428,7 +427,12 @@ def digest(db: str, job: str) -> dict[str, Any]:
 
 # ---------------------------------------------------------------- verify / checkpoint
 
-def verify(db: str, job: str | None) -> dict[str, Any]:
+def verify(db: str, job: str | None, checkpoint: tuple[int, str] | None = None) -> dict[str, Any]:
+    """Integrity ladder (spec section 3C). `checkpoint` = retained (seq, self) for `job`, parsed by
+    checkpointcmp.parse; its comparison is delegated to checkpointcmp.compare (lane C) and is never skipped
+    silently: before lane C lands, a supplied checkpoint is refused."""
+    if checkpoint is not None and not job:
+        raise WfUsage("--checkpoint requires a job argument")
     conn = dbm.connect(db, create=False)
     try:
         with dbm.read_snapshot(conn):
@@ -436,6 +440,7 @@ def verify(db: str, job: str | None) -> dict[str, Any]:
             jobs = [job] if job else dbm.jobs(conn)
             per_job: dict[str, Any] = {}
             receipts: dict[str, dict[str, dict[str, Any]]] = {}
+            chains: dict[str, list[tuple[int, str]]] = {}
             for j in jobs:
                 c = dbm.contract(conn, j)
                 jp: list[str] = []
@@ -450,6 +455,7 @@ def verify(db: str, job: str | None) -> dict[str, Any]:
                 per_job[j] = {"problems": jp,
                               "head": {"seq": rows[-1]["seq"], "self": rows[-1]["self"]} if rows else {"seq": 0}}
                 receipts[j] = _last_receipts(rows)
+                chains[j] = [(r["seq"], r["self"]) for r in rows]
     finally:
         conn.close()
     for j, v in per_job.items():
@@ -458,9 +464,13 @@ def verify(db: str, job: str | None) -> dict[str, Any]:
         v["receipts"] = _compare_receipts(db, receipts[j])
     clean = not problems["schema"] and not problems["integrity"] and all(
         not v["problems"] and not v["export"] and not v["pending_markers"] for v in per_job.values())
-    return {"db": os.path.abspath(db), "ledger_problems": problems, "jobs": per_job, "clean": clean,
-            "ladder": "level-1 record-and-verify: hash chain, pins, constraints, export manifest; "
-                      "not an authenticity claim"}
+    result = {"db": os.path.abspath(db), "ledger_problems": problems, "jobs": per_job, "clean": clean,
+              "ladder": "level-1 record-and-verify: hash chain, pins, constraints, export manifest; "
+                        "not an authenticity claim"}
+    if checkpoint is not None:
+        result["checkpoint_job"] = job
+        result = checkpointcmp.compare(result, checkpoint, chains)
+    return result
 
 
 def _last_receipts(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -511,32 +521,7 @@ def checkpoint(db: str, job: str) -> dict[str, Any]:
 
 # ---------------------------------------------------------------- accept (§4.4)
 
-def _match(path: str, globs: list[str]) -> bool:
-    p = path.replace("/", "\\").lower()
-    for g in globs:
-        gg = g.replace("/", "\\").lower()
-        if p == gg or fnmatch.fnmatchcase(p, gg) or (gg.endswith("**") and p.startswith(gg[:-2])) \
-                or p.startswith(gg.rstrip("*\\") + "\\"):
-            return True
-    return False
-
-
-def classify_paths(changed: list[str], contract: dict) -> dict[str, list[str]]:
-    """§4.4 classes: P1 in write scope · P2 presence-only touched · P3 watch changed ·
-    P4 outside every scope · P5 excluded path."""
-    out: dict[str, list[str]] = {"P1": [], "P2": [], "P3": [], "P4": [], "P5": []}
-    for p in changed:
-        if _match(p, contract.get("exclusions", [])):
-            out["P5"].append(p)
-        elif _match(p, contract.get("presence_only", [])):
-            out["P2"].append(p)
-        elif _match(p, contract.get("write_scope", [])):
-            out["P1"].append(p)
-        elif _match(p, contract.get("watch", [])):
-            out["P3"].append(p)
-        else:
-            out["P4"].append(p)
-    return out
+classify_paths = pathpolicy.classify  # compatibility alias (test_wf.py); policy lives in pathpolicy (lane B)
 
 
 def accept(db: str, job: str, results_src: str, msg_id: str, role: str, session: str, generation: int,
@@ -576,15 +561,16 @@ def accept(db: str, job: str, results_src: str, msg_id: str, role: str, session:
                              "actual": None if r is None else r.get("actual"), "pass": ok,
                              "missing": r is None})
         extra = [k for k in got if k not in want]
-        classes = classify_paths([str(p) for p in results["changed_paths"]], contract)
-        violations = classes["P4"] + classes["P5"]
+        classes = pathpolicy.classify([str(p) for p in results["changed_paths"]], contract)
+        violations = pathpolicy.violations(classes)  # reason strings (lane B)
+        declaration_reasons = validate.accept_declarations(results, contract, csha)  # T24 (lane A)
         env_ok = str(results["environment"]) == str(contract.get("environment"))
-        decision = "accepted" if all_pass and not violations and not extra and env_ok else "rejected"
-        reasons = []
+        decision = ("accepted" if all_pass and not violations and not extra and env_ok and not declaration_reasons
+                    else "rejected")
+        reasons = list(declaration_reasons)
         if not all_pass:
             reasons.append("criteria failed or missing: " + ", ".join(c["id"] for c in crit_out if not c["pass"]))
-        if violations:
-            reasons.append("changed paths outside scope (P4) or excluded (P5): " + ", ".join(violations))
+        reasons.extend(violations)
         if extra:
             reasons.append("results name criteria not in the contract: " + ", ".join(map(str, extra)))
         if not env_ok:

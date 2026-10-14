@@ -356,3 +356,24 @@ def build_row(conn: sqlite3.Connection, job: str, head_seq: int, head_self: str,
     }
     row["self"] = event_self_hash(row)
     return row
+
+
+# ---------------------------------------------------------------- accept declarations (T24, lane A)
+
+def accept_declarations(results: dict, contract: dict, contract_sha: str) -> list[str]:
+    """T24 (spec line 299): compare the declarations in an accept `results` object with the job contract.
+
+    Seam contract (frozen caller: commands.accept): returns reason strings; a non-empty list makes the acceptance
+    decision "rejected" and the strings are appended to the recorded reason. Must not raise for ordinary input.
+
+    Owner behaviour decisions (2026-10-13), binding for lane A:
+      - Required declarations are `results["contract_sha256"]` (must equal `contract_sha`) and `results["baseline"]`
+        (its manifest / git_revision / uncommitted_state must match `contract["baseline"]`).
+      - A missing OR mismatching required declaration produces a rejection reason that names the field.
+        Absent-declaration policy is decided: absent = rejected.
+      - The existing reviewer / role / environment / criteria / path checks in commands.accept stay as they are.
+
+    Seam state (before lane A): returns [] for every input, so pre-seam behaviour is unchanged. Lane A replaces this
+    body only; signature and return type are fixed.
+    """
+    return []

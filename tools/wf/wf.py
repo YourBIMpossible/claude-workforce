@@ -9,7 +9,7 @@ import uuid
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I omits the script dir
 
-from wfcore import commands, paths  # noqa: E402
+from wfcore import checkpointcmp, commands, paths  # noqa: E402
 from wfcore.db import OpLog, WfError, WfUsage  # noqa: E402
 from wfcore.faults import FaultsNotAllowed, load as load_faults  # noqa: E402
 
@@ -43,6 +43,8 @@ def _parser() -> argparse.ArgumentParser:
     for name in ("status", "digest", "checkpoint"):
         sp.add_parser(name).add_argument("job")
     v = sp.add_parser("verify"); v.add_argument("job", nargs="?")
+    v.add_argument("--checkpoint", metavar="SEQ:HASH",
+                   help="independently retained checkpoint (seq:self) to compare with the chain (spec 3C)")
     sp.add_parser("export", help="regenerate jobs\\<job>\\export (ledger-read-only, export-writing)").add_argument("job")
     ac = sp.add_parser("accept"); ac.add_argument("job"); ac.add_argument("--results", required=True)
     cl = sp.add_parser("close"); cl.add_argument("job"); cl.add_argument("--intervention", required=True)
@@ -101,7 +103,8 @@ def run(argv: list[str]) -> tuple[int, dict]:
         elif args.cmd == "digest":
             res = commands.digest(db, args.job)
         elif args.cmd == "verify":
-            res = commands.verify(db, args.job)
+            cp = checkpointcmp.parse(args.checkpoint, args.job) if args.checkpoint is not None else None
+            res = commands.verify(db, args.job, checkpoint=cp)
         elif args.cmd == "checkpoint":
             res = commands.checkpoint(db, args.job)
         elif args.cmd == "export":
