@@ -10,11 +10,11 @@ import os
 import unittest
 from unittest import mock
 
-from test_wf import Base  # noqa: E402  (sets sys.path to the wf package)
+from test_wf import Base, DECLARATIONS  # noqa: E402  (sets sys.path to the wf package)
 from wfcore import canon, commands, db as dbm  # noqa: E402
 
 RESULTS_OK = {"criteria": [{"id": "AC1", "pass": True, "actual": "ok"}], "changed_paths": ["jobs/j/work/a.txt"],
-              "environment": "disposable local scope", "limits": "none"}
+              "environment": "disposable local scope", "limits": "none", **DECLARATIONS}
 SENTINEL = "RAW-CONTENT-SENTINEL-5e1d"
 
 

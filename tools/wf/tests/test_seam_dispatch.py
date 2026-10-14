@@ -16,7 +16,7 @@ import subprocess
 import sys
 import unittest
 
-from test_wf import Base, CONTRACT, WF_DIR  # noqa: E402
+from test_wf import Base, CONTRACT, DECLARATIONS, WF_DIR  # noqa: E402
 from wfcore import checkpointcmp, commands, pathpolicy, validate  # noqa: E402
 from wfcore.db import WfUsage  # noqa: E402
 
@@ -74,7 +74,7 @@ class SeamDispatch(Base):
         self.run_wf("--role", "builder", "--session", "B1", "append", "j", "--type", "delivered",
                     "--content", json.dumps({"claims": [{"claim": "done", "evidence": ["jobs/j/work/a.txt"]}]}))
         results = {"criteria": [{"id": c["id"], "pass": True, "actual": c["expected"]} for c in CONTRACT["acceptance_criteria"]],
-                   "environment": CONTRACT["environment"], "limits": "none", "changed_paths": ["jobs/j/work/a.txt"]}
+                   "environment": CONTRACT["environment"], "limits": "none", "changed_paths": ["jobs/j/work/a.txt"], **DECLARATIONS}
         orig = validate.accept_declarations
         validate.accept_declarations = lambda r, c, s: ["declaration test: contract_sha256 missing"]
         try:

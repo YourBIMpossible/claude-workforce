@@ -43,6 +43,9 @@ CONTRACT = {
     "closeout_rules": "close after accept", "recovery_rules": "none", "observe_thresholds": {"held_s": 2.0},
     "environment": "disposable local scope",
 }
+# T24 (lane A, 2026-10-13): `wf accept` results must declare the contract hash and the baseline; absent = rejected.
+# Fixtures that exercise accept for other reasons carry correct declarations.
+DECLARATIONS = {"contract_sha256": canon.sha256_obj(CONTRACT), "baseline": CONTRACT["baseline"]}
 GRANT = {"grant_id": "G1", "actions": ["write"], "resources": ["jobs/j/work/**"], "exclusions": [],
          "ars": {"a": "owner"}, "delegation": {}, "expiry": "2026-12-31T00:00:00Z", "revocation_rule": "owner"}
 
@@ -223,7 +226,7 @@ class T08Flow(Base):
         self.assertEqual(r["code"], "refused")  # malformed results: no event
         self.run_wf("append", "j", "--type", "delivered", "--content", '{"claims":[{"claim":"c","evidence":["e"]}]}')
         results = {"criteria": [{"id": "AC1", "pass": True, "actual": "ok"}], "changed_paths": ["jobs/j/work/a.txt"],
-                   "environment": "disposable local scope", "limits": "none"}
+                   "environment": "disposable local scope", "limits": "none", **DECLARATIONS}
         c, r = self.run_wf("accept", "j", "--results", json.dumps(results), role="reviewer", session="B1")
         self.assertEqual(r["code"], "refused"); self.assertIn("same-session", r["error"])
         c, r = self.run_wf("close", "j", "--intervention", "none", role="coordinator", session="C1")
@@ -296,7 +299,7 @@ class SpecMapGaps(Base):
         self.new_job(); self.activate(); self.intent()
         self.run_wf("append", "j", "--type", "delivered", "--content", '{"claims":[{"claim":"c","evidence":["e"]}]}')
         results = {"criteria": [{"id": "AC1", "pass": True, "actual": "ok"}], "changed_paths": ["jobs/j/work/a.txt"],
-                   "environment": "production", "limits": "none"}
+                   "environment": "production", "limits": "none", **DECLARATIONS}
         c, r = self.run_wf("accept", "j", "--results", json.dumps(results), role="reviewer", session="R1")
         self.assertEqual(r["decision"], "rejected"); self.assertIn("environment", r["reasons"][0])
 
@@ -516,7 +519,7 @@ class TConflict(Base):
     reservation; both sessions (and every later generation of the role) are blocked; failure paths fail closed."""
 
     RESULTS = json.dumps({"criteria": [{"id": "AC1", "pass": True, "actual": "ok"}], "changed_paths": ["jobs/j/work/a.txt"],
-                          "environment": "disposable local scope", "limits": "none"})
+                          "environment": "disposable local scope", "limits": "none", **DECLARATIONS})
 
     def sub_wf(self, *argv: str, role="builder", session="B1", faults: str | None = None, timeout=30):
         """A fresh wf process (its own connection, marker guard and fault env)."""

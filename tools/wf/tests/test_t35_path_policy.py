@@ -11,13 +11,13 @@ import json
 import os
 import unittest
 
-from test_wf import Base, CONTRACT  # noqa: E402
+from test_wf import Base, CONTRACT, DECLARATIONS  # noqa: E402
 from wfcore import commands, pathpolicy  # noqa: E402
 
 # CONTRACT (test_wf): write jobs/j/work/**, read tools/wf/**, watch ledger/**, presence_only fixtures/results/**,
 # exclusions 01-PROJECT-BRIEF.md.
 RESULTS_OK = {"criteria": [{"id": "AC1", "pass": True, "actual": "ok"}], "changed_paths": ["jobs/j/work/a.txt"],
-              "environment": "disposable local scope", "limits": "none"}
+              "environment": "disposable local scope", "limits": "none", **DECLARATIONS}
 
 
 def _result(cl: dict, path: str) -> dict:
