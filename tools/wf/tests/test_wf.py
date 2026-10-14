@@ -323,8 +323,10 @@ class SpecMapGaps(Base):
     def test_spec_T35_path_classes_P1_to_P5(self):
         cl = commands.classify_paths(["jobs/j/work/a.txt", "fixtures/results/x.json", "ledger/l.db",
                                       "01-PROJECT-BRIEF.md", "elsewhere.txt"], CONTRACT)
-        self.assertEqual(cl, {"P1": ["jobs/j/work/a.txt"], "P2": ["fixtures/results/x.json"], "P3": ["ledger/l.db"],
-                              "P4": ["elsewhere.txt"], "P5": ["01-PROJECT-BRIEF.md"]})
+        # seam (dispatch-ready): P1..P5 are the required keys; further keys are lane B's per-path record
+        self.assertEqual({k: cl[k] for k in ("P1", "P2", "P3", "P4", "P5")},
+                         {"P1": ["jobs/j/work/a.txt"], "P2": ["fixtures/results/x.json"], "P3": ["ledger/l.db"],
+                          "P4": ["elsewhere.txt"], "P5": ["01-PROJECT-BRIEF.md"]})
 
     def test_verify_compares_receipts_to_work_files(self):
         self.new_job(); self.activate()

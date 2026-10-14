@@ -65,7 +65,7 @@ class SeamDispatch(Base):
     def test_S4_accept_seams_are_wired(self):
         self.assertIs(commands.classify_paths, pathpolicy.classify)
         classes = pathpolicy.classify(["jobs/j/work/a.txt", "ledger/l.db", "elsewhere/x"], dict(CONTRACT))
-        self.assertEqual(set(classes), {"P1", "P2", "P3", "P4", "P5"})
+        self.assertTrue({"P1", "P2", "P3", "P4", "P5"} <= set(classes), classes)  # seam: extra keys allowed (lane B)
         self.assertEqual(pathpolicy.violations({"P1": ["x"], "P4": [], "P5": []}), [])
         self.assertTrue(pathpolicy.violations({"P4": ["elsewhere/x"], "P5": []}))
         self.assertEqual(validate.accept_declarations({}, dict(CONTRACT), "0" * 64).__class__, list)

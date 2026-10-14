@@ -177,7 +177,9 @@ class T35WindowsResolution(Base):
         self.evidence["case_insensitive"] = True
         classes = pathpolicy.classify(["WORK/mixed.txt"], self.contract)
         self.assertIn("WORK/mixed.txt", classes["P1"], ("case-insensitive glob match held since pre-seam", classes))
-        escape = "work/../" + os.path.basename(self.dir) + "-outside/secret.txt"
+        # real escape: the outside dir is a SIBLING of the boundary, so the relative form starts with ".."
+        escape = _rel(self.dir, os.path.join(self.outside, "secret.txt"))
+        self.assertTrue(escape.startswith("../"), escape)
         classes = pathpolicy.classify([escape], self.contract)
         self.evidence["classify_dotdot"] = classes
         if not _lane_b_integrated():
