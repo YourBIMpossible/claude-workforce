@@ -1,0 +1,8 @@
+tools/wf/tests/logs/
+fixtures/tmp/
+__pycache__/
+*.pyc
+*.db
+*.db-journal
+ledger/
+jobs/

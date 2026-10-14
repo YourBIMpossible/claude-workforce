@@ -1,0 +1,77 @@
+PASS base Part B map sha unchanged
+PASS XC1-incorp map sha unchanged
+PASS export-incorp map sha unchanged
+PASS derived map has base+1 lines (48 vs 47)
+PASS exactly 2 shifted lines differ: [25, 44]
+PASS one T09 row in each map
+PASS T09 rating word PARTIAL -> COVERED
+PASS T09 row: base text preserved as a prefix
+PASS closure sentence present
+PASS disposition and attribution in row
+PASS row cites G1 with lines
+PASS row cites G2 with lines
+PASS row cites G3 with lines
+PASS row cites G4 with lines
+PASS T24 row byte-identical
+PASS T27 row byte-identical
+PASS T28 row byte-identical
+PASS T29 row byte-identical
+PASS T31 row byte-identical
+PASS T35 row byte-identical
+PASS T36 row byte-identical
+PASS T37 row byte-identical
+PASS T07 row byte-identical
+PASS T30 row byte-identical
+PASS T32 row byte-identical
+PASS T33 row byte-identical
+PASS T34 row byte-identical
+PASS exactly one rating cell changed
+PASS counts recomputed {'COVERED': 9, 'PARTIAL': 7, 'MISSING': 6, 'NOT': 0}
+PASS header line 1
+PASS header labels and counts
+PASS summary sentence present
+PASS closure test sha as cited
+PASS class at line 34
+PASS G1 lines 50-72
+PASS G2 lines 75-102
+PASS G3 lines 105-126
+PASS G4 lines 129-149
+PASS G1 exact text assert
+PASS G2 _append call and values
+PASS G3 exit/code asserts
+PASS G4 label asserts
+PASS wf.py sha after the one change
+PASS wf.py _need lines 54-58
+PASS validate.py lines 299-300
+PASS spec sha unchanged
+PASS spec T09 row line 284 clauses
+PASS pre-change: Ran 4, G3 FAILED x3 (exit 1 vs 2), exit 1
+PASS pre-change: G1 G2 G4 not failed
+PASS a2: Ran 4 OK exit 0
+PASS full: Ran 69 OK exit 0
+PASS full: 69 lines ending in ok, no FAIL/ERROR
+PASS full: all four closure tests and Part B present
+PASS G1 summary: 3 None rejections as asserted
+PASS G2 summary: 6 rejections, head/verify unchanged
+PASS G3 summary: 3 usage exits, head unchanged
+PASS G4 summary: payload x3 and every contract key
+PASS scratch path recorded and exists: pre-change
+PASS scratch path recorded and exists: a2
+PASS scratch path recorded and exists: full
+PASS manifest 20 lines vs 19
+PASS manifest delta exactly wf.py change + closure test: +['19a0b49074f9b6277966fb2a0df53e8fe3b59c9f9f9023c9d0537fa3bc127798  tools/wf/tests/test_engine_missing_fields_closure.py', '6d0ab723745581e871d6b59ddf9b42dec2c052cbd60f5c745693de05f4bdfba0  tools/wf/wf.py'] -['4c932f7dbe5cb690ef4a1162d38b3ebe27111b87067d24dbe686302a2f63ecf8  tools/wf/wf.py']
+PASS manifest rev12 9d2210ee082a
+PASS live tools/wf files match the delivered manifest
+PASS protected unchanged: tools/wf/wfcore/commands.py
+PASS protected unchanged: tools/wf/README.md
+PASS protected unchanged: tools/wf/tests/test_export_cmd.py
+PASS protected unchanged: tools/wf/tests/test_wf.py
+PASS protected unchanged: tools/wf/tests/test_b1_gaps.py
+PASS protected unchanged: tools/wf/tests/test_crash_export.py
+PASS protected unchanged: tools/wf/tests/test_engine_missing_fields.py
+PASS protected unchanged: fixtures/runner/test_review_runner.py
+PASS protected unchanged: 04-DECISIONS.md
+PASS protected unchanged: fixtures/results/xc1-bcd966d6c906/closeout.md
+PASS authority copy present
+
+75 PASS, 0 FAIL
