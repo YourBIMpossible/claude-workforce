@@ -376,4 +376,43 @@ def accept_declarations(results: dict, contract: dict, contract_sha: str) -> lis
     Seam state (before lane A): returns [] for every input, so pre-seam behaviour is unchanged. Lane A replaces this
     body only; signature and return type are fixed.
     """
-    return []
+    reasons: list[str] = []
+    if not isinstance(results, dict):
+        return ["declaration: results is not an object"]
+
+    # contract_sha256: present, a string, equal to the pinned contract hash
+    if "contract_sha256" not in results:
+        reasons.append("declaration missing: contract_sha256")
+    else:
+        declared = results["contract_sha256"]
+        if not isinstance(declared, str):
+            reasons.append("declaration mismatch: contract_sha256 is not a string")
+        elif declared != contract_sha:
+            reasons.append("declaration mismatch: contract_sha256 does not equal the job contract hash")
+
+    # baseline: present, an object, and every field (manifest, git_revision, uncommitted_state and any other
+    # field on either side) canonically equal to the contract's baseline
+    want = contract.get("baseline") if isinstance(contract, dict) else None
+    if "baseline" not in results:
+        reasons.append("declaration missing: baseline")
+    elif not isinstance(results["baseline"], dict):
+        reasons.append("declaration mismatch: baseline is not an object")
+    elif not isinstance(want, dict):
+        reasons.append("declaration mismatch: baseline (contract baseline is not an object)")
+    else:
+        got = results["baseline"]
+        required = ("manifest", "git_revision", "uncommitted_state")
+        for field in (*required, *sorted((set(got) | set(want)) - set(required))):
+            if field not in got:
+                reasons.append(f"declaration missing: baseline.{field}")
+                continue
+            if field not in want:
+                reasons.append(f"declaration mismatch: baseline.{field} is not in the contract baseline")
+                continue
+            try:
+                same = canonical(got[field]) == canonical(want[field])
+            except (TypeError, ValueError):
+                same = False
+            if not same:
+                reasons.append(f"declaration mismatch: baseline.{field} does not match the contract baseline")
+    return reasons
