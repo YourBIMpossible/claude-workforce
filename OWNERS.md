@@ -13,6 +13,7 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_t35_path_policy.py | B |
 | tools/wf/wfcore/checkpointcmp.py | C |
 | tools/wf/tests/test_t36_verify_checkpoint.py | C |
+| tools/wf/tests/test_checkpoint_clarity.py | C |
 | tools/wf/wfcore/export.py | A |
 | tools/wf/tests/test_export_tmp_preserve.py | A |
 | tools/wf/tests/test_t35_windows_resolution.py | D |
@@ -27,6 +28,6 @@ Lane A owns only the body of `accept_declarations` inside validate.py; other fun
 |---|---|---|---|
 | A | Zen | `lane/a-export-tmp-preserve` | `tools/wf/wfcore/export.py` (whole file) + `tools/wf/tests/test_export_tmp_preserve.py` (new); the earlier A rows (validate.py `accept_declarations`, test_t24) stay registered and are NOT in this sprint's scope |
 | B | Plexy | `lane/b-path-policy-hardening` | unchanged B rows (pathpolicy.py, test_t35_path_policy.py) |
-| C | MyBuddy | `lane/c-checkpoint-wording` | unchanged C rows (checkpointcmp.py, test_t36_verify_checkpoint.py) |
+| C | MyBuddy | `sprint/mybuddy-checkpoint-clarity` (worker-chosen, delivered as PR #10; `lane/c-checkpoint-wording` unused) | C rows + `tools/wf/tests/test_checkpoint_clarity.py` (new, delivered) |
 
 Branch names are registration only; the checker validates paths by lane letter (`--lane A|B|C`), not branch names.
