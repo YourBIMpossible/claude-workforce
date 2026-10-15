@@ -42,7 +42,7 @@ class MalformedChangedList(Base):
             with self.subTest(changed=bad):
                 cl = pathpolicy.classify(bad, CONTRACT)
                 self.assertEqual(cl["P5"], [repr(bad)])
-                self.assertEqual(cl["P1"] + cl["P2"] + cl["P3"] + cl["P4"], [])
+                self.assertEqual(cl["P1"] + cl["P2"] + cl["P3"] + cl["P4"] + cl["unclassified"], [])
                 self.assertIn("not a list", cl["results"][0]["reason"])
                 v = pathpolicy.violations(cl)
                 self.assertEqual(len(v), 1); self.assertIn(repr(bad), v[0])
@@ -133,7 +133,7 @@ class MalformedContract(Base):
         cl = pathpolicy.classify(["jobs/j/work/sub/x", "01-PROJECT-BRIEF.md", "jobs/j/work"], c)
         # the directory named by a glob is itself in scope (pre-existing equality rule), its siblings are not
         self.assertEqual((cl["P1"], cl["P5"]), (["jobs/j/work/sub/x", "jobs/j/work"], ["01-PROJECT-BRIEF.md"]))
-        self.assertEqual(pathpolicy.classify(["jobs/j/workx"], c)["P4"], ["jobs/j/workx"])
+        self.assertEqual(pathpolicy.classify(["jobs/j/workx"], c)["unclassified"], ["jobs/j/workx"])
 
 
 class NormalizationBypass(Base):
@@ -159,15 +159,15 @@ class NormalizationBypass(Base):
                   "jobs/j/wor/k/a"):
             with self.subTest(path=p):
                 cl = pathpolicy.classify([p], CONTRACT)
-                _only(cl, "P4", [p])
+                _only(cl, "unclassified", [p])
         for glob in ("jobs/j/work", "jobs/j/work/", "jobs/j/work/*", "jobs/j/work/**"):
             with self.subTest(glob=glob):
                 c = dict(CONTRACT, write_scope=[glob])
                 cl = pathpolicy.classify(["jobs/j/workspace/x", "jobs/j/work/x"], c)
-                self.assertEqual((cl["P4"], cl["P1"]), (["jobs/j/workspace/x"], ["jobs/j/work/x"]), glob)
-        # P2/P3/P5 siblings likewise stay out of the protected class and fall to P4, never to P1
+                self.assertEqual((cl["unclassified"], cl["P1"]), (["jobs/j/workspace/x"], ["jobs/j/work/x"]), glob)
+        # P2/P3/P5 siblings likewise stay out of the protected class and are unclassified, never P1
         cl = pathpolicy.classify(["ledgers/x", "fixtures/results-old/x", "01-PROJECT-BRIEF.md.bak"], CONTRACT)
-        _only(cl, "P4", ["ledgers/x", "fixtures/results-old/x", "01-PROJECT-BRIEF.md.bak"])
+        _only(cl, "unclassified", ["ledgers/x", "fixtures/results-old/x", "01-PROJECT-BRIEF.md.bak"])
 
     def test_regression_com0_lpt0_and_superscript_device_names_were_P1(self):
         for p in ("jobs/j/work/COM0", "jobs/j/work/lpt0.txt", "jobs/j/work/COM¹", "jobs/j/work/LPT².log",
@@ -242,9 +242,9 @@ class AcceptIntegration(Base):
         bad = dict(base, changed_paths=["jobs/j/work/a.txt", "", "jobs/j/work/COM0", None, 3])
         c, r = self.run_wf("accept", "j", "--results", json.dumps(bad), role="reviewer", session="R1", msg_id="H1")
         self.assertEqual((c, r["decision"]), (0, "rejected"), r)
-        # commands.accept stringifies every entry before classify: None and 3 arrive as "None" / "3" (P4)
+        # commands.accept stringifies every entry before classify: None and 3 arrive as "None" / "3" (unclassified)
         self.assertEqual(r["classes"]["P5"], ["", "jobs/j/work/COM0"])
-        self.assertEqual(r["classes"]["P4"], ["None", "3"])
+        self.assertEqual(r["classes"]["unclassified"], ["None", "3"])
         self.assertEqual(r["classes"]["P1"], ["jobs/j/work/a.txt"])
         self.assertTrue(any("fail closed" in x and "COM0" in x for x in r["reasons"]), r["reasons"])
         self.assertIs(commands.classify_paths, pathpolicy.classify)

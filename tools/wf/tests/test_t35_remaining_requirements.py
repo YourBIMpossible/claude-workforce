@@ -14,8 +14,11 @@ A requirement whose mechanism the product does not have gets a `test_LIMIT_<subj
 PR #15 correction 1/3; lane rule issue #13): it asserts the ACTUAL present behaviour, and its docstring carries the
 spec sentence, the missing mechanism and "missing-implementation; T35 stays PARTIAL on this element". No decorator
 of any kind; no expected PASS is invented; such a test fails the day the behaviour changes, so the limit cannot
-drift silently. A LIMIT test closes no requirement: the remaining requirement assertions (three after the R3b ledger-listing mechanism landed) stay failing, separately
-runnable, in tools/wf/tests/requirements_t35_unmet.py (owner correction 2026-10-15, issue #13). P3 stays
+drift silently. A LIMIT test closes no requirement. One LIMIT test remains (R3a, export folder); the R3b ledger
+LIMIT was removed when the verify listing landed (A3), and the R1/R2 LIMITs were removed when the changed-set
+baseline and the P4 coordination set landed (A1/A2, test_t35_changeset.py), since the limits they asserted no
+longer exist. The remaining requirement assertion (R3a) stays failing, separately runnable, in
+tools/wf/tests/requirements_t35_unmet.py (owner correction 2026-10-15, issue #13). P3 stays
 fail-closed; 8.3 short names and NTFS behaviour are not touched here (lane D evidence).
 
 Fixtures: fresh scratch under WF_TEST_TMP (test_wf.Base), CONTRACT from test_wf (write jobs/j/work/**, read tools/wf/**,
@@ -116,19 +119,6 @@ class R1ManifestFileMissingFromP1(_Flow):
         self.assertEqual(r["classes"]["results"], [])
         self.assertIn(pathpolicy.NOT_DETECTED, r["classes"]["limitations"])
 
-    def test_LIMIT_undeclared_P2_manifest_deletion_is_accepted(self):
-        """R1 limit (observed present behaviour). Spec sentence (section 4.4): accept "computes the set of changed
-        paths inside the monitored boundary"; rule 1: "a missing P2/P3 file is a deletion violation". Present
-        behaviour: an undeclared deletion of a P2 manifest file (tools/wf/wfcore/db.py in the baseline, absent on
-        disk, not supplied) is ACCEPTED. Missing mechanism: a baseline-manifest-versus-filesystem comparison inside
-        the boundary; `commands.accept` classifies only reviewer-supplied `changed_paths` and reads no file.
-        missing-implementation; T35 stays PARTIAL on this element."""
-        self.start()
-        self.assertFalse(os.path.exists(os.path.join(self.dir, "tools", "wf", "wfcore", "db.py")))
-        r = self.accept([], "R1d")
-        self.assertEqual(r["decision"], "accepted", r)
-        self.assertEqual(r["classes"]["results"], [])
-
 
 # ---------------------------------------------------------------------------------------------------- R2
 
@@ -186,24 +176,14 @@ class R2ExpectedP4UpdatesAndVerify(_Flow):
         self.assertTrue(os.path.isfile(os.path.join(self.dir, *existing.split("/"))))
         self.assertFalse(os.path.exists(os.path.join(self.dir, *absent.split("/"))))
         cl = pathpolicy.classify([existing, absent], self.contract)
-        self.assertEqual([x["class"] for x in cl["results"]], ["P4", "P4"])
+        # without a coordination set (module-level call) both are unclassified; with the job's set both are P4
+        self.assertEqual([x["class"] for x in cl["results"]], ["unclassified", "unclassified"])
         self.assertEqual([x["result"] for x in cl["results"]], ["violation", "violation"])
+        cl = pathpolicy.classify([existing, absent], self.contract,
+                                 coordination=pathpolicy.coordination_globs("j", "ledger", "l.db"))
+        self.assertEqual([x["class"] for x in cl["results"]], ["P4", "P4"])
+        self.assertEqual([x["result"] for x in cl["results"]], [pathpolicy.COORDINATION_RESULT] * 2)
         self.assertIn("no path was read", cl["comparison"])
-
-    def test_LIMIT_supplied_coordination_update_is_rejected_as_P4(self):
-        """R2 limit (observed present behaviour). Spec sentence (section 4.4 P4 row): "expected coordination updates
-        (ledger database and its journal, jobs/<job>/export/, ...) allowed to change; not compared by hash".
-        Present behaviour: a reviewer who truthfully supplies the ledger database or an export file as changed is
-        REJECTED; both classify P4 "outside every declared scope" and `pathpolicy.violations` rejects every P4
-        entry. Missing mechanism: a coordination-path class in pathpolicy (contract vocabulary decision; no
-        contract field or built-in list names the coordination paths). missing-implementation; T35 stays
-        PARTIAL on this element."""
-        self.start()
-        r = self.accept(["jobs/j/work/a.txt", "jobs/j/export/head.json", "ledger/l.db"], "R2d")
-        self.assertEqual(r["decision"], "rejected", r)
-        self.assertEqual(r["classes"]["P4"], ["jobs/j/export/head.json", "ledger/l.db"])
-        self.assertEqual(r["classes"]["P1"], ["jobs/j/work/a.txt"])
-        self.assertTrue(any("(P4)" in x and "ledger/l.db" in x for x in r["reasons"]), r["reasons"])
 
 
 # ---------------------------------------------------------------------------------------------------- R3
@@ -221,9 +201,12 @@ class R3UnexpectedFilesInLedgerAndRuntimeFolders(_Flow):
         self.start()
         r = self.accept(["jobs/j/work/a.txt", "jobs/j/export/stray.txt", "ledger/stray.db"], "R3a")
         self.assertEqual(r["decision"], "rejected", r)
-        self.assertEqual(r["classes"]["P4"], ["jobs/j/export/stray.txt", "ledger/stray.db"])
-        self.assertTrue(any("jobs/j/export/stray.txt" in x and "ledger/stray.db" in x for x in r["reasons"]),
-                        r["reasons"])
+        # ledger/stray.db is not a coordination path (only the db, its journal and pending/ are): unclassified.
+        # jobs/j/export/stray.txt IS inside the export directory, a coordination area (P4) once the caller passes
+        # the coordination set (White's wiring); without it both are unclassified. Either way the ledger stray
+        # rejects; the export stray is verify's job (R3a, Zen).
+        self.assertIn("ledger/stray.db", r["classes"]["unclassified"])
+        self.assertTrue(any("ledger/stray.db" in x for x in r["reasons"]), r["reasons"])
 
     def test_supplied_stray_under_a_watched_ledger_is_P3_fail_closed(self):
         """R3 with the default contract (ledger/** watched): the stray ledger file is P3 and rejects fail-closed;
