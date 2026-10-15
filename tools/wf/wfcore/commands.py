@@ -466,7 +466,7 @@ def verify(db: str, job: str | None, checkpoint: tuple[int, str] | None = None) 
         not v["problems"] and not v["export"] and not v["pending_markers"] for v in per_job.values())
     result = {"db": os.path.abspath(db), "ledger_problems": problems, "jobs": per_job, "clean": clean,
               "ladder": "level-1 record-and-verify: hash chain, pins, constraints, export manifest; "
-                        "not an authenticity claim"}
+                        "internal consistency only; not an authenticity claim"}
     if checkpoint is not None:
         result["checkpoint_job"] = job
         result = checkpointcmp.compare(result, checkpoint, chains)
