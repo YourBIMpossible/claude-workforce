@@ -144,7 +144,7 @@ class CheckpointClarity(Base):
         self.assertEqual(code, 0, res)
         self.assertTrue(res["clean"])
         self.assertNotIn("checkpoint", res); self.assertNotIn("checkpoint_job", res)
-        self.assertEqual(set(res), {"db", "ledger_problems", "jobs", "clean", "ladder", "ok", "msg_id"})
+        self.assertEqual(set(res), {"db", "ledger_problems", "ledger_directory", "jobs", "clean", "ladder", "ok", "msg_id"})  # A3 verify listing added ledger_directory (spec 4.4 P4 row); still no checkpoint key
         r = {"jobs": {}, "clean": True}
         self.assertIs(checkpointcmp.compare(r, None, {}), r)
         self.assertEqual(list(inspect.signature(checkpointcmp.parse).parameters), ["text", "job"])

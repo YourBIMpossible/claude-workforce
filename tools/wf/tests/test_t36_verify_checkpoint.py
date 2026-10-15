@@ -257,7 +257,7 @@ class T36Checkpoint(Base):
         self.assertTrue(res["clean"], res)
         self.assertNotIn("checkpoint", res)
         self.assertNotIn("checkpoint_job", res)
-        self.assertEqual(set(res), {"db", "ledger_problems", "jobs", "clean", "ladder", "ok", "msg_id"})
+        self.assertEqual(set(res), {"db", "ledger_problems", "ledger_directory", "jobs", "clean", "ladder", "ok", "msg_id"})  # A3 verify listing added ledger_directory (spec 4.4 P4 row); still no checkpoint key
         # the seam itself: compare() with no checkpoint returns the same object, untouched
         r = {"jobs": {"j": {"problems": []}}, "clean": True}
         snapshot = json.dumps(r)

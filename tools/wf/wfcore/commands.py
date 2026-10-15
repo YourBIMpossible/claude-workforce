@@ -458,19 +458,67 @@ def verify(db: str, job: str | None, checkpoint: tuple[int, str] | None = None) 
                 chains[j] = [(r["seq"], r["self"]) for r in rows]
     finally:
         conn.close()
+    dir_problems, neighbors = _ledger_dir_listing(db)  # A3: ledger-directory listing, report only
     for j, v in per_job.items():
         v["export"] = export.check(db, j)
         v["pending_markers"] = markers.describe(db, j)
         v["receipts"] = _compare_receipts(db, receipts[j])
-    clean = not problems["schema"] and not problems["integrity"] and all(
+    clean = not problems["schema"] and not problems["integrity"] and not dir_problems and all(
         not v["problems"] and not v["export"] and not v["pending_markers"] for v in per_job.values())
-    result = {"db": os.path.abspath(db), "ledger_problems": problems, "jobs": per_job, "clean": clean,
+    result = {"db": os.path.abspath(db), "ledger_problems": problems,
+              "ledger_directory": {"problems": dir_problems, "neighbors": neighbors}, "jobs": per_job, "clean": clean,
               "ladder": "level-1 record-and-verify: hash chain, pins, constraints, export manifest; "
                         "internal consistency only; not an authenticity claim"}
     if checkpoint is not None:
         result["checkpoint_job"] = job
         result = checkpointcmp.compare(result, checkpoint, chains)
     return result
+
+
+_SQLITE_HEADER = b"SQLite format 3\x00"
+
+
+def _ledger_dir_listing(db: str) -> tuple[list[str], list[str]]:
+    """A3 (spec 4.4 P4 row): list the ledger directory, report only. Legitimate: the database, its `-journal`,
+    `pending/`. A neighbouring file with the SQLite header (and its `-journal`) is another ledger sharing the
+    directory: informational, not stray. Everything else is `unexpected ledger-directory file: <name>` (a
+    directory or link gets a trailing `/` or `@`). Nothing is deleted, moved, normalized or followed."""
+    d = paths.ledger_dir(db)
+    name = os.path.basename(os.path.abspath(db))
+    ok = {name, name + "-journal", "pending"}
+    problems: list[str] = []
+    neighbors: list[str] = []
+    try:
+        entries = sorted(os.scandir(d), key=lambda e: e.name)
+    except OSError as exc:
+        return [f"ledger directory unreadable: {exc.__class__.__name__}"], neighbors
+    names = {e.name for e in entries}
+    for e in entries:
+        if e.name in ok:
+            continue
+        if e.is_symlink():
+            problems.append(f"unexpected ledger-directory file: {e.name}@")
+            continue
+        if e.is_dir(follow_symlinks=False):
+            problems.append(f"unexpected ledger-directory file: {e.name}/")
+            continue
+        if _is_sqlite(e.path):
+            neighbors.append(e.name)
+            continue
+        stem = e.name[: -len("-journal")] if e.name.endswith("-journal") else None
+        if stem and stem in names and _is_sqlite(os.path.join(d, stem)):
+            neighbors.append(e.name)
+            continue
+        problems.append(f"unexpected ledger-directory file: {e.name}")
+    return problems, neighbors
+
+
+def _is_sqlite(path: str) -> bool:
+    try:
+        with open(path, "rb") as fh:
+            return fh.read(len(_SQLITE_HEADER)) == _SQLITE_HEADER
+    except OSError:
+        return False
 
 
 def _last_receipts(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:

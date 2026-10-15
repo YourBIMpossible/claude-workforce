@@ -5,13 +5,14 @@ Run it on its own:
 
     python -I -B -m unittest discover -s tools/wf/tests -p "requirements_*.py" -v
 
-It is EXPECTED to report FAILED (failures=4) until the mechanisms land. Each test is the requirement assertion from
+It is EXPECTED to report FAILED (failures=3) until the mechanisms land (R1, R2, R3a; R3b moved to
+test_t35_verify_ledger_dir.py when the verify ledger-directory listing landed, A3 wiring). Each test is the requirement assertion from
 commit 64df3cf (tools/wf/tests/test_t35_remaining_requirements.py at that revision) with the `expectedFailure`
 decorator removed and the assertion unchanged. A test here PASSING means the mechanism landed: the test then moves
 into the normal suite in the same PR that lands the mechanism. Nothing here is weakened, skipped or relabelled.
 
 Status is reported in two lines: normal regression suite (`test_*.py`) and unresolved requirement tests (this file,
-4, T35). The `test_LIMIT_*` observation tests in test_t35_remaining_requirements.py pin the PRESENT behaviour; they
+3, T35). The `test_LIMIT_*` observation tests in test_t35_remaining_requirements.py pin the PRESENT behaviour; they
 do not close any requirement below.
 
 Fixtures and helpers are those of test_t35_remaining_requirements (`_Flow`: fresh WF_TEST_TMP scratch, contract
@@ -94,25 +95,6 @@ class R3UnexpectedFilesInLedgerAndRuntimeFolders(_Flow):
         v = self.verify()
         self.assertFalse(v["clean"], v)
         self.assertTrue(any("stray.txt" in p for p in v["jobs"]["j"]["export"]), v)
-
-    def test_R3b_added_stray_file_beside_the_ledger_is_a_violation(self):
-        """Requirement: FIRST-RELEASE-SPEC.md section 4.4 P4 row (line 216): "Added or deleted files in the
-        ledger/runtime folders other than the listed ones -> violation".
-        Expected: after ledger/stray.db is added beside the ledger database, `wf verify` reports clean false and
-        names stray.db.
-        Gap: wfcore/commands.py verify() (line 430 ff.) checks schema, integrity, chain, export and markers and
-        never lists the ledger directory; no command observes the ledger folder.
-        Observed at rev12 1b005a42f204 (main 17f7ef2) and at this head: clean true, "stray.db" absent from the
-        result -> AssertionError: True is not false.
-        OPEN - not closed by test_LIMIT_added_stray_file_in_the_ledger_folder_is_unobserved_by_verify in
-        test_t35_remaining_requirements.py."""
-        self.start()
-        stray = os.path.join(paths.ledger_dir(self.db), "stray.db")
-        with open(stray, "w", encoding="utf-8") as fh:
-            fh.write("unexpected\n")
-        v = self.verify()
-        self.assertFalse(v["clean"], v)
-        self.assertIn("stray.db", json.dumps(v))
 
 
 if __name__ == "__main__":
