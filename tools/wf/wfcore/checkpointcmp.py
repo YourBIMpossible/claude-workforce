@@ -27,6 +27,8 @@ so no caller can report a checkpoint verification that was not performed. Withou
 
 Lane C (T36 (d)/(e)): compare() looks the checkpoint seq up in chains[job] and compares the stored `self` with the
 retained value. The result gains a "checkpoint" key (supplied value, found value, status, ladder levels, limits).
+The "scope" entry states what the ladder shows (internal consistency only; authorship is level 4, never claimed), that an older checkpoint
+need not equal the head, and that later events are not covered (owner wording policy, 2026-10-15).
 A missing seq or a different hash adds one problem to result["jobs"][job]["problems"] and makes `clean` false; the
 exit code is left to the caller (verify reports, it does not raise). Level 3 is reported only as "compared against
 the value supplied": the retained value is trusted as supplied, so an altered checkpoint that agrees with an
@@ -57,9 +59,10 @@ def parse(text: str, job: str | None) -> tuple[int, str]:
 LEVEL_3 = "level 3 (retained-checkpoint comparison)"
 TRUST = ("the retained checkpoint is trusted as supplied: this comparison only shows whether the current chain "
          "contains that seq with that self hash")
-UNDETECTABLE = ("an altered checkpoint that agrees with an altered chain is not detectable by this comparison; "
-                "events after the checkpoint seq are not covered by it")
+UNDETECTABLE = "an altered checkpoint that agrees with an altered chain is not detectable by this comparison"
 DISCLAIMER = "not an authenticity claim"
+SCOPE = ("chain verification (levels 1-2) shows internal consistency only, never who wrote an event; a matching "
+         "checkpoint need not equal the current head and proves nothing about events after its seq")
 
 
 def _levels(result: dict, pre_problems: list[str]) -> dict[str, str]:
@@ -68,6 +71,16 @@ def _levels(result: dict, pre_problems: list[str]) -> dict[str, str]:
     ledger = result.get("ledger_problems") or {}
     l2 = "failed" if ledger.get("integrity") else "passed"
     return {"1": f"chain consistency: {l1}", "2": f"accidental-corruption check (integrity_check): {l2}"}
+
+
+def _statement(status: str, seq: int, head_seq: int) -> str:
+    """One sentence on what the comparison found; a match below the head says so (older checkpoints stay valid)."""
+    if status != "match":
+        return f"the current chain does not contain seq {seq} with the retained self hash ({status})"
+    if seq < head_seq:
+        return (f"the current chain contains seq {seq} with the retained self hash; the head is now seq {head_seq} "
+                f"and events {seq + 1}-{head_seq} are not covered by this checkpoint")
+    return f"the current chain contains seq {seq} with the retained self hash (seq {seq} is the current head)"
 
 
 def compare(result: dict, checkpoint: tuple[int, str] | None, chains: dict[str, list[tuple[int, str]]]) -> dict:
@@ -98,7 +111,6 @@ def compare(result: dict, checkpoint: tuple[int, str] | None, chains: dict[str, 
     result["checkpoint"] = {
         "job": job, "seq": seq, "expected_self": expected, "found_self": found, "head_seq": head_seq,
         "status": status, "level_reached": LEVEL_3, "levels": levels,
-        "statement": (f"the current chain contains seq {seq} with the retained self hash" if status == "match" else
-                      f"the current chain does not contain seq {seq} with the retained self hash ({status})"),
-        "trust": TRUST, "limits": UNDETECTABLE, "disclaimer": DISCLAIMER}
+        "statement": _statement(status, seq, head_seq),
+        "scope": SCOPE, "trust": TRUST, "limits": UNDETECTABLE, "disclaimer": DISCLAIMER}
     return result
