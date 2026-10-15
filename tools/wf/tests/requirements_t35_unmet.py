@@ -12,7 +12,7 @@ unchanged, into normal discovery when the real mechanism made it pass on Windows
   R3a -> test_t35_stray_files.py (export.check lists the export directory, A3; Zen's A3 delivery)
   R3b -> test_t35_verify_ledger_dir.py (verify lists the ledger directory, A3; PR #20)
 The file is kept (not deleted as cleanup) so the separately runnable register stays discoverable; it now reports
-`Ran 0 tests` / OK. Status is still reported in two lines: normal regression suite and this register. Closing these
+`Ran 0 tests` / `NO TESTS RAN` (unittest exit status 5, not a failure). Status is still reported in two lines: normal regression suite and this register. Closing these
 four assertions does not by itself establish full foundation completion (see the coverage map addendum).
 """
 from __future__ import annotations

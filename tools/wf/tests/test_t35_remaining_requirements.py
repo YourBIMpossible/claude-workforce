@@ -239,8 +239,7 @@ class R3UnexpectedFilesInLedgerAndRuntimeFolders(_Flow):
         self.start()
         stray = os.path.join(paths.export_dir(self.db, "j"), "stray.txt")
         with open(stray, "w", encoding="utf-8") as fh:
-            fh.write("unexpected
-")
+            fh.write("unexpected\n")
         v = self.verify()
         self.assertFalse(v["clean"], v)
         self.assertIn("unexpected export file: stray.txt", v["jobs"]["j"]["export"])
@@ -254,8 +253,7 @@ class R3UnexpectedFilesInLedgerAndRuntimeFolders(_Flow):
         self.start()
         stray = os.path.join(paths.export_dir(self.db, "j"), "stray.txt")
         with open(stray, "w", encoding="utf-8") as fh:
-            fh.write("unexpected
-")
+            fh.write("unexpected\n")
         c, e = self.run_wf("export", "j")
         self.assertNotEqual(c, 0, e)
         self.assertEqual(e.get("code"), "export-error", e)
