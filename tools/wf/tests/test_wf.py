@@ -191,10 +191,16 @@ class T03Validate(Base):
         self.assertEqual(r["axes"]["authority"], "in-force")
 
     def test_T05b_block_hash_repeatable_on_fresh_ledger(self):
-        """TD-1 repeatability: the owner's hash, given once, matches the block on a fresh ledger."""
+        """TD-1 repeatability: the owner's hash, given once, matches the block on a fresh ledger.
+        Fixture correction (White, A1 wiring, owner grant 2026-10-15 ~15:05): the fresh ledger lives in its own
+        `fresh/ledger/` directory. The spec places the ledger at `ledger/` (FIRST-RELEASE-SPEC.md section 3 storage
+        design, section 4.3 boundary) and `wf job new` now captures the changed-set baseline over the monitored
+        boundary, whose root is the parent of a directory named `ledger` (frozen interface, issue #13): a ledger in
+        a directory named `ledger2` has no establishable boundary and `wf job new` refuses with that exact blocker
+        (test_t35_wiring.py). The hash-repeatability assertion is unchanged."""
         self.new_job()
         h1 = self.activate()
-        self.db = os.path.join(self.dir, "ledger2", "l.db")
+        self.db = os.path.join(self.dir, "fresh", "ledger", "l.db")
         time.sleep(0.01)
         self.new_job()
         code, res = self.run_wf("grant", "propose", "j", "--grant", self.gpath, role="coordinator", session="C1")
