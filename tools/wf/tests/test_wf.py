@@ -240,7 +240,8 @@ class T08Flow(Base):
         bad = dict(results, changed_paths=["jobs/j/work/a.txt", "01-PROJECT-BRIEF.md", "elsewhere.txt"])
         c, r = self.run_wf("accept", "j", "--results", json.dumps(bad), role="reviewer", session="R1", msg_id="A1")
         self.assertEqual((c, r["decision"]), (0, "rejected"))
-        self.assertEqual(r["classes"]["P5"], ["01-PROJECT-BRIEF.md"]); self.assertEqual(r["classes"]["P4"], ["elsewhere.txt"])
+        # A2 (spec 4.4 lines 216/223): P4 is the fixed coordination set; a path in no scope is "unclassified"
+        self.assertEqual(r["classes"]["P5"], ["01-PROJECT-BRIEF.md"]); self.assertEqual(r["classes"]["unclassified"], ["elsewhere.txt"])
         c, r = self.run_wf("status", "j"); self.assertEqual(r["axes"]["acceptance"], "rejected")
         c, r = self.run_wf("accept", "j", "--results", json.dumps(results), role="reviewer", session="R1", msg_id="A2")
         self.assertEqual(r["decision"], "accepted")
@@ -332,10 +333,12 @@ class SpecMapGaps(Base):
     def test_spec_T35_path_classes_P1_to_P5(self):
         cl = commands.classify_paths(["jobs/j/work/a.txt", "fixtures/results/x.json", "ledger/l.db",
                                       "01-PROJECT-BRIEF.md", "elsewhere.txt"], CONTRACT)
-        # seam (dispatch-ready): P1..P5 are the required keys; further keys are lane B's per-path record
-        self.assertEqual({k: cl[k] for k in ("P1", "P2", "P3", "P4", "P5")},
+        # seam (dispatch-ready): P1..P5 are the required keys; further keys are lane B's per-path record.
+        # A2 (spec 4.4 lines 216/223): P4 is the fixed coordination set (none passed here); a path in no contract
+        # scope is "unclassified", a separate violation, no longer P4.
+        self.assertEqual({k: cl[k] for k in ("P1", "P2", "P3", "P4", "P5", "unclassified")},
                          {"P1": ["jobs/j/work/a.txt"], "P2": ["fixtures/results/x.json"], "P3": ["ledger/l.db"],
-                          "P4": ["elsewhere.txt"], "P5": ["01-PROJECT-BRIEF.md"]})
+                          "P4": [], "P5": ["01-PROJECT-BRIEF.md"], "unclassified": ["elsewhere.txt"]})
 
     def test_verify_compares_receipts_to_work_files(self):
         self.new_job(); self.activate()
