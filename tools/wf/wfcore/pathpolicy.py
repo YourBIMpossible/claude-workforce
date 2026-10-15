@@ -36,6 +36,16 @@ strip it; not resolved here), and 8.3 short-name forms ("~<digits>"; not resolva
 NOT done here, and recorded as limitations: links and junctions are not resolved; whether NTFS strips trailing
 dots/spaces or expands short names is not established by this code (lane D evidence, G-13 / G-29); outside-boundary
 changes are not detected (section 4.3).
+
+Hardening (owner grant 2026-10-15, tests/test_pathpolicy_hardening.py): malformed input fails closed instead of
+classifying something else or raising. A `changed` that is not a list (a string was iterated per character; None
+raised) and a non-string entry become one P5 violation each, recorded under their repr. A contract that is not an
+object, a scope that is not a list, a non-string glob, an empty glob or a glob that climbs above the root is listed
+under `contract_problems` and makes every entry a P5 violation (before: such globs were skipped, so an exclusion or
+watch written that way silently lost its protection). Globs now collapse ".." like paths. COM0/LPT0 and the
+superscript COM¹²³ / LPT¹²³ are device names. `violations` rejects a non-object classification, malformed result
+rows and any contract problem. Glob `*` and `**` semantics are unchanged (fnmatch; `*` crosses separators and
+"work**" also matches "workspace"): a change there is a policy decision for White, not a hardening.
 """
 from __future__ import annotations
 
@@ -57,7 +67,12 @@ LIMITATIONS: tuple[str, ...] = (
     "hashed or stat-ed, presence-only paths included",
 )
 
-_RESERVED = frozenset({"CON", "PRN", "AUX", "NUL"} | {f"COM{i}" for i in range(1, 10)} | {f"LPT{i}" for i in range(1, 10)})
+#: Win32 reserved device names: COM0-9 / LPT0-9 and the superscript forms COM¹ COM² COM³ / LPT¹ LPT² LPT³ included
+#: (hardening 2026-10-15: COM0, LPT0 and the superscripts classified as P1 before).
+_DIGITS = "0123456789¹²³"
+_RESERVED = frozenset({"CON", "PRN", "AUX", "NUL"} | {f"COM{d}" for d in _DIGITS} | {f"LPT{d}" for d in _DIGITS})
+_SCOPE_KEYS = ("exclusions", "presence_only", "read_scope", "watch", "write_scope")
+_MALFORMED_LIST = "changed-path list is "
 _ILLEGAL = re.compile(r'[<>"|?*]')
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 _SHORT = re.compile(r"~\d+$")
@@ -122,59 +137,115 @@ def resolve(path: object) -> _Resolution:
     return _Resolution(resolved, resolved.lower(), False, None)
 
 
-def _norm_glob(g: str) -> str:
-    gg = g.replace("/", "\\").lower()
-    parts = [c for c in gg.split("\\") if c not in ("", ".")]
-    return "\\".join(parts)
+def _norm_glob(g: str) -> tuple[str | None, str | None]:
+    """(comparison-form glob, problem). Same normalization as a path: separators, case, "." dropped, ".."
+    collapsed. A glob that climbs above the root, or that is empty after normalization, is a problem (hardening
+    2026-10-15: a ".." glob matched nothing, so an exclusion written with ".." was silently ineffective)."""
+    parts: list[str] = []
+    for c in g.replace("/", "\\").lower().split("\\"):
+        if c in ("", "."):
+            continue
+        if c == "..":
+            if not parts:
+                return None, "climbs outside the boundary"
+            parts.pop()
+            continue
+        parts.append(c)
+    if not parts:
+        return None, "matches nothing (empty after normalization)"
+    return "\\".join(parts), None
+
+
+def _scopes(contract: object) -> tuple[dict[str, list[str]], list[str]]:
+    """Normalized scope globs per key and the contract problems that make the classification fail closed:
+    the contract is not an object, a scope is not a list, an entry is not a string, a glob is empty or escapes."""
+    problems: list[str] = []
+    scopes: dict[str, list[str]] = {k: [] for k in _SCOPE_KEYS}
+    if not isinstance(contract, dict):
+        return scopes, ["contract is not an object"]
+    for key in _SCOPE_KEYS:
+        raw = contract.get(key, [])
+        if not isinstance(raw, list):
+            problems.append(f"{key}: scope is not a list")
+            continue
+        for i, g in enumerate(raw):
+            if not isinstance(g, str):
+                problems.append(f"{key}: entry {i} is not a string")
+                continue
+            gg, problem = _norm_glob(g)
+            if gg is None:
+                problems.append(f"{key}: entry {i} {problem}")
+                continue
+            scopes[key].append(gg)
+    return scopes, problems
 
 
 def _match(cmp: str, globs: list[str]) -> bool:
-    """Glob semantics unchanged from the pre-lane-B seam, applied to the resolved comparison form."""
-    for g in globs:
-        if not isinstance(g, str):
-            continue
-        gg = _norm_glob(g)
-        if not gg:
-            continue
+    """Glob semantics unchanged from the pre-lane-B seam, applied to the resolved comparison forms."""
+    for gg in globs:
         if cmp == gg or fnmatch.fnmatchcase(cmp, gg) or (gg.endswith("**") and cmp.startswith(gg[:-2])) \
                 or cmp.startswith(gg.rstrip("*\\") + "\\"):
             return True
     return False
 
 
-def _rule(cmp: str, contract: dict) -> tuple[str, str, str]:
+def _rule(cmp: str, scopes: dict[str, list[str]]) -> tuple[str, str, str]:
     """(class, result, reason) for a resolved in-boundary path."""
-    def scope(key: str) -> list[str]:
-        v = contract.get(key, [])
-        return v if isinstance(v, list) else []
-    if _match(cmp, scope("exclusions")):
+    if _match(cmp, scopes["exclusions"]):
         return "P5", "violation", "excluded path (P5)"
-    if _match(cmp, scope("presence_only")):
+    if _match(cmp, scopes["presence_only"]):
         return "P2", "violation", "presence-only read-only path changed (P2); never read"
-    if _match(cmp, scope("read_scope")):
+    if _match(cmp, scopes["read_scope"]):
         return "P2", "violation", "read-only path changed (P2)"
-    if _match(cmp, scope("watch")):
+    if _match(cmp, scopes["watch"]):
         return "P3", "violation", "watched configuration changed; no separate authorization can be expressed (P3)"
-    if _match(cmp, scope("write_scope")):
+    if _match(cmp, scopes["write_scope"]):
         return "P1", "allowed", "in write scope (P1)"
     return "P4", "violation", "outside every declared scope (P4)"
 
 
+def _entries(changed: object) -> tuple[list[tuple[str, object]], str | None]:
+    """(entries as (recorded string, raw value), problem). A `changed` that is not a list or tuple is one
+    malformed entry (hardening 2026-10-15: a string was iterated per character; None raised)."""
+    if isinstance(changed, (list, tuple)):
+        return [(p if isinstance(p, str) else repr(p), p) for p in changed], None
+    if isinstance(changed, str):
+        return [(changed, None)], _MALFORMED_LIST + "a string, not a list"
+    return [(repr(changed), None)], _MALFORMED_LIST + f"{type(changed).__name__}, not a list"
+
+
 def classify(changed: list[str], contract: dict) -> dict:
-    """Section 4.4 classes over the resolved paths; P1..P5 hold the caller-supplied strings verbatim."""
+    """Section 4.4 classes over the resolved paths; P1..P5 hold the caller-supplied strings verbatim.
+
+    Malformed input never classifies as allowed and never raises: a non-list `changed` or a non-string entry is
+    recorded as a P5 violation under its repr; a contract whose scopes cannot be read makes every entry a P5
+    violation and is listed under `contract_problems` (fail closed)."""
     out: dict = {k: [] for k in CLASSES}
     results: list[dict] = []
-    for p in changed:
-        r = resolve(p)
-        if r.problem is not None:
-            cls, result, reason = "P5", "violation", f"unresolvable or prohibited path: {r.problem}"
-        elif r.outside:
+    scopes, problems = _scopes(contract)
+    entries, list_problem = _entries(changed)
+    for shown, raw in entries:
+        if list_problem is not None:
+            r, problem = None, list_problem
+        elif not isinstance(raw, str):
+            r, problem = None, "not a string"  # exact text pinned by tests/test_t35_path_policy.py
+        else:
+            r = resolve(raw)
+            problem = r.problem
+        if problem is None and problems:
+            problem = "contract scopes malformed: " + problems[0] if problems[0] != "contract is not an object" \
+                else "contract is not an object"
+        if problem is not None:
+            cls, result, reason = "P5", "violation", f"unresolvable or prohibited path: {problem}"
+        elif r is not None and r.outside:
             cls, result, reason = "P5", "outside boundary (not detected)", "resolves outside boundary (P5)"
         else:
-            cls, result, reason = _rule(r.cmp or "", contract)
-        out[cls].append(p)
-        results.append({"path": p, "resolved": r.resolved, "class": cls, "result": result, "reason": reason})
+            cls, result, reason = _rule((r.cmp if r is not None else None) or "", scopes)
+        out[cls].append(shown)
+        results.append({"path": shown, "resolved": r.resolved if r is not None else None, "class": cls,
+                        "result": result, "reason": reason})
     out["results"] = results
+    out["contract_problems"] = problems
     out["limitations"] = list(LIMITATIONS)
     out["comparison"] = "string resolution only; no path was read, hashed or stat-ed"
     return out
@@ -184,7 +255,10 @@ def violations(classes: dict) -> list[str]:
     """Reason strings that reject the acceptance; every string names the offending paths.
 
     With per-path `results` (a classify() output) the reasons are grouped by kind. Without them (a bare class dict)
-    the rule is applied to the lists: P2, P3, P4 and P5 entries are violations, fail closed."""
+    the rule is applied to the lists: P2, P3, P4 and P5 entries are violations, fail closed. A classification that
+    is not an object, a malformed result row and any `contract_problems` entry each reject as well."""
+    if not isinstance(classes, dict):
+        return [f"classification malformed: {type(classes).__name__} is not an object (fail closed)"]
     results = classes.get("results")
     if not isinstance(results, list):
         p2 = [str(x) for x in classes.get("P2", [])]
@@ -203,8 +277,12 @@ def violations(classes: dict) -> list[str]:
     scope_bad: list[str] = []
     escaped: list[str] = []
     unresolved: list[str] = []
-    for r in results:
-        if not isinstance(r, dict) or r.get("result") == "allowed":
+    malformed_rows: list[str] = []
+    for i, r in enumerate(results):
+        if not isinstance(r, dict):
+            malformed_rows.append(f"row {i} ({type(r).__name__})")
+            continue
+        if r.get("result") == "allowed":
             continue
         path, cls, reason = str(r.get("path")), r.get("class"), str(r.get("reason", ""))
         if reason.startswith("unresolvable"):
@@ -232,4 +310,10 @@ def violations(classes: dict) -> list[str]:
                    "not detected): " + ", ".join(escaped))
     if unresolved:
         out.append("unresolvable or prohibited paths (fail closed): " + ", ".join(unresolved))
+    if malformed_rows:
+        out.append("malformed result row(s) in the classification (fail closed): " + ", ".join(malformed_rows))
+    problems = classes.get("contract_problems")
+    if problems:
+        out.append("contract scopes malformed (fail closed): "
+                   + "; ".join(str(x) for x in (problems if isinstance(problems, list) else [problems])))
     return out
