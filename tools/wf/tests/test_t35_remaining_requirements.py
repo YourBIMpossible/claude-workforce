@@ -14,7 +14,9 @@ A requirement whose mechanism the product does not have gets a `test_LIMIT_<subj
 PR #15 correction 1/3; lane rule issue #13): it asserts the ACTUAL present behaviour, and its docstring carries the
 spec sentence, the missing mechanism and "missing-implementation; T35 stays PARTIAL on this element". No decorator
 of any kind; no expected PASS is invented; such a test fails the day the behaviour changes, so the limit cannot
-drift silently. P3 stays fail-closed; 8.3 short names and NTFS behaviour are not touched here (lane D evidence).
+drift silently. A LIMIT test closes no requirement: the four requirement assertions stay failing, separately
+runnable, in tools/wf/tests/requirements_t35_unmet.py (owner correction 2026-10-15, issue #13). P3 stays
+fail-closed; 8.3 short names and NTFS behaviour are not touched here (lane D evidence).
 
 Fixtures: fresh scratch under WF_TEST_TMP (test_wf.Base), CONTRACT from test_wf (write jobs/j/work/**, read tools/wf/**,
 watch ledger/**, presence_only fixtures/results/**, exclusions 01-PROJECT-BRIEF.md) or a variant built per test.
