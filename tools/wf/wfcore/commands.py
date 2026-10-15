@@ -9,7 +9,7 @@ import time
 from typing import Any
 
 from . import db as dbm
-from . import checkpointcmp, export, markers, pathpolicy, paths, txn
+from . import changeset, checkpointcmp, export, markers, pathpolicy, paths, txn
 from .canon import canonical, sha256_file, sha256_obj, sha256_text
 from .db import OpLog, WfRefused, WfRejected, WfUsage
 from .faults import Faults
@@ -72,9 +72,21 @@ def job_new(db: str, job: str, contract_src: str, msg_id: str, role: str, sessio
         conn.execute("INSERT INTO contracts (job, sha256, content, created_ts) VALUES (?,?,?,?)",
                      (job, csha, canonical(contract), now_ts()))
 
-    res = _append(db, job, faults, oplog, etype="contract", content={"contract": contract}, msg_id=msg_id,
-                  role=role, session=session, generation=generation, pre_insert=pre_insert, allow_no_contract=True)
+    root = changeset.boundary_root(db)
+    if root is None:  # A1 (owner grant 2026-10-15): no boundary -> exact blocker, no arbitrary scan, no job
+        raise WfRefused(f"changed-set boundary cannot be established: the ledger directory of {db!r} is not named "
+                        f"'ledger' (no event recorded)")
+    base = changeset.baseline(root, contract)
+    if base.get("problems"):
+        raise WfRefused("changed-set baseline could not be captured (fail closed, no event recorded): "
+                        + "; ".join(map(str, base["problems"])))
+    # The baseline rides in the contract event's content beside the contract (chain-protected; the contract sha
+    # and the contract-first-event rule are unchanged; validate_content still requires only "contract").
+    res = _append(db, job, faults, oplog, etype="contract", content={"contract": contract, "baseline_manifest": base},
+                  msg_id=msg_id, role=role, session=session, generation=generation, pre_insert=pre_insert,
+                  allow_no_contract=True)
     res["contract_sha256"] = csha
+    res["baseline_entries"] = len(base.get("entries", {}))
     return res
 
 
@@ -572,6 +584,46 @@ def checkpoint(db: str, job: str) -> dict[str, Any]:
 classify_paths = pathpolicy.classify  # compatibility alias (test_wf.py); policy lives in pathpolicy (lane B)
 
 
+_NO_BASELINE = "baseline evidence missing (job predates changed-set capture); fail closed"
+
+
+def _coordination(db: str, job: str) -> list[str] | None:
+    """Spec 4.4 P4 coordination set for this ledger, relative to the boundary root; None when no boundary."""
+    root = changeset.boundary_root(db)
+    if root is None:
+        return None
+    ledger_rel = os.path.relpath(paths.ledger_dir(db), root).replace("\\", "/")
+    return pathpolicy.coordination_globs(job, ledger_rel, os.path.basename(os.path.abspath(db)))
+
+
+def _observed_changes(db: str, job: str, contract: dict, rows: list[dict[str, Any]]) -> tuple[dict[str, Any], list[str]]:
+    """A1: changed set observed inside the boundary since `wf job new` (baseline in the contract event payload),
+    Deletions come from the captured baseline only: a declared manifest path that never existed at `wf job new`
+    is not a deletion (fixtures declare manifests without materialising them).
+    Returns (observed, reasons); a non-empty `reasons` rejects the acceptance (fail closed). Presence-only paths
+    are never read or hashed (changeset.baseline/compare); nothing outside the boundary is touched."""
+    observed: dict[str, Any] = {"added": [], "modified": [], "deleted": [], "problems": [], "limitations": []}
+    reasons: list[str] = []
+    root = changeset.boundary_root(db)
+    if root is None:
+        return observed, ["changed-set boundary cannot be established (ledger directory not named 'ledger'); fail closed"]
+    first = rows[0] if rows else None
+    base = None
+    if first is not None and first["type"] == "contract":
+        try:
+            base = json.loads(first["content"]).get("baseline_manifest")
+        except (ValueError, AttributeError):
+            base = None
+    if not isinstance(base, dict) or not isinstance(base.get("entries"), dict):
+        return observed, [_NO_BASELINE]
+    cmp = changeset.compare(root, contract, base)
+    for k in ("added", "modified", "deleted", "problems", "limitations"):
+        observed[k] = [str(x) for x in cmp.get(k, [])]
+    if observed["problems"]:
+        reasons.append("changed-set comparison incomplete (fail closed): " + "; ".join(observed["problems"]))
+    return observed, reasons
+
+
 def accept(db: str, job: str, results_src: str, msg_id: str, role: str, session: str, generation: int,
            faults: Faults, oplog: OpLog) -> dict[str, Any]:
     if role != "reviewer":
@@ -609,8 +661,12 @@ def accept(db: str, job: str, results_src: str, msg_id: str, role: str, session:
                              "actual": None if r is None else r.get("actual"), "pass": ok,
                              "missing": r is None})
         extra = [k for k in got if k not in want]
-        classes = pathpolicy.classify([str(p) for p in results["changed_paths"]], contract)
-        violations = pathpolicy.violations(classes)  # reason strings (lane B)
+        supplied = [str(p) for p in results["changed_paths"]]
+        observed, changeset_reasons = _observed_changes(db, job, contract, rows)
+        # The reviewer's list can never hide an observed change: classification runs over the union (A1).
+        changed = list(dict.fromkeys(supplied + observed["added"] + observed["modified"] + observed["deleted"]))
+        classes = pathpolicy.classify(changed, contract, coordination=_coordination(db, job))
+        violations = list(changeset_reasons) + pathpolicy.violations(classes)  # reason strings (lane B)
         declaration_reasons = validate.accept_declarations(results, contract, csha)  # T24 (lane A)
         env_ok = str(results["environment"]) == str(contract.get("environment"))
         decision = ("accepted" if all_pass and not violations and not extra and env_ok and not declaration_reasons
@@ -626,7 +682,9 @@ def accept(db: str, job: str, results_src: str, msg_id: str, role: str, session:
                            f"{contract.get('environment')!r}")
         content = {"decision": decision, "reason": "; ".join(reasons), "criteria": crit_out,
                    "environment": str(results["environment"]), "limits": str(results["limits"]),
-                   "changed_paths": classes, "builder_session": ",".join(sorted(builder_sessions)),
+                   "changed_paths": classes, "changed_paths_supplied": supplied, "observed_changes": observed,
+                   "undeclared": sorted(set(observed["added"] + observed["modified"] + observed["deleted"]) - set(supplied)),
+                   "builder_session": ",".join(sorted(builder_sessions)),
                    "results_sha256": sha256_obj(results)}
         holder.update(decision=decision, reasons=reasons, classes=classes)
         return build_row(conn, job, head_seq, head_self, etype="accept", msg_id=msg_id, author_role=role,
