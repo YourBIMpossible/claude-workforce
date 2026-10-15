@@ -14,6 +14,9 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_pathpolicy_hardening.py | B |
 | tools/wf/tests/test_t35_remaining_requirements.py | B |
 | tools/wf/tests/requirements_t35_unmet.py | B |
+| tools/wf/wfcore/changeset.py | B |
+| tools/wf/tests/test_t35_changeset.py | B |
+| tools/wf/tests/test_t35_stray_files.py | A |
 | tools/wf/tests/test_transaction_sequence_requirements.py | C |
 | tools/wf/tests/test_export_temp_preservation.py | A |
 | tools/wf/wfcore/checkpointcmp.py | C |
@@ -36,5 +39,9 @@ Lane A owns only the body of `accept_declarations` inside validate.py; other fun
 | C | MyBuddy | `sprint/mybuddy-checkpoint-clarity` (worker-chosen, delivered as PR #10; `lane/c-checkpoint-wording` unused) | C rows + `tools/wf/tests/test_checkpoint_clarity.py` (new, delivered) |
 | B2 | Plexy | worker-chosen (follow-on, owner direction 2026-10-15) | `tools/wf/tests/test_t35_remaining_requirements.py` (new, delivered PR #15) and `tools/wf/tests/requirements_t35_unmet.py` (new, separately runnable requirement tests; owner correction 2026-10-15 ~14:50) only |
 | C2 | MyBuddy | worker-chosen (follow-on, owner direction 2026-10-15) | `tools/wf/tests/test_transaction_sequence_requirements.py` (new) only |
+| B3 (A1+A2) | Plexy | worker-chosen (owner grant 2026-10-15 ~15:05 "T35 REQUIREMENT REPAIRS A1-A3 + T28") | `tools/wf/wfcore/changeset.py` (new), `tools/wf/wfcore/pathpolicy.py`, `tools/wf/tests/test_t35_changeset.py` (new), B test rows; proposed patches for `commands.py` / `test_wf.py` go to White as diffs |
+| A2 (A3) | Zen | worker-chosen (same grant) | `tools/wf/wfcore/export.py`, `tools/wf/tests/test_t35_stray_files.py` (new) |
+| C3 (T28 2+4) | MyBuddy | worker-chosen (same grant) | `tools/wf/tests/test_transaction_sequence_requirements.py` only |
+| W (wiring) | White | `sprint/white-a123-wiring` | `tools/wf/wfcore/commands.py` (job_new baseline payload, accept changed-set + P4 coordination wiring, verify ledger-dir listing), shared integration tests (`test_wf.py` fixture corrections from Plexy's diff), OWNERS/MANIFEST |
 
 Branch names are registration only; the checker validates paths by lane letter (`--lane A|B|C`), not branch names.
