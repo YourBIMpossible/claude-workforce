@@ -187,7 +187,9 @@ class T35Classes(Base):
         self.new_job(); self.activate()
         self.run_wf("append", "j", "--type", "delivered", "--content",
                     json.dumps({"claims": [{"claim": "done", "evidence": ["jobs/j/work/a.txt"]}]}))
-        for p, tag in (("fixtures/results/x.json", "(P2)"), ("ledger/l.db", "(P3")):
+        # A2: ledger/l.db is a coordination path (spec 4.4 P4 row) and precedes P3 once the caller passes the
+        # coordination set, so the P3 case uses a watched path that is NOT in the coordination set.
+        for p, tag in (("fixtures/results/x.json", "(P2)"), ("ledger/settings.cfg", "(P3")):
             with self.subTest(path=p):
                 bad = dict(RESULTS_OK, changed_paths=["jobs/j/work/a.txt", p])
                 c, r = self.run_wf("accept", "j", "--results", json.dumps(bad), role="reviewer", session="R1",
