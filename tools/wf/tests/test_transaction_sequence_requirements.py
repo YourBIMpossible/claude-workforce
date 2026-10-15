@@ -19,6 +19,16 @@ TConflict, T27Markers are not repeated):
       connect entry point in wfcore.db); asserts at most one connection in a write reservation at any instant and
       never a BEGIN IMMEDIATE on a connection already in a transaction. Not a source scan.
 
+  R6  T28 "wf never deletes or moves a journal file" (issue #14 item 2): the real hot journal left by the
+      kill-before-commit seam is watched by identity (inode/size) while every Python-level removal/rename entry
+      point (os.remove/unlink/rename/replace) is instrumented; status, verify, digest and one append run
+      in-process. Any removal of the journal by wf's Python code would be recorded; the engine's own removal
+      (SQLite rolls a hot journal back and unlinks it in DELETE mode, inside the C library) is not visible to the
+      hook and is the stated observation limit.
+  R7  D-018 observation (issue #14 item 4): whether the journal is still present after the next open is pinned as
+      an observation with exact wording, not as a pass/fail requirement.
+  The seams are fault injection (D-018): none of this is OS-kill or power-loss qualification.
+
 Export freshness is recorded, never asserted as part of sequence success (lane A's export regression is separate).
 All data under this test's fresh WF_TEST_TMP scratch; no sleep over one second; every wait is bounded."""
 from __future__ import annotations
@@ -31,6 +41,7 @@ import sys
 import threading
 import time
 import unittest
+import platform
 
 from test_wf import Base, WF_DIR, log  # noqa: E402  (sets sys.path to the wf package)
 import wf  # noqa: E402
@@ -51,7 +62,8 @@ def wait_until(pred, timeout: float, what: str) -> None:
         time.sleep(POLL)
 
 
-class TxSeq(Base):
+class _Procs(Base):
+    """Process/chain helpers shared by the test classes below (no tests of its own)."""
     # ---------------------------------------------------------------- process helpers
     def spawn(self, *argv: str, job_db: str | None = None, role: str = "builder", session: str = "B1",
               msg_id: str | None = None, faults: str | None = None, oplog: bool = True) -> subprocess.Popen:
@@ -113,6 +125,8 @@ class TxSeq(Base):
         log(f"{self._testMethodName}-{tag}", {"export": {j: v["export"] for j, v in r["jobs"].items()}, "clean": r["clean"]})
         return r
 
+
+class TxSeq(_Procs):
     # ---------------------------------------------------------------- R1
     def test_R1_two_jobs_contended_exact_committed_set(self):
         """Six writers at once: three per job, mixed types. Each exits 0 (committed) or lock-timeout (spec-permitted,
@@ -333,6 +347,123 @@ class TxSeq(Base):
             dbm.sqlite3.connect = real_connect
         log(f"{self._testMethodName}-reservations", per_step)
         self.assertTrue(commands.verify(self.db, "j")["clean"])
+
+
+class T28Journal(_Procs):
+    """Issue #14 items 2 and 4. Precondition reused from test_b1_gaps T28: the kill-before-commit seam leaves a real
+    rollback journal (`<db>-journal`, non-empty) on disk before any wf open."""
+
+    def kill_before_commit(self) -> dict:
+        self.new_job(); self.activate(); self.intent(note="before")
+        journal = self.db + "-journal"
+        self.assertFalse(os.path.exists(journal))
+        p = self.spawn("append", "j", "--type", "intent", "--content", INTENT % "killed", faults="kill-before-commit",
+                       oplog=False)
+        res = self.collect([p], timeout=30.0)[0]
+        self.assertEqual(res["code"], 3, res)
+        self.assertTrue(os.path.exists(journal), "no hot journal after the kill: evidence gap, not a product finding")
+        st = os.stat(journal)
+        self.assertGreater(st.st_size, 0)
+        return {"path": journal, "ino": st.st_ino, "size": st.st_size, "head": commands_head_before(self.db)}
+
+    def test_R6_wf_never_deletes_or_moves_the_hot_journal(self):
+        """Instrumented os.remove/os.unlink/os.rename/os.replace (the only removal/rename entry points the product
+        uses: markers.delete -> os.remove, markers/export -> os.replace, export -> os.unlink). Runs status, verify,
+        digest, one append (refused by the committing-marker guard, code uncertain-write-pending, §4.4a: nothing written), `wf resolve`
+        (NOT-COMMITTED) and one append (COMMITTED at head+1), in-process, starting with the hot journal present. Asserts: no recorded call names the
+        journal path (or any `*-journal` path under the ledger dir); every recorded call targets a marker or export
+        file; the ledger database path itself is never removed or renamed; after the sequence the chain is the
+        prior valid state (rolled back, no partial row) and the append committed at head+1. Observation limit: a
+        journal that disappears without a recorded call was removed by SQLite itself (hot-journal rollback on open,
+        DELETE journal mode, inside the engine), which the spec allows and this hook cannot see."""
+        j = self.kill_before_commit()
+        calls: list[tuple[str, str, str | None]] = []
+        real = {n: getattr(os, n) for n in ("remove", "unlink", "rename", "replace")}
+
+        def hook(name):
+            def f(src, *a, **k):
+                dst = a[0] if a and isinstance(a[0], (str, bytes, os.PathLike)) else None
+                calls.append((name, os.fspath(src), os.fspath(dst) if dst is not None else None))
+                return real[name](src, *a, **k)
+            return f
+
+        timeline = []
+        for n in real:
+            setattr(os, n, hook(n))
+        try:
+            ms = markers.list_markers(self.db, "j"); self.assertEqual(len(ms), 1)
+            steps = (("status", lambda: commands.status(self.db, "j")), ("verify", lambda: commands.verify(self.db, "j")),
+                     ("digest", lambda: commands.digest(self.db, "j")),
+                     ("append-refused-by-marker-guard", lambda: self.intent(note="while-marker-pending")),
+                     ("resolve", lambda: self.run_wf("resolve", "j", str(ms[0].seq), "--attempt", ms[0].attempt_id)),
+                     ("append", lambda: self.intent(note="after-kill")))
+            outcomes = {}
+            for name, fn in steps:
+                before = os.path.exists(j["path"]); n0 = len(calls)
+                outcomes[name] = fn()
+                timeline.append({"cmd": name, "journal_before": before, "journal_after": os.path.exists(j["path"]),
+                                 "calls_during": calls[n0:]})
+            c, r = outcomes["append-refused-by-marker-guard"]
+            self.assertNotEqual(c, 0, r); self.assertEqual(r.get("code"), "uncertain-write-pending", r)  # §4.4a guard, no row
+            c, r = outcomes["resolve"]; self.assertEqual((c, r["outcome"]), (0, "NOT-COMMITTED"), r)
+            c, r = outcomes["append"]; self.assertEqual((c, r["outcome"]), (0, "COMMITTED"), r)
+        finally:
+            for n, f in real.items():
+                setattr(os, n, f)
+        ledger_dir = os.path.dirname(self.db)
+        for name, src, dst in calls:
+            for pth in (src, dst):
+                if pth is None:
+                    continue
+                self.assertNotEqual(os.path.abspath(pth), os.path.abspath(j["path"]), (name, src, dst))
+                self.assertFalse(pth.endswith("-journal"), (name, src, dst))
+                self.assertNotEqual(os.path.abspath(pth), os.path.abspath(self.db), (name, src, dst))
+                if paths.is_under(os.path.abspath(pth), ledger_dir):
+                    self.assertIn(os.sep + "pending" + os.sep, os.path.abspath(pth), (name, src, dst))  # marker files only
+        rows = self.rows()
+        self.assertEqual(rows[-1]["seq"], j["head"] + 1)  # killed attempt rolled back, the later append took head+1
+        self.assertEqual([r["content"] for r in rows if "killed" in r["content"]], [])
+        self.assert_chain_recomputed(rows, "j")
+        gone_without_call = [t["cmd"] for t in timeline if t["journal_before"] and not t["journal_after"] and
+                             not any(c[1].endswith("-journal") for c in t["calls_during"])]
+        log(f"{self._testMethodName}-timeline", {"journal": j, "timeline": timeline, "platform": platform.platform(),
+                                                 "removed_by_engine_during": gone_without_call,
+                                                 "limit": "a journal removed without a recorded Python call was removed "
+                                                          "by SQLite (hot-journal rollback), not by wf; fault-seam "
+                                                          "evidence (D-018), not OS-kill or power-loss qualification"})
+        self.assertTrue(commands.verify(self.db, "j")["clean"])
+
+    def test_R7_D018_journal_presence_after_next_open_observation(self):
+        """D-018 retained observation, pinned as observation (not a requirement): after kill-before-commit the hot
+        journal is present before any open (asserted precondition); the next open is `wf verify`; whether the
+        journal is still present afterwards is recorded with this exact wording:
+        "journal present after the next open: <True|False> (<platform>); when False the engine removed it on
+        hot-journal rollback, wf issued no removal". The head is unchanged by the open and no partial row exists."""
+        j = self.kill_before_commit()
+        calls = []
+        real_remove, real_unlink = os.remove, os.unlink
+        os.remove = lambda p, *a, **k: (calls.append(os.fspath(p)), real_remove(p, *a, **k))[1]
+        os.unlink = lambda p, *a, **k: (calls.append(os.fspath(p)), real_unlink(p, *a, **k))[1]
+        try:
+            r = commands.verify(self.db, "j")  # the next open
+        finally:
+            os.remove, os.unlink = real_remove, real_unlink
+        present = os.path.exists(j["path"])
+        same_file = present and os.stat(j["path"]).st_ino == j["ino"]
+        wording = (f"journal present after the next open: {present} ({platform.system()} {platform.release()}, "
+                   f"sqlite {sqlite3.sqlite_version}); "
+                   + ("the file identity is unchanged (wf did not replace it)" if same_file else
+                      "when False the engine removed it on hot-journal rollback, wf issued no removal"))
+        self.assertEqual([c for c in calls if c.endswith("-journal")], [])
+        self.assertEqual(r["jobs"]["j"]["head"]["seq"], j["head"]); self.assertEqual(r["jobs"]["j"]["problems"], [])
+        self.assertEqual(len(self.rows()), j["head"])
+        self.assertIsInstance(present, bool)
+        log(f"{self._testMethodName}-observation", {"wording": wording, "present": present, "same_inode": same_file,
+                                                    "removal_calls": calls, "D-018": "observation only; not pass/fail"})
+
+
+def commands_head_before(db: str) -> int:
+    return commands.status(db, "j")["head"]["seq"]
 
 
 if __name__ == "__main__":
