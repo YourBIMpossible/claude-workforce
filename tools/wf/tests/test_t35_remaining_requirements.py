@@ -14,7 +14,7 @@ A requirement whose mechanism the product does not have gets a `test_LIMIT_<subj
 PR #15 correction 1/3; lane rule issue #13): it asserts the ACTUAL present behaviour, and its docstring carries the
 spec sentence, the missing mechanism and "missing-implementation; T35 stays PARTIAL on this element". No decorator
 of any kind; no expected PASS is invented; such a test fails the day the behaviour changes, so the limit cannot
-drift silently. A LIMIT test closes no requirement: the four requirement assertions stay failing, separately
+drift silently. A LIMIT test closes no requirement: the remaining requirement assertions (three after the R3b ledger-listing mechanism landed) stay failing, separately
 runnable, in tools/wf/tests/requirements_t35_unmet.py (owner correction 2026-10-15, issue #13). P3 stays
 fail-closed; 8.3 short names and NTFS behaviour are not touched here (lane D evidence).
 
@@ -262,21 +262,6 @@ class R3UnexpectedFilesInLedgerAndRuntimeFolders(_Flow):
         self.assertTrue(v["clean"], v)
         self.assertEqual(v["jobs"]["j"]["export"], [])
         self.assertNotIn("stray.txt", json.dumps(v))
-
-    def test_LIMIT_added_stray_file_in_the_ledger_folder_is_unobserved_by_verify(self):
-        """R3 limit (observed present behaviour). Spec sentence (section 4.4 P4 row): "Added or deleted files in the
-        ledger/runtime folders other than the listed ones -> violation". Present behaviour: an added file beside the
-        ledger database (ledger/stray.db) is NOT observed by any command; verify checks schema, integrity, chain,
-        export and markers (commands.verify) and never lists the ledger directory, so clean stays true and the name
-        appears nowhere in the result. Missing mechanism: a ledger/runtime folder listing against the allowed set
-        (database, its journal, pending markers). missing-implementation; T35 stays PARTIAL on this element."""
-        self.start()
-        stray = os.path.join(paths.ledger_dir(self.db), "stray.db")
-        with open(stray, "w", encoding="utf-8") as fh:
-            fh.write("unexpected\n")
-        v = self.verify()
-        self.assertTrue(v["clean"], v)
-        self.assertNotIn("stray.db", json.dumps(v))
 
     def test_stray_files_survive_export_refresh_and_remain_unreported(self):
         """R3 observed, current behaviour pinned honestly: after `wf export` regenerates the four files, the stray
