@@ -31,9 +31,11 @@ class T35Classes(Base):
         cl = commands.classify_paths(["jobs/j/work/a.txt", "fixtures/results/x.json", "ledger/l.db",
                                       "01-PROJECT-BRIEF.md", "elsewhere.txt"], CONTRACT)
         self.assertIs(commands.classify_paths, pathpolicy.classify)
-        self.assertEqual({k: cl[k] for k in pathpolicy.CLASSES},
+        # A2 (spec 4.4 lines 216/223): P4 is the fixed coordination set, supplied by the caller; without one a path
+        # in no scope is "unclassified" (a separate violation), no longer P4.
+        self.assertEqual({k: cl[k] for k in (*pathpolicy.CLASSES, "unclassified")},
                          {"P1": ["jobs/j/work/a.txt"], "P2": ["fixtures/results/x.json"], "P3": ["ledger/l.db"],
-                          "P4": ["elsewhere.txt"], "P5": ["01-PROJECT-BRIEF.md"]})
+                          "P4": [], "P5": ["01-PROJECT-BRIEF.md"], "unclassified": ["elsewhere.txt"]})
         self.assertEqual(_result(cl, "jobs/j/work/a.txt")["result"], "allowed")
         self.assertEqual(pathpolicy.violations(pathpolicy.classify(["jobs/j/work/a.txt", "jobs/j/work/sub/b.md"],
                                                                    CONTRACT)), [])
@@ -43,12 +45,13 @@ class T35Classes(Base):
         # states the limitation. Every class rule is therefore asserted once per class, for all kinds at once.
         cl = pathpolicy.classify(["jobs/j/work/new.txt", "tools/wf/wf.py", "fixtures/results/r.json",
                                   "ledger/l.db", "elsewhere.txt", "01-PROJECT-BRIEF.md"], CONTRACT)
-        self.assertEqual([r["class"] for r in cl["results"]], ["P1", "P2", "P2", "P3", "P4", "P5"])
+        self.assertEqual([r["class"] for r in cl["results"]], ["P1", "P2", "P2", "P3", "unclassified", "P5"])
         self.assertTrue(any("change kind" in x for x in cl["limitations"]))
         v = pathpolicy.violations(cl)
         self.assertTrue(any("tools/wf/wf.py" in x and "fixtures/results/r.json" in x and "(P2)" in x for x in v), v)
         self.assertTrue(any("ledger/l.db" in x and "(P3" in x for x in v), v)
-        self.assertTrue(any("elsewhere.txt" in x and "01-PROJECT-BRIEF.md" in x and "(P4)" in x for x in v), v)
+        self.assertTrue(any("elsewhere.txt" in x and "unclassified" in x for x in v), v)
+        self.assertTrue(any("01-PROJECT-BRIEF.md" in x and "(P5)" in x for x in v), v)
         self.assertFalse(any("jobs/j/work/new.txt" in x for x in v), v)
 
     def test_P2_change_rejects(self):
@@ -76,7 +79,7 @@ class T35Classes(Base):
         cl = pathpolicy.classify(["cfg/settings.json", "cfg/other.txt"], c)
         self.assertEqual((cl["P3"], cl["P1"]), (["cfg/settings.json"], ["cfg/other.txt"]))
 
-    def test_P4_is_not_hash_compared_and_nothing_is_read(self):
+    def test_unclassified_is_not_hash_compared_and_nothing_is_read(self):
         def boom(*a, **k):
             raise AssertionError("the path policy must not touch the filesystem")
         saved = (builtins.open, os.stat, os.path.exists, os.path.realpath)
@@ -86,7 +89,7 @@ class T35Classes(Base):
             v = pathpolicy.violations(cl)
         finally:
             builtins.open, os.stat, os.path.exists, os.path.realpath = saved
-        self.assertEqual(cl["P4"], ["elsewhere.txt"])
+        self.assertEqual(cl["unclassified"], ["elsewhere.txt"])
         self.assertIn("no path was read", cl["comparison"])
         self.assertTrue(any("elsewhere.txt" in x for x in v), v)
 
@@ -145,7 +148,8 @@ class T35Classes(Base):
         for p, why in cases.items():
             with self.subTest(path=p):
                 cl = pathpolicy.classify([p], CONTRACT)
-                self.assertEqual(cl["P5"], [p]); self.assertEqual(cl["P1"] + cl["P2"] + cl["P3"] + cl["P4"], [])
+                self.assertEqual(cl["P5"], [p])
+                self.assertEqual(cl["P1"] + cl["P2"] + cl["P3"] + cl["P4"] + cl["unclassified"], [])
                 r = _result(cl, p)
                 self.assertEqual(r["result"], "violation"); self.assertIn(why, r["reason"])
                 v = pathpolicy.violations(cl)
@@ -171,7 +175,7 @@ class T35Classes(Base):
         for p in paths[:-1]:
             self.assertIn(p, joined, p)
         self.assertNotIn("jobs/j/work/ok.txt", joined)
-        self.assertEqual(len(v), 5)  # P2, P3, P4/P5, escape, unresolvable: one string per kind
+        self.assertEqual(len(v), 6)  # P2, P3, P5, unclassified, escape, unresolvable: one string per kind
 
     def test_violations_on_a_bare_class_dict_fails_closed(self):
         self.assertEqual(pathpolicy.violations({"P1": ["x"], "P4": [], "P5": []}), [])
@@ -183,7 +187,9 @@ class T35Classes(Base):
         self.new_job(); self.activate()
         self.run_wf("append", "j", "--type", "delivered", "--content",
                     json.dumps({"claims": [{"claim": "done", "evidence": ["jobs/j/work/a.txt"]}]}))
-        for p, tag in (("fixtures/results/x.json", "(P2)"), ("ledger/l.db", "(P3")):
+        # A2: ledger/l.db is a coordination path (spec 4.4 P4 row) and precedes P3 once the caller passes the
+        # coordination set, so the P3 case uses a watched path that is NOT in the coordination set.
+        for p, tag in (("fixtures/results/x.json", "(P2)"), ("ledger/settings.cfg", "(P3")):
             with self.subTest(path=p):
                 bad = dict(RESULTS_OK, changed_paths=["jobs/j/work/a.txt", p])
                 c, r = self.run_wf("accept", "j", "--results", json.dumps(bad), role="reviewer", session="R1",

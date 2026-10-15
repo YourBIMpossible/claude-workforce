@@ -9,10 +9,11 @@ Seam contract (frozen callers: commands.accept; commands.classify_paths is an al
 
 Classes (section 4.4), decided on the RESOLVED comparison form of each path, first match wins:
   P5  contract `exclusions`                               -> violation ("excluded path")
+  P4  the fixed coordination set (`coordination=` globs)  -> allowed, result "coordination (P4, verified by verify)"
   P2  contract `presence_only` and `read_scope`           -> violation (read-only: any declared change)
   P3  contract `watch`                                    -> violation unless separately authorized (see below)
   P1  contract `write_scope`                              -> allowed (add / modify / delete)
-  P4  anything else inside the boundary                   -> violation ("outside every declared scope")
+  unclassified  anything else inside the boundary         -> violation ("unclassified in-boundary path")
 plus, placed in P5 because they cannot be placed inside the boundary:
   - a path that resolves outside the boundary (".." above the root)  -> "resolves outside boundary", violation
   - a path that cannot be resolved or is a prohibited form            -> violation (fail closed), never skipped
@@ -37,6 +38,17 @@ NOT done here, and recorded as limitations: links and junctions are not resolved
 dots/spaces or expands short names is not established by this code (lane D evidence, G-13 / G-29); outside-boundary
 changes are not detected (section 4.3).
 
+P4 coordination (owner grant 2026-10-15 "T35 REQUIREMENT REPAIRS A1-A3 + T28", A2; tests/test_t35_changeset.py): P4
+is the spec's FIXED coordination set (section 4.4 P4 row: the ledger database and its journal, the pending-marker
+directory, the job export directory, runtime/gate/gate.db, runtime/observe/<job>.log), built by
+`coordination_globs(job, ledger_rel, db_name)` and passed by the caller as `classify(..., coordination=...)`. The
+coordination set PRECEDES P2/P3 by the spec: the ledger database and its journal are "allowed to change" even when
+the contract watches `ledger/**` (the test fixture does), so a coordination path is never a P3 violation. A path in
+no class is "unclassified": a separate violation result ("unclassified in-boundary path", key `unclassified`),
+distinct from P5 (outside the boundary / excluded), which is untouched. `coordination=None` (no caller set, e.g. the
+`classify_paths` alias used without a ledger) yields no P4 at all: every former P4 fallthrough is "unclassified".
+The closeout bundle named by the P4 row has no path defined in the code and is therefore not in the set (recorded).
+
 Hardening (owner grant 2026-10-15, tests/test_pathpolicy_hardening.py): malformed input fails closed instead of
 classifying something else or raising. A `changed` that is not a list (a string was iterated per character; None
 raised) and a non-string entry become one P5 violation each, recorded under their repr. A contract that is not an
@@ -53,6 +65,17 @@ import fnmatch
 import re
 
 CLASSES = ("P1", "P2", "P3", "P4", "P5")
+UNCLASSIFIED = "unclassified"
+COORDINATION_RESULT = "coordination (P4, verified by verify)"
+
+
+def coordination_globs(job: str, ledger_rel: str, db_name: str) -> list[str]:
+    """Spec 4.4 P4 row as globs relative to the boundary root: the ledger database and its rollback journal, the
+    pending-marker directory of the job, the job export directory, the gate database and the observe log. No
+    closeout bundle path exists in the code, so none is listed."""
+    lr = ledger_rel.replace("\\", "/").strip("/")
+    return [f"{lr}/{db_name}", f"{lr}/{db_name}-journal", f"{lr}/pending/{job}/**", f"jobs/{job}/export/**",
+            "runtime/gate/gate.db", f"runtime/observe/{job}.log"]
 
 #: Recorded verbatim in every classification (section 4.3 / 4.4 rule 5, T35).
 NOT_DETECTED = "outside-boundary changes are not detected: the comparison covers the monitored boundary only"
@@ -189,10 +212,12 @@ def _match(cmp: str, globs: list[str]) -> bool:
     return False
 
 
-def _rule(cmp: str, scopes: dict[str, list[str]]) -> tuple[str, str, str]:
-    """(class, result, reason) for a resolved in-boundary path."""
+def _rule(cmp: str, scopes: dict[str, list[str]], coordination: list[str]) -> tuple[str, str, str]:
+    """(class, result, reason) for a resolved in-boundary path: P5, P4 coordination, P2, P3, P1, unclassified."""
     if _match(cmp, scopes["exclusions"]):
         return "P5", "violation", "excluded path (P5)"
+    if _match(cmp, coordination):
+        return "P4", COORDINATION_RESULT, "coordination path (P4); allowed to change, checked by wf verify"
     if _match(cmp, scopes["presence_only"]):
         return "P2", "violation", "presence-only read-only path changed (P2); never read"
     if _match(cmp, scopes["read_scope"]):
@@ -201,7 +226,7 @@ def _rule(cmp: str, scopes: dict[str, list[str]]) -> tuple[str, str, str]:
         return "P3", "violation", "watched configuration changed; no separate authorization can be expressed (P3)"
     if _match(cmp, scopes["write_scope"]):
         return "P1", "allowed", "in write scope (P1)"
-    return "P4", "violation", "outside every declared scope (P4)"
+    return UNCLASSIFIED, "violation", "unclassified in-boundary path"
 
 
 def _entries(changed: object) -> tuple[list[tuple[str, object]], str | None]:
@@ -214,15 +239,27 @@ def _entries(changed: object) -> tuple[list[tuple[str, object]], str | None]:
     return [(repr(changed), None)], _MALFORMED_LIST + f"{type(changed).__name__}, not a list"
 
 
-def classify(changed: list[str], contract: dict) -> dict:
-    """Section 4.4 classes over the resolved paths; P1..P5 hold the caller-supplied strings verbatim.
+def classify(changed: list[str], contract: dict, *, coordination: list[str] | None = None) -> dict:
+    """Section 4.4 classes over the resolved paths; P1..P5 and `unclassified` hold the caller-supplied strings
+    verbatim. `coordination` is the P4 coordination glob set (coordination_globs); None = no P4 class.
 
     Malformed input never classifies as allowed and never raises: a non-list `changed` or a non-string entry is
     recorded as a P5 violation under its repr; a contract whose scopes cannot be read makes every entry a P5
-    violation and is listed under `contract_problems` (fail closed)."""
-    out: dict = {k: [] for k in CLASSES}
+    violation and is listed under `contract_problems` (fail closed); a malformed coordination set likewise."""
+    out: dict = {k: [] for k in (*CLASSES, UNCLASSIFIED)}
     results: list[dict] = []
     scopes, problems = _scopes(contract)
+    coord: list[str] = []
+    if coordination is not None:
+        if not isinstance(coordination, list) or not all(isinstance(g, str) for g in coordination):
+            problems.append("coordination: set is not a list of strings")
+        else:
+            for i, g in enumerate(coordination):
+                gg, problem = _norm_glob(g)
+                if gg is None:
+                    problems.append(f"coordination: entry {i} {problem}")
+                else:
+                    coord.append(gg)
     entries, list_problem = _entries(changed)
     for shown, raw in entries:
         if list_problem is not None:
@@ -240,7 +277,7 @@ def classify(changed: list[str], contract: dict) -> dict:
         elif r is not None and r.outside:
             cls, result, reason = "P5", "outside boundary (not detected)", "resolves outside boundary (P5)"
         else:
-            cls, result, reason = _rule((r.cmp if r is not None else None) or "", scopes)
+            cls, result, reason = _rule((r.cmp if r is not None else None) or "", scopes, coord)
         out[cls].append(shown)
         results.append({"path": shown, "resolved": r.resolved if r is not None else None, "class": cls,
                         "result": result, "reason": reason})
@@ -254,8 +291,10 @@ def classify(changed: list[str], contract: dict) -> dict:
 def violations(classes: dict) -> list[str]:
     """Reason strings that reject the acceptance; every string names the offending paths.
 
-    With per-path `results` (a classify() output) the reasons are grouped by kind. Without them (a bare class dict)
-    the rule is applied to the lists: P2, P3, P4 and P5 entries are violations, fail closed. A classification that
+    With per-path `results` (a classify() output) the reasons are grouped by kind: P4 coordination entries are
+    never violations; `unclassified` entries always are. Without `results` (a bare class dict, the pre-coordination
+    shape that classify() no longer produces) the rule is applied to the lists: P2, P3, P4, P5 and unclassified
+    entries are violations, fail closed (a bare P4 list carries no coordination evidence). A classification that
     is not an object, a malformed result row and any `contract_problems` entry each reject as well."""
     if not isinstance(classes, dict):
         return [f"classification malformed: {type(classes).__name__} is not an object (fail closed)"]
@@ -264,6 +303,7 @@ def violations(classes: dict) -> list[str]:
         p2 = [str(x) for x in classes.get("P2", [])]
         p3 = [str(x) for x in classes.get("P3", [])]
         bad = [str(x) for x in classes.get("P4", [])] + [str(x) for x in classes.get("P5", [])]
+        uncl = [str(x) for x in classes.get(UNCLASSIFIED, [])]
         out: list[str] = []
         if p2:
             out.append("read-only paths changed (P2): " + ", ".join(p2))
@@ -271,10 +311,13 @@ def violations(classes: dict) -> list[str]:
             out.append("watched configuration changed without separate authorization (P3): " + ", ".join(p3))
         if bad:
             out.append("changed paths outside scope (P4) or excluded (P5): " + ", ".join(bad))
+        if uncl:
+            out.append("unclassified in-boundary paths (violation): " + ", ".join(uncl))
         return out
     p2: list[str] = []
     p3: list[str] = []
-    scope_bad: list[str] = []
+    excluded: list[str] = []
+    uncl: list[str] = []
     escaped: list[str] = []
     unresolved: list[str] = []
     malformed_rows: list[str] = []
@@ -285,6 +328,8 @@ def violations(classes: dict) -> list[str]:
         if r.get("result") == "allowed":
             continue
         path, cls, reason = str(r.get("path")), r.get("class"), str(r.get("reason", ""))
+        if cls == "P4" and r.get("result") == COORDINATION_RESULT:
+            continue
         if reason.startswith("unresolvable"):
             unresolved.append(f"{path} ({reason.split(': ', 1)[-1]})")
         elif reason.startswith("resolves outside boundary"):
@@ -293,8 +338,10 @@ def violations(classes: dict) -> list[str]:
             p2.append(path)
         elif cls == "P3":
             p3.append(path)
-        elif cls in ("P4", "P5"):
-            scope_bad.append(path)
+        elif cls == "P5":
+            excluded.append(path)
+        elif cls == UNCLASSIFIED:
+            uncl.append(path)
         else:
             unresolved.append(f"{path} (unknown result {r.get('result')!r})")
     out = []
@@ -303,8 +350,11 @@ def violations(classes: dict) -> list[str]:
     if p3:
         out.append("watched configuration changed without separate authorization (P3; the contract cannot express "
                    "one, fail closed): " + ", ".join(p3))
-    if scope_bad:
-        out.append("changed paths outside scope (P4) or excluded (P5): " + ", ".join(scope_bad))
+    if excluded:
+        out.append("changed paths excluded by the contract (P5): " + ", ".join(excluded))
+    if uncl:
+        out.append("unclassified in-boundary paths (violation; in no contract scope and not a coordination path): "
+                   + ", ".join(uncl))
     if escaped:
         out.append("paths resolving outside the monitored boundary (P5, not in scope; outside-boundary changes are "
                    "not detected): " + ", ".join(escaped))
