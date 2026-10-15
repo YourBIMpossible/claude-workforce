@@ -191,10 +191,16 @@ class T03Validate(Base):
         self.assertEqual(r["axes"]["authority"], "in-force")
 
     def test_T05b_block_hash_repeatable_on_fresh_ledger(self):
-        """TD-1 repeatability: the owner's hash, given once, matches the block on a fresh ledger."""
+        """TD-1 repeatability: the owner's hash, given once, matches the block on a fresh ledger.
+        Fixture correction (White, A1 wiring, owner grant 2026-10-15 ~15:05): the fresh ledger lives in its own
+        `fresh/ledger/` directory. The spec places the ledger at `ledger/` (FIRST-RELEASE-SPEC.md section 3 storage
+        design, section 4.3 boundary) and `wf job new` now captures the changed-set baseline over the monitored
+        boundary, whose root is the parent of a directory named `ledger` (frozen interface, issue #13): a ledger in
+        a directory named `ledger2` has no establishable boundary and `wf job new` refuses with that exact blocker
+        (test_t35_wiring.py). The hash-repeatability assertion is unchanged."""
         self.new_job()
         h1 = self.activate()
-        self.db = os.path.join(self.dir, "ledger2", "l.db")
+        self.db = os.path.join(self.dir, "fresh", "ledger", "l.db")
         time.sleep(0.01)
         self.new_job()
         code, res = self.run_wf("grant", "propose", "j", "--grant", self.gpath, role="coordinator", session="C1")
@@ -234,7 +240,8 @@ class T08Flow(Base):
         bad = dict(results, changed_paths=["jobs/j/work/a.txt", "01-PROJECT-BRIEF.md", "elsewhere.txt"])
         c, r = self.run_wf("accept", "j", "--results", json.dumps(bad), role="reviewer", session="R1", msg_id="A1")
         self.assertEqual((c, r["decision"]), (0, "rejected"))
-        self.assertEqual(r["classes"]["P5"], ["01-PROJECT-BRIEF.md"]); self.assertEqual(r["classes"]["P4"], ["elsewhere.txt"])
+        # A2 (spec 4.4 lines 216/223): P4 is the fixed coordination set; a path in no scope is "unclassified"
+        self.assertEqual(r["classes"]["P5"], ["01-PROJECT-BRIEF.md"]); self.assertEqual(r["classes"]["unclassified"], ["elsewhere.txt"])
         c, r = self.run_wf("status", "j"); self.assertEqual(r["axes"]["acceptance"], "rejected")
         c, r = self.run_wf("accept", "j", "--results", json.dumps(results), role="reviewer", session="R1", msg_id="A2")
         self.assertEqual(r["decision"], "accepted")
@@ -326,10 +333,12 @@ class SpecMapGaps(Base):
     def test_spec_T35_path_classes_P1_to_P5(self):
         cl = commands.classify_paths(["jobs/j/work/a.txt", "fixtures/results/x.json", "ledger/l.db",
                                       "01-PROJECT-BRIEF.md", "elsewhere.txt"], CONTRACT)
-        # seam (dispatch-ready): P1..P5 are the required keys; further keys are lane B's per-path record
-        self.assertEqual({k: cl[k] for k in ("P1", "P2", "P3", "P4", "P5")},
+        # seam (dispatch-ready): P1..P5 are the required keys; further keys are lane B's per-path record.
+        # A2 (spec 4.4 lines 216/223): P4 is the fixed coordination set (none passed here); a path in no contract
+        # scope is "unclassified", a separate violation, no longer P4.
+        self.assertEqual({k: cl[k] for k in ("P1", "P2", "P3", "P4", "P5", "unclassified")},
                          {"P1": ["jobs/j/work/a.txt"], "P2": ["fixtures/results/x.json"], "P3": ["ledger/l.db"],
-                          "P4": ["elsewhere.txt"], "P5": ["01-PROJECT-BRIEF.md"]})
+                          "P4": [], "P5": ["01-PROJECT-BRIEF.md"], "unclassified": ["elsewhere.txt"]})
 
     def test_verify_compares_receipts_to_work_files(self):
         self.new_job(); self.activate()
