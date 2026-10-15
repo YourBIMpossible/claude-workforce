@@ -10,10 +10,11 @@ Two kinds of evidence are kept apart in every test name and docstring:
   * SUPPLIED classification: `wf accept` classifies the `changed_paths` the reviewer supplies (pathpolicy.classify).
     It never reads the filesystem, so it discovers nothing on its own.
   * OBSERVED detection: `wf verify` reads the ledger and the export directory and reports what it finds.
-A test that needs a mechanism the product does not have is kept as a failing regression under
-`unittest.expectedFailure` with the exact missing mechanism in its docstring; it turns into an "unexpected success"
-(a suite failure) the day the mechanism lands, so it cannot be forgotten. No expected PASS is invented. P3 stays
-fail-closed; 8.3 short names and NTFS behaviour are not touched here (lane D evidence).
+A requirement whose mechanism the product does not have gets a `test_LIMIT_<subject>` observation test (White,
+PR #15 correction 1/3; lane rule issue #13): it asserts the ACTUAL present behaviour, and its docstring carries the
+spec sentence, the missing mechanism and "missing-implementation; T35 stays PARTIAL on this element". No decorator
+of any kind; no expected PASS is invented; such a test fails the day the behaviour changes, so the limit cannot
+drift silently. P3 stays fail-closed; 8.3 short names and NTFS behaviour are not touched here (lane D evidence).
 
 Fixtures: fresh scratch under WF_TEST_TMP (test_wf.Base), CONTRACT from test_wf (write jobs/j/work/**, read tools/wf/**,
 watch ledger/**, presence_only fixtures/results/**, exclusions 01-PROJECT-BRIEF.md) or a variant built per test.
@@ -113,18 +114,18 @@ class R1ManifestFileMissingFromP1(_Flow):
         self.assertEqual(r["classes"]["results"], [])
         self.assertIn(pathpolicy.NOT_DETECTED, r["classes"]["limitations"])
 
-    @unittest.expectedFailure
-    def test_MISSING_undeclared_P2_manifest_deletion_is_detected(self):
-        """R1 gap (missing mechanism). Section 4.4 says accept "computes the set of changed paths inside the monitored
-        boundary"; rule 1 makes a missing P2/P3 manifest file a deletion violation. Nothing computes that set:
-        `commands.accept` classifies only the reviewer-supplied `changed_paths` and reads no file, so an undeclared
-        deletion of a P2 manifest file is accepted. Expected under the spec: rejected. Missing mechanism: a
-        baseline-manifest-versus-filesystem comparison inside the boundary (no module, no command, no results
-        field provides it). Kept as an expected failure; it becomes an unexpected success when the mechanism lands."""
+    def test_LIMIT_undeclared_P2_manifest_deletion_is_accepted(self):
+        """R1 limit (observed present behaviour). Spec sentence (section 4.4): accept "computes the set of changed
+        paths inside the monitored boundary"; rule 1: "a missing P2/P3 file is a deletion violation". Present
+        behaviour: an undeclared deletion of a P2 manifest file (tools/wf/wfcore/db.py in the baseline, absent on
+        disk, not supplied) is ACCEPTED. Missing mechanism: a baseline-manifest-versus-filesystem comparison inside
+        the boundary; `commands.accept` classifies only reviewer-supplied `changed_paths` and reads no file.
+        missing-implementation; T35 stays PARTIAL on this element."""
         self.start()
         self.assertFalse(os.path.exists(os.path.join(self.dir, "tools", "wf", "wfcore", "db.py")))
         r = self.accept([], "R1d")
-        self.assertEqual(r["decision"], "rejected", r)
+        self.assertEqual(r["decision"], "accepted", r)
+        self.assertEqual(r["classes"]["results"], [])
 
 
 # ---------------------------------------------------------------------------------------------------- R2
@@ -187,18 +188,20 @@ class R2ExpectedP4UpdatesAndVerify(_Flow):
         self.assertEqual([x["result"] for x in cl["results"]], ["violation", "violation"])
         self.assertIn("no path was read", cl["comparison"])
 
-    @unittest.expectedFailure
-    def test_MISSING_supplied_coordination_update_is_allowed_as_P4(self):
-        """R2 gap (missing mechanism). Spec P4 = "expected coordination updates (ledger database and its journal,
-        jobs/<job>/export/, ...) allowed to change". The seam defines P4 as "outside every declared scope" and
-        `pathpolicy.violations` rejects every P4 entry; no contract field or built-in list names the coordination
-        paths, so a reviewer who truthfully reports the ledger database or an export file as changed is rejected.
-        Expected under the spec: accepted with result "coordination (P4, verified by verify)". Missing mechanism:
-        a coordination-path class in pathpolicy (recorded; not invented here - no new contract field or
-        policy decision). Expected failure until that decision lands."""
+    def test_LIMIT_supplied_coordination_update_is_rejected_as_P4(self):
+        """R2 limit (observed present behaviour). Spec sentence (section 4.4 P4 row): "expected coordination updates
+        (ledger database and its journal, jobs/<job>/export/, ...) allowed to change; not compared by hash".
+        Present behaviour: a reviewer who truthfully supplies the ledger database or an export file as changed is
+        REJECTED; both classify P4 "outside every declared scope" and `pathpolicy.violations` rejects every P4
+        entry. Missing mechanism: a coordination-path class in pathpolicy (contract vocabulary decision; no
+        contract field or built-in list names the coordination paths). missing-implementation; T35 stays
+        PARTIAL on this element."""
         self.start()
         r = self.accept(["jobs/j/work/a.txt", "jobs/j/export/head.json", "ledger/l.db"], "R2d")
-        self.assertEqual(r["decision"], "accepted", r)
+        self.assertEqual(r["decision"], "rejected", r)
+        self.assertEqual(r["classes"]["P4"], ["jobs/j/export/head.json", "ledger/l.db"])
+        self.assertEqual(r["classes"]["P1"], ["jobs/j/work/a.txt"])
+        self.assertTrue(any("(P4)" in x and "ledger/l.db" in x for x in r["reasons"]), r["reasons"])
 
 
 # ---------------------------------------------------------------------------------------------------- R3
@@ -242,35 +245,36 @@ class R3UnexpectedFilesInLedgerAndRuntimeFolders(_Flow):
         self.assertFalse(v["clean"], v)
         self.assertIn("export file missing: head.json", v["jobs"]["j"]["export"])
 
-    @unittest.expectedFailure
-    def test_MISSING_verify_detects_an_added_stray_file_in_the_export_folder(self):
-        """R3 gap (missing mechanism). An added file in jobs/<job>/export/ that the manifest does not list is not
-        reported by `wf verify`: export.check walks the manifest entries only (export.py `for e in entries`) and
-        never lists the directory. Expected under the spec: a problem naming jobs/j/export/stray.txt and
-        clean=false. Missing mechanism: a directory listing compared against the manifest (or the fixed FILES
-        set) in export.check. Kept as an expected failure."""
+    def test_LIMIT_added_stray_file_in_the_export_folder_is_unreported_by_verify(self):
+        """R3 limit (observed present behaviour). Spec sentence (section 4.4 P4 row): "Added or deleted files in the
+        ledger/runtime folders other than the listed ones -> violation". Present behaviour: an added file in
+        jobs/<job>/export/ that the manifest does not list is NOT reported by `wf verify` (clean stays true, export
+        problems empty): export.check walks the manifest entries only (`for e in entries`) and never lists the
+        directory. Missing mechanism: a directory listing compared against the manifest or the fixed FILES set in
+        export.check. missing-implementation; T35 stays PARTIAL on this element."""
         self.start()
         stray = os.path.join(paths.export_dir(self.db, "j"), "stray.txt")
         with open(stray, "w", encoding="utf-8") as fh:
             fh.write("unexpected\n")
         v = self.verify()
-        self.assertFalse(v["clean"], v)
-        self.assertTrue(any("stray.txt" in p for p in v["jobs"]["j"]["export"]), v)
+        self.assertTrue(v["clean"], v)
+        self.assertEqual(v["jobs"]["j"]["export"], [])
+        self.assertNotIn("stray.txt", json.dumps(v))
 
-    @unittest.expectedFailure
-    def test_MISSING_verify_detects_an_added_stray_file_in_the_ledger_folder(self):
-        """R3 gap (missing mechanism). An added file beside the ledger database (ledger/stray.db) is not observed by
-        any command: verify checks schema, integrity, chain, export and markers (commands.verify) and never lists
-        the ledger directory. Expected under the spec: a violation naming ledger/stray.db. Missing mechanism: a
-        ledger/runtime folder listing against the allowed set (database, its journal, pending markers). Kept as
-        an expected failure."""
+    def test_LIMIT_added_stray_file_in_the_ledger_folder_is_unobserved_by_verify(self):
+        """R3 limit (observed present behaviour). Spec sentence (section 4.4 P4 row): "Added or deleted files in the
+        ledger/runtime folders other than the listed ones -> violation". Present behaviour: an added file beside the
+        ledger database (ledger/stray.db) is NOT observed by any command; verify checks schema, integrity, chain,
+        export and markers (commands.verify) and never lists the ledger directory, so clean stays true and the name
+        appears nowhere in the result. Missing mechanism: a ledger/runtime folder listing against the allowed set
+        (database, its journal, pending markers). missing-implementation; T35 stays PARTIAL on this element."""
         self.start()
         stray = os.path.join(paths.ledger_dir(self.db), "stray.db")
         with open(stray, "w", encoding="utf-8") as fh:
             fh.write("unexpected\n")
         v = self.verify()
-        self.assertFalse(v["clean"], v)
-        self.assertIn("stray.db", json.dumps(v))
+        self.assertTrue(v["clean"], v)
+        self.assertNotIn("stray.db", json.dumps(v))
 
     def test_stray_files_survive_export_refresh_and_remain_unreported(self):
         """R3 observed, current behaviour pinned honestly: after `wf export` regenerates the four files, the stray
