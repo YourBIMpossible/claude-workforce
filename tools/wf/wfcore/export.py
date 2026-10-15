@@ -14,8 +14,15 @@ FILES = ("events.jsonl", "head.json", "contract.json")
 
 
 def _write_atomic(path: str, text: str) -> None:
+    """Write `<path>.tmp` exclusively, fsync, then rename it over `path`.
+
+    The temp path is created with O_CREAT|O_EXCL (mode "x"): a pre-existing `<path>.tmp` of any kind (file,
+    symlink, directory entry left by a crashed or concurrent writer) makes `open` raise `FileExistsError`
+    before a byte is written, so it is never truncated, replaced or followed. Nothing here deletes, repairs or
+    retries; the caller's existing error path reports the failure and the artifact stays for inspection.
+    """
     tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+    with open(tmp, "x", encoding="utf-8", newline="\n") as fh:
         fh.write(text)
         fh.flush()
         os.fsync(fh.fileno())
