@@ -60,6 +60,13 @@ def _guard(conn: sqlite3.Connection, job: str, *, etype: str, role: str, session
     return rows
 
 
+def _reconciled(st: dict[str, Any]) -> bool | None:
+    """Digest flag for one role: None before any reconcile-report, else the negation of `unreconciled` (contract 3)."""
+    if st["latest_report_seq"] is None:
+        return None
+    return not st["unreconciled"]
+
+
 def _binding_session(conn: sqlite3.Connection, job: str, role: str) -> tuple[str | None, int | None]:
     """(session, generation) the ledger currently attributes to `role`: the explicit binding when the job is in
     explicit mode, else the implicit observed one (builder only; other roles have no implicit holder)."""
@@ -394,7 +401,8 @@ def digest(db: str, job: str) -> dict[str, Any]:
             rows = dbm.rows(conn, job)
             db_size = os.path.getsize(db)
             explicit = bind.active_roles(conn, job)
-            explicit_rows = bind.digest_rows(conn, job, {r: not reconcile.state(rows, r)["unreconciled"]
+            # INTERFACE-CONTRACT 3 digest: reconciled is bool | None -- None while the role has no reconcile-report yet.
+            explicit_rows = bind.digest_rows(conn, job, {r: _reconciled(reconcile.state(rows, r))
                                                          for r in explicit}) if explicit else []
     finally:
         conn.close()
