@@ -36,7 +36,10 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | ** | D |
 
 Lane A owns only the body of `accept_declarations` inside validate.py; other functions in that file are frozen
-(enforced by review, not by this checker).
+(enforced by review, not by this checker). B2 slice 1 exception (registered 2026-10-15 22:45, same worker Zen): the S1R
+delivery may additionally carry the additive validate.py edit specified verbatim in INTERFACE-CONTRACT.md §7; the S1R
+checker run is expected to report exactly one path outside the lane (`tools/wf/wfcore/validate.py`, owner A) and that
+path is accepted only if its diff equals the §7 text (verified by the integrator's exact-head review). No other path.
 
 ## Sprint 2026-10-15 registration (owner grant "THREE-HOUR WORKFORCE DELIVERY SPRINT")
 
@@ -64,12 +67,12 @@ Preparation-intake namespaces (register only; no execution or merge authority is
 | FS | Plexy | `prep/plexy-foundation-verification` (local commit c795890, to be pushed unchanged) | `tools/qualification/foundation_selector/**` (selector, mapping, self-tests, runs) |
 | PR | Zen | `prep/zen-disposable-rehearsal` (head ad3fdd9) | `fixtures/pilot_rehearsal/**` (rehearsal harness, self-test, README) |
 
-B2 slice 1 (bind / reconcile / recover-begin; interface contract published by White before dispatch):
+B2 slice 1 (bind / reconcile / recover-begin; interface contract INTERFACE-CONTRACT.md frozen by White 2026-10-15 22:40 and published as the GitHub dispatch issue before dependent implementation):
 
 | Lane | Worker | Branch | Scope added |
 |---|---|---|---|
 | S1B | Plexy | worker-chosen | `tools/wf/wfcore/bind.py` (new), `tools/wf/tests/test_t32_bind.py` (new) only |
-| S1R | Zen | worker-chosen | `tools/wf/wfcore/reconcile.py` (new), `tools/wf/tests/test_t06_reconcile.py` (new), `tools/wf/tests/test_t16a_recover_begin.py` (new) only |
-| S1W | White | `sprint/white-b2s1-wiring` | `tools/wf/wfcore/commands.py`, `tools/wf/wf.py` (wiring + CLI registration, lane D paths acted on by the integrator), shared CLI end-to-end tests (new file named in the contract), OWNERS/MANIFEST |
+| S1R | Zen | worker-chosen | `tools/wf/wfcore/reconcile.py` (new), `tools/wf/tests/test_t06_reconcile.py` (new), `tools/wf/tests/test_t16a_recover_begin.py` (new), plus the additive validate.py edit specified verbatim in INTERFACE-CONTRACT.md §7 (six `ROLE_FOR_TYPE` entries, three `APPEND_TYPES` entries, two dispatch `elif` branches in `validate_content`; no other line of validate.py; registered 2026-10-15 22:45 as an exact scope extension of lane A's existing validate.py row — the contract identified this as the one out-of-lane dependency for required event validation) |
+| S1W | White | `sprint/white-b2s1-wiring` | `tools/wf/wfcore/commands.py`, `tools/wf/wf.py` (wiring + CLI registration, lane D paths acted on by the integrator), shared CLI end-to-end tests (`tools/wf/tests/test_b2s1_wiring.py`, new, named in INTERFACE-CONTRACT.md §8), OWNERS/MANIFEST |
 
 Workers do not edit shared wiring files; a needed change outside the owned set is reported in the PR body as BLOCKED, never made.
