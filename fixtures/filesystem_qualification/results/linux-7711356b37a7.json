@@ -1,0 +1,338 @@
+{
+ "cases": [
+  {
+   "claim": "the hook records a Python-level open of the target reached through a link; the canary blocks it",
+   "id": "control/read-through-link",
+   "kind": "control",
+   "observation": {
+    "audit_hook": {
+     "outside_scratch_events": [],
+     "target_events": [
+      {
+       "event": "open",
+       "path": "/home/zetard/workspace/claude-workforce/.claude/worktrees/fsq/fixtures/tmp/fsq-20261016T033043Z-ca8f/control/link"
+      }
+     ],
+     "watched_events_total": 1
+    },
+    "canary_chmod_000_applied": true,
+    "canary_fired": true,
+    "outcome": {
+     "raised": "PermissionError",
+     "read": null
+    }
+   },
+   "status": "pass",
+   "surface": "mechanism"
+  },
+  {
+   "checks": {
+    "link_left_in_place": true,
+    "link_reported_appropriately": true,
+    "sentinel_content_absent_from_output": true,
+    "target_bytes_identity_listing_unchanged": true,
+    "target_not_accessed_by_python_file_ops": true
+   },
+   "claim": "the link was reported and the target was not opened, listed or changed by Python-level file operations during the call (audit hook + canary + before/after identity); no claim about kernel-level access or about another OS/filesystem",
+   "id": "linux-symlink/baseline",
+   "kind": "linux-symlink",
+   "link": {
+    "isjunction": false,
+    "islink": true,
+    "lexists": true,
+    "path": "/home/zetard/workspace/claude-workforce/.claude/worktrees/fsq/fixtures/tmp/fsq-20261016T033043Z-ca8f/linux-symlink/baseline/boundary/tools/wf/link"
+   },
+   "observation": {
+    "after": {
+     "listing": [
+      "secret.txt"
+     ],
+     "sha256": "e183c63336e3d40e215b9071b11615af450d7b94974156d810d2315761214db9",
+     "size": 48,
+     "st_dev": 64512,
+     "st_ino": 9714244,
+     "st_mtime_ns": 1792121443428494884
+    },
+    "audit_hook": {
+     "outside_scratch_events": [],
+     "target_events": [],
+     "watched_events_total": 2
+    },
+    "before": {
+     "listing": [
+      "secret.txt"
+     ],
+     "sha256": "e183c63336e3d40e215b9071b11615af450d7b94974156d810d2315761214db9",
+     "size": 48,
+     "st_dev": 64512,
+     "st_ino": 9714244,
+     "st_mtime_ns": 1792121443428494884
+    },
+    "bytes_unchanged": true,
+    "canary_chmod_000_applied": true,
+    "identity_unchanged": true,
+    "link_still_present": true,
+    "listing_unchanged": true
+   },
+   "product_output": [
+    "problems=[]",
+    "entries_under_link=[]",
+    "limitation_hits=['skipped link or reparse point: tools/wf/link']",
+    "real_hashed=True"
+   ],
+   "repeat_command": "python -c \"import os; os.symlink(r'<target>', r'<link>', target_is_directory=<bool>)\"",
+   "status": "pass",
+   "surface": "baseline",
+   "target": {
+    "is_directory": true,
+    "path": "/home/zetard/workspace/claude-workforce/.claude/worktrees/fsq/fixtures/tmp/fsq-20261016T033043Z-ca8f/linux-symlink/baseline/external-target",
+    "sentinel": "/home/zetard/workspace/claude-workforce/.claude/worktrees/fsq/fixtures/tmp/fsq-20261016T033043Z-ca8f/linux-symlink/baseline/external-target/secret.txt"
+   }
+  },
+  {
+   "checks": {
+    "link_left_in_place": true,
+    "link_reported_appropriately": true,
+    "sentinel_content_absent_from_output": true,
+    "target_bytes_identity_listing_unchanged": true,
+    "target_not_accessed_by_python_file_ops": true
+   },
+   "claim": "the link was reported and the target was not opened, listed or changed by Python-level file operations during the call (audit hook + canary + before/after identity); no claim about kernel-level access or about another OS/filesystem",
+   "id": "linux-symlink/export",
+   "kind": "linux-symlink",
+   "link": {
+    "isjunction": false,
+    "islink": true,
+    "lexists": true,
+    "path": "/home/zetard/workspace/claude-workforce/.claude/worktrees/fsq/fixtures/tmp/fsq-20261016T033043Z-ca8f/linux-symlink/export/jobs/j/export/link-entry"
+   },
+   "observation": {
+    "after": {
+     "listing": [
+      "secret.txt"
+     ],
+     "sha256": "e1bb7e6e20e216e14d9410f297ec13a5c34511e08c2f35a4d037ebe3f252577b",
+     "size": 46,
+     "st_dev": 64512,
+     "st_ino": 9714253,
+     "st_mtime_ns": 1792121443434654983
+    },
+    "audit_hook": {
+     "outside_scratch_events": [],
+     "target_events": [],
+     "watched_events_total": 9
+    },
+    "before": {
+     "listing": [
+      "secret.txt"
+     ],
+     "sha256": "e1bb7e6e20e216e14d9410f297ec13a5c34511e08c2f35a4d037ebe3f252577b",
+     "size": 46,
+     "st_dev": 64512,
+     "st_ino": 9714253,
+     "st_mtime_ns": 1792121443434654983
+    },
+    "bytes_unchanged": true,
+    "canary_chmod_000_applied": true,
+    "identity_unchanged": true,
+    "link_still_present": true,
+    "listing_unchanged": true
+   },
+   "product_output": [
+    "problems=['unexpected export link: link-entry']"
+   ],
+   "repeat_command": "python -c \"import os; os.symlink(r'<target>', r'<link>', target_is_directory=<bool>)\"",
+   "status": "pass",
+   "surface": "export",
+   "target": {
+    "is_directory": false,
+    "path": "/home/zetard/workspace/claude-workforce/.claude/worktrees/fsq/fixtures/tmp/fsq-20261016T033043Z-ca8f/linux-symlink/export/external-target/secret.txt",
+    "sentinel": "/home/zetard/workspace/claude-workforce/.claude/worktrees/fsq/fixtures/tmp/fsq-20261016T033043Z-ca8f/linux-symlink/export/external-target/secret.txt"
+   }
+  },
+  {
+   "checks": {
+    "link_left_in_place": true,
+    "link_reported_appropriately": true,
+    "sentinel_content_absent_from_output": true,
+    "target_bytes_identity_listing_unchanged": true,
+    "target_not_accessed_by_python_file_ops": true
+   },
+   "claim": "the link was reported and the target was not opened, listed or changed by Python-level file operations during the call (audit hook + canary + before/after identity); no claim about kernel-level access or about another OS/filesystem",
+   "id": "linux-symlink/ledgerdir",
+   "kind": "linux-symlink",
+   "link": {
+    "isjunction": false,
+    "islink": true,
+    "lexists": true,
+    "path": "/home/zetard/workspace/claude-workforce/.claude/worktrees/fsq/fixtures/tmp/fsq-20261016T033043Z-ca8f/linux-symlink/ledgerdir/ledger/link.db"
+   },
+   "observation": {
+    "after": {
+     "listing": [
+      "secret.txt"
+     ],
+     "sha256": "0c3fad0b9ddea5b1cc15599e57455a2b6c3e8a47bff8dec2513279fff7d965b0",
+     "size": 49,
+     "st_dev": 64512,
+     "st_ino": 9714269,
+     "st_mtime_ns": 1792121443474681298
+    },
+    "audit_hook": {
+     "outside_scratch_events": [],
+     "target_events": [],
+     "watched_events_total": 13
+    },
+    "before": {
+     "listing": [
+      "secret.txt"
+     ],
+     "sha256": "0c3fad0b9ddea5b1cc15599e57455a2b6c3e8a47bff8dec2513279fff7d965b0",
+     "size": 49,
+     "st_dev": 64512,
+     "st_ino": 9714269,
+     "st_mtime_ns": 1792121443474681298
+    },
+    "bytes_unchanged": true,
+    "canary_chmod_000_applied": true,
+    "identity_unchanged": true,
+    "link_still_present": true,
+    "listing_unchanged": true
+   },
+   "product_output": [
+    "ledger_directory={'problems': ['unexpected ledger-directory file: link.db@'], 'neighbors': []}",
+    "clean=False",
+    "job_problems=[]"
+   ],
+   "repeat_command": "python -c \"import os; os.symlink(r'<target>', r'<link>', target_is_directory=<bool>)\"",
+   "status": "pass",
+   "surface": "ledgerdir",
+   "target": {
+    "is_directory": false,
+    "path": "/home/zetard/workspace/claude-workforce/.claude/worktrees/fsq/fixtures/tmp/fsq-20261016T033043Z-ca8f/linux-symlink/ledgerdir/external-target/secret.txt",
+    "sentinel": "/home/zetard/workspace/claude-workforce/.claude/worktrees/fsq/fixtures/tmp/fsq-20261016T033043Z-ca8f/linux-symlink/ledgerdir/external-target/secret.txt"
+   }
+  },
+  {
+   "id": "windows-symlink/baseline",
+   "kind": "windows-symlink",
+   "reason": "host is linux; windows-symlink needs win32",
+   "repeat_command": "python -c \"import os; os.symlink(r'<target>', r'<link>', target_is_directory=<bool>)\"",
+   "status": "not-applicable",
+   "surface": "baseline"
+  },
+  {
+   "id": "windows-symlink/export",
+   "kind": "windows-symlink",
+   "reason": "host is linux; windows-symlink needs win32",
+   "repeat_command": "python -c \"import os; os.symlink(r'<target>', r'<link>', target_is_directory=<bool>)\"",
+   "status": "not-applicable",
+   "surface": "export"
+  },
+  {
+   "id": "windows-symlink/ledgerdir",
+   "kind": "windows-symlink",
+   "reason": "host is linux; windows-symlink needs win32",
+   "repeat_command": "python -c \"import os; os.symlink(r'<target>', r'<link>', target_is_directory=<bool>)\"",
+   "status": "not-applicable",
+   "surface": "ledgerdir"
+  },
+  {
+   "id": "windows-junction/baseline",
+   "kind": "windows-junction",
+   "reason": "host is linux; windows-junction needs win32",
+   "repeat_command": "cmd /c mklink /J \"<link>\" \"<target-dir>\"",
+   "status": "not-applicable",
+   "surface": "baseline"
+  },
+  {
+   "id": "windows-junction/export",
+   "kind": "windows-junction",
+   "reason": "host is linux; windows-junction needs win32",
+   "repeat_command": "cmd /c mklink /J \"<link>\" \"<target-dir>\"",
+   "status": "not-applicable",
+   "surface": "export"
+  },
+  {
+   "id": "windows-junction/ledgerdir",
+   "kind": "windows-junction",
+   "reason": "host is linux; windows-junction needs win32",
+   "repeat_command": "cmd /c mklink /J \"<link>\" \"<target-dir>\"",
+   "status": "not-applicable",
+   "surface": "ledgerdir"
+  }
+ ],
+ "environment": {
+  "filesystem": {
+   "case_insensitive": false,
+   "scratch": "/home/zetard/workspace/claude-workforce/.claude/worktrees/fsq/fixtures/tmp/fsq-20261016T033043Z-ca8f",
+   "type": "ext4"
+  },
+  "host": {
+   "machine": "x86_64",
+   "node": "mybuddy",
+   "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+   "release": "7.0.0-38-generic",
+   "sys_platform": "linux",
+   "system": "Linux",
+   "windows_build": null
+  },
+  "privilege": {
+   "euid": 1000,
+   "protected_symlinks": "1",
+   "uid": 1000
+  },
+  "python": {
+   "implementation": "CPython",
+   "isolated": true,
+   "sqlite": "3.46.1",
+   "version": "3.14.4"
+  },
+  "revision": {
+   "branch": "prep/mybuddy-filesystem-qualification",
+   "dirty": false,
+   "head": "7711356b37a79b89e92afbd0d02359e938aff3f2",
+   "head12": "7711356b37a7",
+   "manifest_line": "a7b41ea696ecfe69d797e2f2091cd31976c848ea267d09277b22e75c06d4c856  .gitignore"
+  },
+  "timestamp_utc": "2026-10-16T03:30:43Z"
+ },
+ "link_capability": {
+  "junction": {
+   "created": false,
+   "error": "not-applicable: junctions exist only on Windows/NTFS"
+  },
+  "repeat_commands": {
+   "junction": "cmd /c mklink /J \"<link>\" \"<target-dir>\"",
+   "symlink": "python -c \"import os; os.symlink(r'<target>', r'<link>', target_is_directory=<bool>)\""
+  },
+  "symlink_dir": {
+   "created": true,
+   "error": null
+  },
+  "symlink_file": {
+   "created": true,
+   "error": null
+  },
+  "without_privilege_change": true
+ },
+ "probe": "fixtures/filesystem_qualification/probe_links.py",
+ "qualification_scope": {
+  "evidence_for": [
+   "linux-symlink"
+  ],
+  "mechanism_control": "pass",
+  "not_tested": [
+   "windows-junction",
+   "windows-symlink"
+  ],
+  "statement": "evidence applies only to the listed host/filesystem/revision; Linux output is not Windows qualification and a skip or not-applicable entry is not evidence"
+ },
+ "schema": 1,
+ "summary": {
+  "fail": 0,
+  "not-applicable": 6,
+  "pass": 4,
+  "skip": 0
+ }
+}
