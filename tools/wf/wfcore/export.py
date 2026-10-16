@@ -18,8 +18,15 @@ FILES = ("events.jsonl", "head.json", "contract.json")
 
 
 PRESERVED = "export temp file preserved: "
-#: Staging names: the legacy fixed `<file>.tmp` and the per-writer `<file>.<pid>-<hex8>.tmp`.
-_STAGING = re.compile(r"^(?P<base>" + "|".join(re.escape(f) for f in FILES) + r")(?:\.(?P<pid>\d+)-[0-9a-f]{8})?\.tmp$")
+#: Files the product itself writes into the export dir outside the manifest (never strays): the retained
+#: checkpoint written by `wf checkpoint` (commands.checkpoint, T36). Deviation from the A3 inventory as stated
+#: (manifest.txt + entries + staging): without it `wf checkpoint` followed by `wf verify` reports its own file
+#: and `wf close` refuses (test_wf T08/C4). Reported to White for the paired integration decision.
+PRODUCT_FILES: frozenset[str] = frozenset({"checkpoint.json"})
+#: Staging names: the legacy fixed `<file>.tmp` and the per-writer `<file>.<pid>-<hex8>.tmp`, for the export
+#: files and the product-written checkpoint (also staged through `_write_atomic`).
+_STAGING = re.compile(r"^(?P<base>" + "|".join(re.escape(f) for f in (*FILES, *sorted(PRODUCT_FILES)))
+                      + r")(?:\.(?P<pid>\d+)-[0-9a-f]{8})?\.tmp$")
 #: Staging paths this process currently has open (active, never an orphan). Module-level so every refresh in
 #: this process agrees; a path is removed as soon as its write completes or fails.
 _ACTIVE: set[str] = set()
@@ -156,6 +163,36 @@ def refresh(db_path: str, job: str) -> dict[str, Any]:
     return note
 
 
+def strays(out: str, listed: set[str]) -> list[str]:
+    """A3 (spec 4.4 P4 row): every directory entry of the export dir that is neither `manifest.txt`, a listed
+    file nor a recognised staging name (those keep their orphan/active semantics in `orphans`). One problem per
+    entry, sorted by name; `os.scandir` without descending into subdirectories and without following links:
+      unexpected export file: <name> · unexpected export directory: <name>/ · unexpected export link: <name>
+      · unexpected export entry: <name> (anything else). Report only: nothing is deleted, moved or opened."""
+    try:
+        with os.scandir(out) as it:
+            entries = sorted(it, key=lambda e: e.name)
+    except OSError as exc:
+        return [f"export directory unreadable: {type(exc).__name__}"]
+    problems: list[str] = []
+    for e in entries:
+        name = e.name
+        if name == "manifest.txt" or name in listed or name in PRODUCT_FILES or _STAGING.match(name):
+            continue
+        try:
+            if e.is_symlink() or e.is_junction():
+                problems.append(f"unexpected export link: {name}")
+            elif e.is_dir(follow_symlinks=False):
+                problems.append(f"unexpected export directory: {name}/")
+            elif e.is_file(follow_symlinks=False):
+                problems.append(f"unexpected export file: {name}")
+            else:
+                problems.append(f"unexpected export entry: {name}")
+        except OSError:
+            problems.append(f"unexpected export entry: {name}")
+    return problems
+
+
 def check(db_path: str, job: str) -> list[str]:
     """Verify-time consistency: manifest parses (3 fields), hashes match files, events.jsonl matches the ledger,
     plus one `export temp file preserved: <name>` problem per abandoned staging file (see `orphans`)."""
@@ -164,11 +201,12 @@ def check(db_path: str, job: str) -> list[str]:
     problems: list[str] = []
     mpath = os.path.join(out, "manifest.txt")
     if not os.path.isfile(mpath):
-        return [f"export manifest missing: {mpath}", *preserved]
+        return [f"export manifest missing: {mpath}", *preserved, *strays(out, set(FILES))]
     try:
         entries = manifest.read(mpath)
     except manifest.ManifestMalformed as exc:
-        return [str(exc), *preserved]
+        return [str(exc), *preserved, *strays(out, set(FILES))]
+    preserved += strays(out, {e.relpath for e in entries})
     for e in entries:
         full = os.path.join(out, e.relpath)
         if not os.path.isfile(full):
