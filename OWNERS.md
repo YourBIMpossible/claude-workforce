@@ -25,6 +25,14 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/wfcore/export.py | A |
 | tools/wf/tests/test_export_tmp_preserve.py | A |
 | tools/wf/tests/test_t35_windows_resolution.py | D |
+| fixtures/filesystem_qualification/** | FQ |
+| tools/qualification/foundation_selector/** | FS |
+| fixtures/pilot_rehearsal/** | PR |
+| tools/wf/wfcore/bind.py | S1B |
+| tools/wf/tests/test_t32_bind.py | S1B |
+| tools/wf/wfcore/reconcile.py | S1R |
+| tools/wf/tests/test_t06_reconcile.py | S1R |
+| tools/wf/tests/test_t16a_recover_begin.py | S1R |
 | ** | D |
 
 Lane A owns only the body of `accept_declarations` inside validate.py; other functions in that file are frozen
@@ -45,3 +53,23 @@ Lane A owns only the body of `accept_declarations` inside validate.py; other fun
 | W (wiring) | White | `sprint/white-a3-verify-listing` (A3 verify listing, first), `sprint/white-a123-wiring` (A1/A2 job-new + accept, after Plexy's changeset.py) | `tools/wf/tests/test_t35_verify_ledger_dir.py` (new; R3b moved in from `requirements_t35_unmet.py`, whose superseded `test_LIMIT_..._ledger_folder_...` observation in `test_t35_remaining_requirements.py` is removed by the same delivery: the exact verify key-set pins in `test_checkpoint_clarity.py` and `test_t36_verify_checkpoint.py` gain the new `ledger_directory` key (requirement-based correction: the pin fixed the T36 verify shape, not a spec requirement; no checkpoint key is added); integrator move per owner grant "move each repaired requirement assertion into normal discovery in the same delivery"); `tools/wf/wfcore/commands.py` (job_new baseline payload, accept changed-set + P4 coordination wiring, verify ledger-dir listing), shared integration tests (`tools/wf/tests/test_t35_wiring.py`, new: `wf job new` boundary refusal and baseline capture through the CLI; `test_wf.py` T05b fresh-ledger fixture moved from `ledger2/` to `fresh/ledger/` with the justification in its docstring, plus the A2 P4 -> `unclassified` assertion corrections from Plexy's proposed diff in `test_spec_T35_path_classes_P1_to_P5` and `test_T08_full_flow_status_accept_close`); `sprint/white-r3a-move` (integrator move when Zen's A3 landed: `requirements_t35_unmet.py` -> explanatory empty register, the two R3 present-behaviour pins in `test_t35_remaining_requirements.py` corrected to the implemented requirement, both B-owned, register only), OWNERS/MANIFEST |
 
 Branch names are registration only; the checker validates paths by lane letter (`--lane A|B|C`), not branch names.
+
+## Registration 2026-10-15 ~21:20 (owner grant "APPROVE AND EXECUTE — B2 SLICE 1 + PREPARATION INTAKE")
+
+Preparation-intake namespaces (register only; no execution or merge authority is implied by a row):
+
+| Lane | Worker | Branch | Scope added |
+|---|---|---|---|
+| FQ | MyBuddy | `prep/mybuddy-filesystem-qualification` (PR #25, head 01b105b) | `fixtures/filesystem_qualification/**` (probe, README, results) |
+| FS | Plexy | `prep/plexy-foundation-verification` (local commit c795890, to be pushed unchanged) | `tools/qualification/foundation_selector/**` (selector, mapping, self-tests, runs) |
+| PR | Zen | `prep/zen-disposable-rehearsal` (head ad3fdd9) | `fixtures/pilot_rehearsal/**` (rehearsal harness, self-test, README) |
+
+B2 slice 1 (bind / reconcile / recover-begin; interface contract published by White before dispatch):
+
+| Lane | Worker | Branch | Scope added |
+|---|---|---|---|
+| S1B | Plexy | worker-chosen | `tools/wf/wfcore/bind.py` (new), `tools/wf/tests/test_t32_bind.py` (new) only |
+| S1R | Zen | worker-chosen | `tools/wf/wfcore/reconcile.py` (new), `tools/wf/tests/test_t06_reconcile.py` (new), `tools/wf/tests/test_t16a_recover_begin.py` (new) only |
+| S1W | White | `sprint/white-b2s1-wiring` | `tools/wf/wfcore/commands.py`, `tools/wf/wf.py` (wiring + CLI registration, lane D paths acted on by the integrator), shared CLI end-to-end tests (new file named in the contract), OWNERS/MANIFEST |
+
+Workers do not edit shared wiring files; a needed change outside the owned set is reported in the PR body as BLOCKED, never made.
