@@ -1,7 +1,7 @@
 """T16-a recover begin (B2 slice 1, lane S1R, Zen): module tests for the recovery parts of `wfcore.reconcile`
-against the frozen interface contract (GitHub issue #27 §1 `recovery-opened` schema, §5 recover-begin rules, §6
-signatures). Spec: FIRST-RELEASE-SPEC.md §3B l.131-145 (open a recovery only on a valid chain; while open, every
-ordinary mutation refuses; an invalid chain appends nothing).
+against the frozen interface contract (GitHub issue #27 §1 `recovery-opened` schema and recoverable-exception
+shape, §5 recover-begin rules, §6 signatures; AMENDMENT A2: the provenance check is a substring test). Spec:
+FIRST-RELEASE-SPEC.md §3B l.131-145. Revised in S1R cycle 1 (White F1 on PR #30).
 
 Fixture ledgers are built through `wf.run` with `test_wf.Base`. The S1W wiring (`wf recover begin`, `_guard`) is
 White's and not on this branch; the TEST-LOCAL engine below runs the S1R steps the wiring runs: collect
@@ -86,10 +86,11 @@ class RecoverBegin(_Engine):
         self.new_job(); self.activate()
         c, r = self.intent()
         self.assertEqual(c, 0, r)
-        # make the export stale so the exception list has an export entry
-        ev = os.path.join(paths.export_dir(self.db, "j"), "events.jsonl")
-        with open(ev, "a", encoding="utf-8") as fh:
+        out = paths.export_dir(self.db, "j")
+        with open(os.path.join(out, "events.jsonl"), "a", encoding="utf-8") as fh:   # stale export
             fh.write("tampered\n")
+        with open(os.path.join(out, "head.json.tmp"), "xb") as fh:                   # an orphan temp (export.orphans)
+            fh.write(b"orphan\n")
         rows = self.rows()
         self.assertIsNone(reconcile.recovery_open(rows))
         self.assertIsNone(reconcile.execution_axis(rows))
@@ -99,14 +100,16 @@ class RecoverBegin(_Engine):
         self.assertEqual(reconcile.recovery_open(rows), res["seq"])
         self.assertEqual(reconcile.execution_axis(rows), "recovering")
         content = json.loads(rows[-1]["content"])
+        self.assertEqual(set(content) - {"contract_sha256"}, {"reason", "owner_turn", "exceptions", "chain_head"})
         self.assertEqual(content["chain_head"], {"seq": res["seq"] - 1, "self": rows[-2]["self"]})
-        kinds = [e["kind"] for e in content["exceptions"]]
-        self.assertIn("export", kinds)
-        gate = [e for e in content["exceptions"] if e["kind"] == "gate-log"]
-        self.assertEqual(len(gate), 1)
-        self.assertFalse(gate[0]["available"])
-        self.assertIn("UNKNOWN", gate[0]["detail"])                       # unavailability, never "no attempts"
-        self.assertTrue(any("stale" in e["detail"] for e in content["exceptions"] if e["kind"] == "export"))
+        ex = content["exceptions"]
+        self.assertTrue(ex and all(set(e) == {"id", "class", "detail"} for e in ex), ex)
+        self.assertEqual([e["id"] for e in ex], [f"R{i}" for i in range(1, len(ex) + 1)])
+        self.assertIn("export", {e["class"] for e in ex})
+        self.assertIn("orphan", {e["class"] for e in ex})
+        self.assertTrue(any("stale" in e["detail"] for e in ex if e["class"] == "export"))
+        self.assertTrue(any(e["detail"].startswith(export.PRESERVED) for e in ex if e["class"] == "orphan"))
+        self.assertFalse(any(e["class"] == "gate-log" for e in ex))                # gate log is not an exception
 
     def test_every_ordinary_mutation_refused_while_open_and_second_begin_refused(self) -> None:
         self.new_job(); self.activate()
@@ -114,24 +117,26 @@ class RecoverBegin(_Engine):
         self.assert_rejected(self.ordinary, "recovery-open")
         self.assert_rejected(self.ordinary, "recovery-open", "blocker", "coordinator", "C1")
         self.assert_rejected(self.begin, "recovery-open")                    # validate_recover_begin itself
-        # the recovery gate is `recovery_open`, not `check_actor`: a reconciled role passes check_actor while open
-        reconcile.check_actor(self.rows(), role="builder", etype="intent")
+        reconcile.check_actor(self.rows(), role="builder", etype="intent")   # the recovery gate is recovery_open
         self.assertEqual(reconcile.execution_axis(self.rows()), "recovering")
 
     def test_preconditions_role_turn_and_shape(self) -> None:
         self.new_job(); self.activate()
-        self.assert_rejected(self.begin, "no-provenance", "x", "owner: proceed")          # turn does not name the job
-        self.assert_rejected(self.begin, "no-provenance", "x", "owner: recover jx")       # not as a word
+        # A2: substring test for the job id; a turn without the letter j is the negative (one-letter fixture id)
+        self.assert_rejected(self.begin, "no-provenance", "x", "owner: proceed")
         self.assert_rejected(self.begin, "role", "x", "owner: recover j", "builder", "B1")  # ROLE_FOR_TYPE (build_row)
         rows = self.rows()
-        with self.assertRaises(WfRejected) as cm:
-            reconcile.validate_recover_begin(rows, job="j", content={"reason": "", "owner_turn": "recover j",
-                                                                     "exceptions": [], "chain_head": {"seq": 1, "self": "x"}})
-        self.assertEqual(cm.exception.reason, "malformed")
-        with self.assertRaises(WfRejected) as cm:
-            reconcile.validate_recover_begin(rows, job="j", content={"reason": "r", "owner_turn": "recover j",
-                                                                     "exceptions": [], "chain_head": {"seq": 99, "self": "x"}})
-        self.assertEqual(cm.exception.reason, "malformed")
+        head = {"seq": rows[-1]["seq"], "self": rows[-1]["self"]}
+        reconcile.validate_recover_begin(rows, job="j", content={"reason": "r", "owner_turn": "recover jx",
+                                                                 "exceptions": [], "chain_head": head})  # substring
+        for bad, reason in (({"reason": "", "owner_turn": "recover j", "exceptions": [], "chain_head": head}, "malformed"),
+                            ({"reason": "r", "owner_turn": "recover j", "exceptions": [{"kind": "x"}], "chain_head": head},
+                             "malformed"),
+                            ({"reason": "r", "owner_turn": "recover j", "exceptions": [],
+                              "chain_head": {"seq": 99, "self": "x"}}, "malformed")):
+            with self.assertRaises(WfRejected) as cm:
+                reconcile.validate_recover_begin(rows, job="j", content=bad)
+            self.assertEqual(cm.exception.reason, reason)
 
     def test_invalid_chain_refused_and_nothing_appended(self) -> None:
         self.new_job(); self.activate()
@@ -147,31 +152,34 @@ class RecoverBegin(_Engine):
             conn.commit()
         finally:
             conn.close()
-        exc = self.assert_rejected(self.begin, "invalid-chain")
-        self.assertTrue(exc.extra.get("problems") if hasattr(exc, "extra") else True)
+        self.assert_rejected(self.begin, "invalid-chain")
         self.assertEqual(self.head(), n)
         self.assertIsNone(reconcile.recovery_open(self.rows()))
         c = dbm.connect(self.db, create=False)
         try:
-            self.assertTrue(reconcile.chain_problems(c, "j"))
+            problems = reconcile.chain_problems(c, "j")
         finally:
             c.close()
+        self.assertTrue(problems)
+        self.assertTrue(any("seq 2" in p for p in problems), problems)
 
-    def test_recoverable_exceptions_are_read_only_and_list_markers(self) -> None:
+    def test_recoverable_exceptions_are_read_only_and_shaped(self) -> None:
         self.new_job(); self.activate()
         before = self.head()
         ex1 = reconcile.recoverable_exceptions(self.db, "j")
         ex2 = reconcile.recoverable_exceptions(self.db, "j")
         self.assertEqual(ex1, ex2)
         self.assertEqual(self.head(), before)
-        self.assertEqual([e["kind"] for e in ex1], ["gate-log"])             # clean export, no markers
+        self.assertEqual(ex1, [])                                            # clean export: no exceptions at all
         self.assertEqual(export.check(self.db, "j"), [])
 
     def test_schema_exact_keys(self) -> None:
-        ok = {"reason": "r", "owner_turn": "recover j", "exceptions": [], "chain_head": {"seq": 1, "self": "a" * 64}}
+        ok = {"reason": "r", "owner_turn": "recover j", "exceptions": [{"id": "R1", "class": "export", "detail": "d"}],
+              "chain_head": {"seq": 1, "self": "a" * 64}}
         reconcile.validate_content("recovery-opened", {**ok, "contract_sha256": "x"}, {}, None)
         for bad in ({**ok, "extra": 1}, {k: v for k, v in ok.items() if k != "chain_head"}, {**ok, "reason": ""},
-                    {**ok, "exceptions": "none"}, {**ok, "chain_head": {"seq": "1"}}):
+                    {**ok, "exceptions": "none"}, {**ok, "exceptions": [{"kind": "gate-log"}]},
+                    {**ok, "chain_head": {"seq": "1"}}):
             with self.assertRaises(WfRejected) as cm:
                 reconcile.validate_content("recovery-opened", bad, {}, None)
             self.assertEqual(cm.exception.reason, "malformed")

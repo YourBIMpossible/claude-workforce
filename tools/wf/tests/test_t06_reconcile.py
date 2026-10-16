@@ -1,6 +1,7 @@
 """T06 reconcile + ack-reconcile (B2 slice 1, lane S1R, Zen): module tests for `wfcore.reconcile` against the frozen
-interface contract (GitHub issue #27 §1 schemas, §4-§5 reconcile / ack rules, §6 signatures, D-S1-5 bounded
-enumeration). Spec: FIRST-RELEASE-SPEC.md §4.1 l.178, §6.2 step 3, case T06 l.281.
+interface contract (GitHub issue #27 §1 schemas, §4 report / ack rules and CLASSES, §6 signatures and state keys,
+§9 D-S1-3 / D-S1-5; AMENDMENT A2: compare never walks the write scope). Spec: FIRST-RELEASE-SPEC.md §4.1 l.178,
+§6.2 steps 3 and 5, case T06 l.281. Revised in S1R cycle 1 (White F1 on PR #30) to pin the frozen shapes.
 
 Fixture ledgers are built through `wf.run` with `test_wf.Base` (fresh WF_TEST_TMP, refuse-existing, never delete);
 `wf job new` on main captures the changed-set baseline into the contract event (A1), which `compute_report` reads.
@@ -22,11 +23,14 @@ from typing import Any
 
 from test_wf import Base, CONTRACT  # noqa: E402
 from wfcore import changeset, db as dbm, reconcile, txn, validate  # noqa: E402
-from wfcore.db import OpLog, WfRejected  # noqa: E402
+from wfcore.db import OpLog, WfRefused, WfRejected  # noqa: E402
 from wfcore.faults import Faults  # noqa: E402
 
 WORK = "jobs/j/work/a.txt"
 STRAY = "tools/wf/stray.txt"
+REPORT_KEYS = {"role", "session", "generation", "through_seq", "classification", "exceptions", "gate_log", "problems",
+               "limitations"}
+CLASSIFICATION_KEYS = {"path", "class", "receipt_seq", "intent_seq", "sha_now", "sha_baseline", "sha_receipt"}
 
 
 def _sha(text: str) -> str:
@@ -34,14 +38,12 @@ def _sha(text: str) -> str:
 
 
 class _Engine(Base):
-    """Base + S1R ledger helpers. Job "j": contract by coordinator C1, grant activated; builder is the implicit B1
-    (observed header) unless `binding` says otherwise."""
+    """Base + S1R ledger helpers. Job "j": contract by coordinator C1, grant activated; builder is the implicit B1."""
 
     def setUp(self) -> None:
         super().setUp()
         self._n = 0
 
-    # -- ledger reads
     def rows(self) -> list[dict[str, Any]]:
         c = dbm.connect(self.db, create=False)
         try:
@@ -50,7 +52,8 @@ class _Engine(Base):
             c.close()
 
     def head(self) -> int:
-        return self.rows()[-1]["seq"] if self.rows() else 0
+        rs = self.rows()
+        return rs[-1]["seq"] if rs else 0
 
     def baseline(self) -> dict:
         return json.loads(self.rows()[0]["content"])["baseline_manifest"]
@@ -66,7 +69,6 @@ class _Engine(Base):
         with open(p, "w", encoding="utf-8") as fh:
             fh.write(text)
 
-    # -- writes through the real txn.write_event (contract §6 steps 1, 4, 5, 6 for the S1R types)
     def _write(self, *, etype: str, role: str, session: str, content_fn: Any, generation: int = 1,
                msg_id: str | None = None, binding_session: str | None = "B1") -> Any:
         self._n += 1
@@ -91,12 +93,17 @@ class _Engine(Base):
                                       content=content, contract_sha=csha, contract_content=contract)
         return txn.write_event(self.db, "j", Faults(), OpLog(), build=build, session=session)
 
+    def compute(self, rows: list[dict[str, Any]] | None = None, *, binding: tuple[str, int] | None = ("B1", 1),
+                role: str = "builder") -> dict:
+        rows = rows if rows is not None else self.rows()
+        return reconcile.compute_report(self.root(), CONTRACT, self.baseline(), rows, role=role, binding=binding,
+                                        head_seq=rows[-1]["seq"])
+
     def report(self, *, binding: tuple[str, int] | None = ("B1", 1)) -> dict:
-        res = self._write(etype="reconcile-report", role="coordinator", session="C1",
-                          content_fn=lambda conn, rows, head: reconcile.compute_report(
-                              self.root(), CONTRACT, self.baseline(), rows, role="builder", binding=binding,
-                              head_seq=head))
-        return res
+        return self._write(etype="reconcile-report", role="coordinator", session="C1",
+                           content_fn=lambda conn, rows, head: reconcile.compute_report(
+                               self.root(), CONTRACT, self.baseline(), rows, role="builder", binding=binding,
+                               head_seq=head))
 
     def ack(self, report_seq: int, ids: list[str], *, role: str = "builder", session: str = "B1",
             binding_session: str | None = "B1", note: str | None = None) -> dict:
@@ -106,13 +113,13 @@ class _Engine(Base):
         return self._write(etype="ack-reconcile", role=role, session=session, binding_session=binding_session,
                            content_fn=lambda conn, rows, head: content)
 
-    def builder_intent(self, note: str = "n", session: str = "B1") -> Any:
+    def builder_intent(self, note: str = "n", session: str = "B1", path: str = WORK) -> Any:
         return self._write(etype="intent", role="builder", session=session,
-                           content_fn=lambda conn, rows, head: {"path": WORK, "sha_before": "", "note": note})
+                           content_fn=lambda conn, rows, head: {"path": path, "sha_before": "", "note": note})
 
-    def builder_receipt(self, sha_after: str, session: str = "B1") -> Any:
+    def builder_receipt(self, sha_after: str, session: str = "B1", path: str = WORK) -> Any:
         return self._write(etype="receipt", role="builder", session=session,
-                           content_fn=lambda conn, rows, head: {"path": WORK, "sha_before": "", "sha_after": sha_after,
+                           content_fn=lambda conn, rows, head: {"path": path, "sha_before": "", "sha_after": sha_after,
                                                                  "note": "n"})
 
     def assert_rejected(self, fn: Any, reason: str, *a: Any, **k: Any) -> WfRejected:
@@ -126,65 +133,114 @@ class _Engine(Base):
     def report_content(self, seq: int) -> dict:
         return json.loads(next(r for r in self.rows() if r["seq"] == seq)["content"])
 
+    @staticmethod
+    def by_path(content: dict) -> dict[str, dict]:
+        return {c["path"]: c for c in content["classification"]}
+
 
 class ReportClassification(_Engine):
-    """D-S1-5: what the report examines, how it classifies, and that it is deterministic."""
+    """§4 shape and rules; D-S1-5 / A2 bounds; determinism."""
 
     def test_intent_without_receipt_and_stray_read_scope_change(self) -> None:
         self.new_job(); self.activate()
-        c, r = self.intent()                                  # intent for WORK, no receipt (via the CLI, implicit B1)
+        c, r = self.intent()                                  # intent for WORK (write scope), no receipt
         self.assertEqual(c, 0, r)
         self.write_file(WORK, "changed")
-        self.write_file(STRAY, "unrecorded")                  # read-scope change nobody named
+        self.write_file(STRAY, "unrecorded")                  # read-scope change nobody named (A2 item 1)
         res = self.report()
         content = self.report_content(res["seq"])
-        classes = {e["path"]: e["class"] for e in content["exceptions"]}
-        self.assertEqual(classes, {WORK: "attempt-without-completion", STRAY: "matches-neither"})
-        ids = [e["id"] for e in content["exceptions"]]
-        self.assertEqual(ids, sorted(ids))
-        self.assertEqual(ids, [f"attempt-without-completion:{WORK}", f"matches-neither:{STRAY}"])
+        self.assertEqual(set(content) - {"contract_sha256"}, REPORT_KEYS)   # build_row injects the pin
+        self.assertEqual((content["role"], content["session"], content["generation"]), ("builder", "B1", 1))
         self.assertEqual(content["through_seq"], res["seq"] - 1)
-        self.assertEqual(content["role"], "builder")
-        self.assertEqual(content["binding"], {"session": "B1", "generation": 1})
-        # the attempt exception records the file's present state (changed without a receipt)
-        ev = next(e for e in content["exceptions"] if e["path"] == WORK)["evidence"]
-        self.assertEqual(ev["now"]["sha256"], _sha("changed"))
-        self.assertIsNone(ev["last_receipt_seq"])
-        # D-S1-5: the examined set is stated; no write-scope walk; gate log explicitly unavailable
-        self.assertEqual(content["examined"]["intent_receipt_paths"], [WORK])
-        self.assertFalse(content["examined"]["write_scope_walk"])
-        self.assertEqual(content["gate_log"]["available"], False)
-        self.assertIn("UNKNOWN", content["gate_log"]["statement"])
-        self.assertTrue(any("write-scope file changed with neither an intent nor a receipt" in x
-                            for x in content["limitations"]))
-        self.assertEqual(content["changeset"]["added"], [STRAY])
+        self.assertIsNone(content["gate_log"])
+        self.assertEqual(content["problems"], [])
+        cl = self.by_path(content)
+        self.assertEqual(set(cl), {WORK, STRAY})
+        self.assertTrue(all(set(c) == CLASSIFICATION_KEYS for c in content["classification"]))
+        self.assertEqual(cl[WORK]["class"], "attempt-without-completion")
+        self.assertEqual((cl[WORK]["intent_seq"], cl[WORK]["receipt_seq"], cl[WORK]["sha_now"]),
+                         (r["seq"], None, _sha("changed")))
+        self.assertEqual(cl[STRAY]["class"], "matches-neither")
+        self.assertEqual((cl[STRAY]["sha_now"], cl[STRAY]["sha_baseline"], cl[STRAY]["intent_seq"]),
+                         (_sha("unrecorded"), None, None))
+        # exceptions: every matches-neither / attempt-without-completion item, ids X1.. in path order
+        self.assertEqual(content["exceptions"], [{"id": "X1", "path": WORK, "class": "attempt-without-completion"},
+                                                 {"id": "X2", "path": STRAY, "class": "matches-neither"}])
+        # D-S1-5 stated in limitations; the compare limitations are carried too
+        self.assertTrue(any("write scope is not walked" in x for x in content["limitations"]))
+        self.assertTrue(any("outside-boundary changes are not detected" in x for x in content["limitations"]))
 
-    def test_receipt_completes_intent_and_mismatch_is_classified(self) -> None:
+    def test_receipt_rules_matches_receipt_then_matches_neither(self) -> None:
         self.new_job(); self.activate()
         self.builder_intent()
         self.write_file(WORK, "changed")
-        self.builder_receipt(_sha("changed"))
+        rec = self.builder_receipt(_sha("changed"))
         res = self.report()
-        self.assertEqual(self.report_content(res["seq"])["exceptions"], [])
+        content = self.report_content(res["seq"])
+        self.assertEqual(content["exceptions"], [])
+        self.assertEqual(self.by_path(content)[WORK]["class"], "matches-receipt")
+        self.assertEqual(self.by_path(content)[WORK]["receipt_seq"], rec["seq"])
+        self.assertEqual(self.by_path(content)[WORK]["sha_receipt"], _sha("changed"))
         self.ack(res["seq"], [])
         self.write_file(WORK, "changed again without a receipt")
         res2 = self.report()
-        content = self.report_content(res2["seq"])
-        self.assertEqual([e["class"] for e in content["exceptions"]], ["completion-mismatch"])
-        self.assertEqual(content["exceptions"][0]["evidence"]["sha_after"], _sha("changed"))
+        content2 = self.report_content(res2["seq"])
+        self.assertEqual(self.by_path(content2)[WORK]["class"], "matches-neither")
+        self.assertEqual(content2["exceptions"], [{"id": "X1", "path": WORK, "class": "matches-neither"}])
 
-    def test_receipt_without_intent_and_unresolvable_path(self) -> None:
+    def test_matches_baseline_and_absent_absent(self) -> None:
         self.new_job(); self.activate()
-        self.builder_receipt(_sha("x"))                                   # no intent named WORK
-        self._write(etype="intent", role="builder", session="B1",
-                    content_fn=lambda conn, rows, head: {"path": "../outside.txt", "sha_before": "", "note": "n"})
+        # a read-scope file present at baseline, named by a receipt that restores it: matches-receipt; the same
+        # file with no receipt and unchanged content is never in-scope (compare lists no change) ...
+        self.write_file(STRAY, "u")
+        self.builder_receipt(_sha("gone"), path=STRAY)                  # receipt whose sha is not the file's
+        self.write_file(STRAY, "gone")
         res = self.report()
-        by_path: dict[str, set[str]] = {}
-        for e in self.report_content(res["seq"])["exceptions"]:
-            by_path.setdefault(e["path"], set()).add(e["class"])
-        # one path, two exceptions with distinct ids: no intent named it, and the file lacks the receipted sha
-        self.assertEqual(by_path[WORK], {"completion-without-attempt", "completion-mismatch"})
-        self.assertEqual(by_path["../outside.txt"], {"unresolvable-path"})
+        cl = self.by_path(self.report_content(res["seq"]))
+        self.assertEqual(cl[STRAY]["class"], "matches-receipt")
+        # ... and a path named by a receipt that is absent now and was absent in the baseline is matches-baseline
+        # only without a receipt: here the receipt exists, so an absent file is matches-neither
+        self.ack(res["seq"], [])
+        os.remove(os.path.join(self.root(), *STRAY.split("/")))
+        res2 = self.report()
+        cl2 = self.by_path(self.report_content(res2["seq"]))
+        self.assertEqual(cl2[STRAY]["class"], "matches-neither")
+        self.assertIsNone(cl2[STRAY]["sha_now"])
+
+    def test_matches_baseline_rule_is_not_reachable_from_the_in_scope_union(self) -> None:
+        """Observation pinned for White: a path enters scope only through compare (which lists a path only when it
+        differs from the baseline) or through an intent/receipt (an intent without later receipt is
+        attempt-without-completion; a receipt excludes the rule), so matches-baseline cannot occur under the frozen
+        rules. A receipt-named path absent now is matches-neither; a compare-listed path unchanged vs the baseline
+        does not exist. Not a defect of this module; reported on #27."""
+        self.new_job(); self.activate()
+        self.builder_intent(path="jobs/j/work/never-made.txt")
+        self.builder_receipt(_sha(""), path="jobs/j/work/never-made.txt")
+        content = self.compute()
+        c = self.by_path(content)["jobs/j/work/never-made.txt"]
+        self.assertEqual((c["class"], c["sha_now"], c["sha_baseline"]), ("matches-neither", None, None))
+        self.assertNotIn("matches-baseline", {x["class"] for x in content["classification"]})
+
+    def test_attempt_without_completion_regardless_of_sha(self) -> None:
+        """An older receipt whose sha matches the file does not clear a later intent (§6.2 step 3)."""
+        self.new_job(); self.activate()
+        self.write_file(WORK, "v1")
+        self.builder_receipt(_sha("v1"))
+        self.builder_intent("second attempt")                            # later intent, no receipt after it
+        content = self.compute()
+        c = self.by_path(content)[WORK]
+        self.assertEqual(c["class"], "attempt-without-completion")
+        self.assertEqual(c["sha_now"], c["sha_receipt"])                 # sha matches, class unchanged
+
+    def test_unrelatable_path_is_matches_neither_with_null_sha_and_named_limitation(self) -> None:
+        self.new_job(); self.activate()
+        self.builder_intent(path="../outside.txt")
+        self.builder_receipt(_sha("x"), path="../outside.txt")           # receipt after intent: not an attempt
+        content = self.compute()
+        c = self.by_path(content)["../outside.txt"]
+        self.assertEqual((c["class"], c["sha_now"]), ("matches-neither", None))
+        self.assertTrue(any("'../outside.txt' cannot be related" in x for x in content["limitations"]))
+        self.assertEqual(content["exceptions"], [{"id": "X1", "path": "../outside.txt", "class": "matches-neither"}])
 
     def test_report_is_deterministic(self) -> None:
         self.new_job(); self.activate()
@@ -192,30 +248,38 @@ class ReportClassification(_Engine):
         self.write_file(WORK, "changed")
         self.write_file(STRAY, "u")
         rows = self.rows()
-        a = reconcile.compute_report(self.root(), CONTRACT, self.baseline(), rows, role="builder", binding=("B1", 1),
-                                     head_seq=rows[-1]["seq"])
-        b = reconcile.compute_report(self.root(), CONTRACT, self.baseline(), rows, role="builder", binding=("B1", 1),
-                                     head_seq=rows[-1]["seq"])
-        self.assertEqual(a, b)
-        self.assertEqual([e["id"] for e in a["exceptions"]], sorted(e["id"] for e in a["exceptions"]))
+        self.assertEqual(self.compute(rows), self.compute(rows))
+        ids = [e["id"] for e in self.compute(rows)["exceptions"]]
+        self.assertEqual(ids, [f"X{i}" for i in range(1, len(ids) + 1)])
+        paths = [c["path"] for c in self.compute(rows)["classification"]]
+        self.assertEqual(paths, sorted(paths))
 
-    def test_read_only_target_role_refused(self) -> None:
+    def test_read_only_target_role_refused_and_compare_problems_refuse(self) -> None:
         self.new_job(); self.activate()
         rows = self.rows()
         with self.assertRaises(WfRejected) as cm:
-            reconcile.compute_report(self.root(), CONTRACT, self.baseline(), rows, role="reviewer", binding=None,
-                                     head_seq=rows[-1]["seq"])
+            self.compute(rows, role="reviewer", binding=None)
         self.assertEqual(cm.exception.reason, "role")
+        with self.assertRaises(WfRefused):                               # malformed baseline -> compare problems
+            reconcile.compute_report(self.root(), CONTRACT, {"entries": "nope"}, rows, role="builder", binding=None,
+                                     head_seq=rows[-1]["seq"])
+        before = self.head()
+        with self.assertRaises(WfRefused):
+            self._write(etype="reconcile-report", role="coordinator", session="C1",
+                        content_fn=lambda conn, rs, head: reconcile.compute_report(
+                            self.root(), CONTRACT, {"entries": "nope"}, rs, role="builder", binding=None, head_seq=head))
+        self.assertEqual(self.head(), before)                            # fail closed: nothing appended
 
     def test_write_scope_change_without_intent_or_receipt_is_not_discovered(self) -> None:
-        """D-S1-5 limit, pinned: a write-scope file nobody named is not an exception and the limit is stated."""
+        """D-S1-5 / A2 limit, pinned: a write-scope file nobody named is not classified; the limit is stated."""
         self.new_job(); self.activate()
         self.write_file("jobs/j/work/silent.txt", "no intent, no receipt")
         res = self.report(binding=None)
         content = self.report_content(res["seq"])
+        self.assertEqual(content["classification"], [])
         self.assertEqual(content["exceptions"], [])
-        self.assertIsNone(content["binding"])
-        self.assertTrue(any("not discoverable" in x for x in content["limitations"]))
+        self.assertEqual((content["session"], content["generation"]), (None, None))
+        self.assertTrue(any("not discoverable here" in x for x in content["limitations"]))
 
 
 class AckRules(_Engine):
@@ -227,15 +291,23 @@ class AckRules(_Engine):
         res = self.report()
         return res["seq"], [e["id"] for e in self.report_content(res["seq"])["exceptions"]]
 
+    def test_state_keys_and_unreconciled_predicate(self) -> None:
+        seq, ids = self._reported()
+        st = reconcile.state(self.rows(), "builder")
+        self.assertEqual(set(st), {"latest_report_seq", "latest_ack_seq", "unreconciled", "report"})
+        self.assertEqual((st["latest_report_seq"], st["latest_ack_seq"], st["unreconciled"]), (seq, None, True))
+        self.assertEqual(st["report"], self.report_content(seq))
+        self.assertEqual(reconcile.state(self.rows(), "coordinator"),
+                         {"latest_report_seq": None, "latest_ack_seq": None, "unreconciled": False, "report": None})
+
     def test_unreconciled_role_refused_until_exact_ack(self) -> None:
         seq, ids = self._reported()
-        self.assertTrue(reconcile.state(self.rows(), "builder")["unreconciled"])
-        self.assertFalse(reconcile.state(self.rows(), "coordinator")["unreconciled"])
-        self.assert_rejected(self.builder_intent, "unreconciled", "blocked")
+        exc = self.assert_rejected(self.builder_intent, "unreconciled", "blocked")
+        self.assertIn("report_seq", str(exc) + json.dumps(getattr(exc, "info", {}), default=str))
         self.assert_rejected(self.builder_receipt, "unreconciled", _sha("changed"))
         self.assert_rejected(self.ack, "invalid-ack", seq, [])                       # not the exact set
         self.assert_rejected(self.ack, "invalid-ack", seq, ids + ids)                # duplicates
-        self.assert_rejected(self.ack, "invalid-ack", seq, ids + ["matches-neither:other"])
+        self.assert_rejected(self.ack, "invalid-ack", seq, ids + ["X9"])
         self.assert_rejected(self.ack, "stale-report", seq - 1, ids)                 # not the latest report
         self.assert_rejected(self.ack, "stale-report", seq + 7, ids)
         self.assert_rejected(self.ack, "invalid-ack", seq, ids, session="B2", binding_session="B1")  # foreign session
@@ -245,17 +317,17 @@ class AckRules(_Engine):
         res = self.ack(seq, list(reversed(ids)), note="acknowledged")               # order-free exact set
         self.assertEqual(res["outcome"], "COMMITTED")
         st = reconcile.state(self.rows(), "builder")
-        self.assertEqual((st["latest_report_seq"], st["acked_seq"], st["unreconciled"]), (seq, res["seq"], False))
+        self.assertEqual((st["latest_report_seq"], st["latest_ack_seq"], st["unreconciled"]), (seq, res["seq"], False))
 
     def test_ack_does_not_invalidate_itself_and_second_ack_refused(self) -> None:
         seq, ids = self._reported()
         self.ack(seq, ids)
         self.assertFalse(reconcile.state(self.rows(), "builder")["unreconciled"])
-        r = self.builder_intent("resume")                                           # the role works again
-        self.assertEqual(r["outcome"], "COMMITTED")
+        self.assertEqual(self.builder_intent("resume")["outcome"], "COMMITTED")      # the role works again
         self.assert_rejected(self.ack, "invalid-ack", seq, ids)                      # already acknowledged
 
     def test_no_report_and_zero_exception_report_still_needs_ack(self) -> None:
+        """D-S1-3."""
         self.new_job(); self.activate()
         self.assert_rejected(self.ack, "no-report", 1, [])
         self.builder_intent()
@@ -264,7 +336,7 @@ class AckRules(_Engine):
         res = self.report()
         self.assertEqual(self.report_content(res["seq"])["exceptions"], [])
         self.assert_rejected(self.builder_intent, "unreconciled", "again")
-        self.assert_rejected(self.ack, "invalid-ack", res["seq"], ["something"])
+        self.assert_rejected(self.ack, "invalid-ack", res["seq"], ["X1"])
         self.ack(res["seq"], [])
         self.assertEqual(self.builder_intent("after")["outcome"], "COMMITTED")
 
@@ -287,12 +359,18 @@ class Schemas(_Engine):
             with self.assertRaises(WfRejected) as cm:
                 reconcile.validate_content("ack-reconcile", bad, CONTRACT, None)
             self.assertEqual(cm.exception.reason, "malformed")
-        rows = self.rows()
-        rep = reconcile.compute_report(self.root(), CONTRACT, self.baseline(), rows, role="builder", binding=None,
-                                       head_seq=rows[-1]["seq"])
+        rep = self.compute(binding=None)
         reconcile.validate_content("reconcile-report", rep, CONTRACT, None)
-        for bad in ({**rep, "role": "reviewer"}, {**rep, "gate_log": {"available": True}},
-                    {**rep, "exceptions": [{"id": "x", "class": "nope", "path": "p"}]}, {k: v for k, v in rep.items() if k != "examined"}):
+        bad_reports = (
+            {**rep, "role": "reviewer"},
+            {**rep, "gate_log": {"available": False}},                               # must be null
+            {**rep, "exceptions": [{"id": "X1", "class": "matches-receipt", "path": "p"}]},
+            {**rep, "classification": [{"path": "p", "class": "nope", "receipt_seq": None, "intent_seq": None,
+                                        "sha_now": None, "sha_baseline": None, "sha_receipt": None}]},
+            {k: v for k, v in rep.items() if k != "problems"},
+            {**rep, "method": "x"},
+        )
+        for bad in bad_reports:
             with self.assertRaises(WfRejected) as cm:
                 reconcile.validate_content("reconcile-report", bad, CONTRACT, None)
             self.assertEqual(cm.exception.reason, "malformed")
