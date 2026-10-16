@@ -22,8 +22,16 @@ ROLE_FOR_TYPE: dict[str, tuple[str, ...]] = {
     "delivered": ("builder",),
     "accept": ("reviewer",),
     "close": ("coordinator",),
+    # B2 slice 1 (INTERFACE-CONTRACT.md section 7, additive; carried by the S1R delivery, registered in OWNERS.md)
+    "bind": ("coordinator",),
+    "ack-assignment": ("coordinator", "builder", "reviewer"),
+    "stop-confirmed": ("coordinator",),
+    "reconcile-report": ("coordinator",),
+    "ack-reconcile": ("coordinator", "builder", "reviewer"),
+    "recovery-opened": ("coordinator",),
 }
-APPEND_TYPES = ("intent", "receipt", "blocker", "handoff", "delivered")
+APPEND_TYPES = ("intent", "receipt", "blocker", "handoff", "delivered", "ack-assignment", "stop-confirmed",
+                "ack-reconcile")
 ENVIRONMENT = "disposable local scope"
 
 CONTRACT_REQUIRED: dict[str, type | tuple[type, ...]] = {
@@ -186,6 +194,12 @@ def validate_content(etype: str, content: dict, contract: dict, grant_state: dic
         if _req(content, "basis", str) not in ("accepted", "abandoned"):
             raise WfRejected("malformed", "close basis must be accepted|abandoned")
         _req(content, "verify", str)
+    elif etype in ("bind", "ack-assignment", "stop-confirmed"):
+        from . import bind  # B2 slice 1, section 7: S1B schemas (module delivered by lane S1B)
+        bind.validate_content(etype, content, contract, grant_state)
+    elif etype in ("reconcile-report", "ack-reconcile", "recovery-opened"):
+        from . import reconcile  # B2 slice 1, section 7: S1R schemas
+        reconcile.validate_content(etype, content, contract, grant_state)
     else:
         raise WfRejected("malformed", f"unknown event type {etype!r}")
 
