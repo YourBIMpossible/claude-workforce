@@ -1,0 +1,339 @@
+{
+ "cases": [
+  {
+   "id": "control/read-through-link",
+   "kind": "control",
+   "reason": "OSError: [WinError 1314] A required privilege is not held by the client: 'F:\\\\Claude-Workforce-git\\\\.claude\\\\worktrees\\\\cand-FQ-pr25-01b105b-220449\\\\fixtures\\\\tmp\\\\fsq-220449\\\\control\\\\external-target\\\\secret.txt' -> 'F:\\\\Claude-Workforce-git\\\\.claude\\\\worktrees\\\\cand-FQ-pr25-01b105b-220449\\\\fixtures\\\\tmp\\\\fsq-220449\\\\control\\\\link' (WinError 1314)",
+   "status": "skip",
+   "surface": "mechanism"
+  },
+  {
+   "id": "linux-symlink/baseline",
+   "kind": "linux-symlink",
+   "reason": "host is win32; linux-symlink needs posix",
+   "repeat_command": "python -c \"import os; os.symlink(r'<target>', r'<link>', target_is_directory=<bool>)\"",
+   "status": "not-applicable",
+   "surface": "baseline"
+  },
+  {
+   "id": "linux-symlink/export",
+   "kind": "linux-symlink",
+   "reason": "host is win32; linux-symlink needs posix",
+   "repeat_command": "python -c \"import os; os.symlink(r'<target>', r'<link>', target_is_directory=<bool>)\"",
+   "status": "not-applicable",
+   "surface": "export"
+  },
+  {
+   "id": "linux-symlink/ledgerdir",
+   "kind": "linux-symlink",
+   "reason": "host is win32; linux-symlink needs posix",
+   "repeat_command": "python -c \"import os; os.symlink(r'<target>', r'<link>', target_is_directory=<bool>)\"",
+   "status": "not-applicable",
+   "surface": "ledgerdir"
+  },
+  {
+   "id": "windows-symlink/baseline",
+   "kind": "windows-symlink",
+   "reason": "OSError: [WinError 1314] A required privilege is not held by the client: 'F:\\\\Claude-Workforce-git\\\\.claude\\\\worktrees\\\\cand-FQ-pr25-01b105b-220449\\\\fixtures\\\\tmp\\\\fsq-220449\\\\windows-symlink\\\\baseline\\\\external-target' -> 'F:\\\\Claude-Workforce-git\\\\.claude\\\\worktrees\\\\cand-FQ-pr25-01b105b-220449\\\\fixtures\\\\tmp\\\\fsq-220449\\\\windows-symlink\\\\baseline\\\\boundary\\\\tools\\\\wf\\\\link' (WinError 1314)",
+   "repeat_command": "python -c \"import os; os.symlink(r'<target>', r'<link>', target_is_directory=<bool>)\"",
+   "skip_is_evidence": false,
+   "status": "skip",
+   "surface": "baseline",
+   "target": {
+    "is_directory": true,
+    "path": "F:\\Claude-Workforce-git\\.claude\\worktrees\\cand-FQ-pr25-01b105b-220449\\fixtures\\tmp\\fsq-220449\\windows-symlink\\baseline\\external-target",
+    "sentinel": "F:\\Claude-Workforce-git\\.claude\\worktrees\\cand-FQ-pr25-01b105b-220449\\fixtures\\tmp\\fsq-220449\\windows-symlink\\baseline\\external-target\\secret.txt"
+   }
+  },
+  {
+   "id": "windows-symlink/export",
+   "kind": "windows-symlink",
+   "reason": "OSError: [WinError 1314] A required privilege is not held by the client: 'F:\\\\Claude-Workforce-git\\\\.claude\\\\worktrees\\\\cand-FQ-pr25-01b105b-220449\\\\fixtures\\\\tmp\\\\fsq-220449\\\\windows-symlink\\\\export\\\\external-target\\\\secret.txt' -> 'F:\\\\Claude-Workforce-git\\\\.claude\\\\worktrees\\\\cand-FQ-pr25-01b105b-220449\\\\fixtures\\\\tmp\\\\fsq-220449\\\\windows-symlink\\\\export\\\\jobs\\\\j\\\\export\\\\link-entry' (WinError 1314)",
+   "repeat_command": "python -c \"import os; os.symlink(r'<target>', r'<link>', target_is_directory=<bool>)\"",
+   "skip_is_evidence": false,
+   "status": "skip",
+   "surface": "export",
+   "target": {
+    "is_directory": false,
+    "path": "F:\\Claude-Workforce-git\\.claude\\worktrees\\cand-FQ-pr25-01b105b-220449\\fixtures\\tmp\\fsq-220449\\windows-symlink\\export\\external-target\\secret.txt",
+    "sentinel": "F:\\Claude-Workforce-git\\.claude\\worktrees\\cand-FQ-pr25-01b105b-220449\\fixtures\\tmp\\fsq-220449\\windows-symlink\\export\\external-target\\secret.txt"
+   }
+  },
+  {
+   "id": "windows-symlink/ledgerdir",
+   "kind": "windows-symlink",
+   "reason": "OSError: [WinError 1314] A required privilege is not held by the client: 'F:\\\\Claude-Workforce-git\\\\.claude\\\\worktrees\\\\cand-FQ-pr25-01b105b-220449\\\\fixtures\\\\tmp\\\\fsq-220449\\\\windows-symlink\\\\ledgerdir\\\\external-target\\\\secret.txt' -> 'F:\\\\Claude-Workforce-git\\\\.claude\\\\worktrees\\\\cand-FQ-pr25-01b105b-220449\\\\fixtures\\\\tmp\\\\fsq-220449\\\\windows-symlink\\\\ledgerdir\\\\ledger\\\\link.db' (WinError 1314)",
+   "repeat_command": "python -c \"import os; os.symlink(r'<target>', r'<link>', target_is_directory=<bool>)\"",
+   "skip_is_evidence": false,
+   "status": "skip",
+   "surface": "ledgerdir",
+   "target": {
+    "is_directory": false,
+    "path": "F:\\Claude-Workforce-git\\.claude\\worktrees\\cand-FQ-pr25-01b105b-220449\\fixtures\\tmp\\fsq-220449\\windows-symlink\\ledgerdir\\external-target\\secret.txt",
+    "sentinel": "F:\\Claude-Workforce-git\\.claude\\worktrees\\cand-FQ-pr25-01b105b-220449\\fixtures\\tmp\\fsq-220449\\windows-symlink\\ledgerdir\\external-target\\secret.txt"
+   }
+  },
+  {
+   "checks": {
+    "link_left_in_place": true,
+    "link_reported_appropriately": true,
+    "sentinel_content_absent_from_output": true,
+    "target_bytes_identity_listing_unchanged": true,
+    "target_not_accessed_by_python_file_ops": true
+   },
+   "claim": "the link was reported and the target was not opened, listed or changed by Python-level file operations during the call (audit hook + canary + before/after identity); no claim about kernel-level access or about another OS/filesystem",
+   "id": "windows-junction/baseline",
+   "kind": "windows-junction",
+   "link": {
+    "isjunction": true,
+    "islink": false,
+    "lexists": true,
+    "path": "F:\\Claude-Workforce-git\\.claude\\worktrees\\cand-FQ-pr25-01b105b-220449\\fixtures\\tmp\\fsq-220449\\windows-junction\\baseline\\boundary\\tools\\wf\\link"
+   },
+   "observation": {
+    "after": {
+     "listing": [
+      "secret.txt"
+     ],
+     "sha256": "2a711e07f0456c87450d874be0f9c5426fe5f5aa697a8521e1b874103d5e5eb7",
+     "size": 51,
+     "st_dev": 11987129492730974211,
+     "st_ino": 281474991554488,
+     "st_mtime_ns": 1792127098376010800
+    },
+    "audit_hook": {
+     "outside_scratch_events": [],
+     "target_events": [],
+     "watched_events_total": 2
+    },
+    "before": {
+     "listing": [
+      "secret.txt"
+     ],
+     "sha256": "2a711e07f0456c87450d874be0f9c5426fe5f5aa697a8521e1b874103d5e5eb7",
+     "size": 51,
+     "st_dev": 11987129492730974211,
+     "st_ino": 281474991554488,
+     "st_mtime_ns": 1792127098376010800
+    },
+    "bytes_unchanged": true,
+    "canary_chmod_000_applied": false,
+    "identity_unchanged": true,
+    "link_still_present": true,
+    "listing_unchanged": true
+   },
+   "product_output": [
+    "problems=[]",
+    "entries_under_link=[]",
+    "limitation_hits=['skipped link or reparse point: tools/wf/link']",
+    "real_hashed=True"
+   ],
+   "repeat_command": "cmd /c mklink /J \"<link>\" \"<target-dir>\"",
+   "status": "pass",
+   "surface": "baseline",
+   "target": {
+    "is_directory": true,
+    "path": "F:\\Claude-Workforce-git\\.claude\\worktrees\\cand-FQ-pr25-01b105b-220449\\fixtures\\tmp\\fsq-220449\\windows-junction\\baseline\\external-target",
+    "sentinel": "F:\\Claude-Workforce-git\\.claude\\worktrees\\cand-FQ-pr25-01b105b-220449\\fixtures\\tmp\\fsq-220449\\windows-junction\\baseline\\external-target\\secret.txt"
+   }
+  },
+  {
+   "checks": {
+    "link_left_in_place": true,
+    "link_reported_appropriately": true,
+    "sentinel_content_absent_from_output": true,
+    "target_bytes_identity_listing_unchanged": true,
+    "target_not_accessed_by_python_file_ops": true
+   },
+   "claim": "the link was reported and the target was not opened, listed or changed by Python-level file operations during the call (audit hook + canary + before/after identity); no claim about kernel-level access or about another OS/filesystem",
+   "id": "windows-junction/export",
+   "kind": "windows-junction",
+   "link": {
+    "isjunction": true,
+    "islink": false,
+    "lexists": true,
+    "path": "F:\\Claude-Workforce-git\\.claude\\worktrees\\cand-FQ-pr25-01b105b-220449\\fixtures\\tmp\\fsq-220449\\windows-junction\\export\\jobs\\j\\export\\link-entry"
+   },
+   "observation": {
+    "after": {
+     "listing": [
+      "secret.txt"
+     ],
+     "sha256": "a94a861f5ea8490dc7cef5cca39b228a22566f58e854eb825c955b7ba6d8b9fe",
+     "size": 49,
+     "st_dev": 11987129492730974211,
+     "st_ino": 281474991554497,
+     "st_mtime_ns": 1792127098424602100
+    },
+    "audit_hook": {
+     "outside_scratch_events": [],
+     "target_events": [],
+     "watched_events_total": 9
+    },
+    "before": {
+     "listing": [
+      "secret.txt"
+     ],
+     "sha256": "a94a861f5ea8490dc7cef5cca39b228a22566f58e854eb825c955b7ba6d8b9fe",
+     "size": 49,
+     "st_dev": 11987129492730974211,
+     "st_ino": 281474991554497,
+     "st_mtime_ns": 1792127098424602100
+    },
+    "bytes_unchanged": true,
+    "canary_chmod_000_applied": false,
+    "identity_unchanged": true,
+    "link_still_present": true,
+    "listing_unchanged": true
+   },
+   "product_output": [
+    "problems=['unexpected export link: link-entry']"
+   ],
+   "repeat_command": "cmd /c mklink /J \"<link>\" \"<target-dir>\"",
+   "status": "pass",
+   "surface": "export",
+   "target": {
+    "is_directory": true,
+    "path": "F:\\Claude-Workforce-git\\.claude\\worktrees\\cand-FQ-pr25-01b105b-220449\\fixtures\\tmp\\fsq-220449\\windows-junction\\export\\external-target",
+    "sentinel": "F:\\Claude-Workforce-git\\.claude\\worktrees\\cand-FQ-pr25-01b105b-220449\\fixtures\\tmp\\fsq-220449\\windows-junction\\export\\external-target\\secret.txt"
+   }
+  },
+  {
+   "checks": {
+    "link_left_in_place": true,
+    "link_reported_appropriately": true,
+    "sentinel_content_absent_from_output": true,
+    "target_bytes_identity_listing_unchanged": true,
+    "target_not_accessed_by_python_file_ops": true
+   },
+   "claim": "the link was reported and the target was not opened, listed or changed by Python-level file operations during the call (audit hook + canary + before/after identity); no claim about kernel-level access or about another OS/filesystem",
+   "id": "windows-junction/ledgerdir",
+   "kind": "windows-junction",
+   "link": {
+    "isjunction": true,
+    "islink": false,
+    "lexists": true,
+    "path": "F:\\Claude-Workforce-git\\.claude\\worktrees\\cand-FQ-pr25-01b105b-220449\\fixtures\\tmp\\fsq-220449\\windows-junction\\ledgerdir\\ledger\\link.db"
+   },
+   "observation": {
+    "after": {
+     "listing": [
+      "secret.txt"
+     ],
+     "sha256": "c6560dd1da1835cdb462ccb42d8d68ddee006092cc77bebb1858e4358c6d1f8a",
+     "size": 52,
+     "st_dev": 11987129492730974211,
+     "st_ino": 281474991554513,
+     "st_mtime_ns": 1792127098504936200
+    },
+    "audit_hook": {
+     "outside_scratch_events": [],
+     "target_events": [],
+     "watched_events_total": 13
+    },
+    "before": {
+     "listing": [
+      "secret.txt"
+     ],
+     "sha256": "c6560dd1da1835cdb462ccb42d8d68ddee006092cc77bebb1858e4358c6d1f8a",
+     "size": 52,
+     "st_dev": 11987129492730974211,
+     "st_ino": 281474991554513,
+     "st_mtime_ns": 1792127098504936200
+    },
+    "bytes_unchanged": true,
+    "canary_chmod_000_applied": false,
+    "identity_unchanged": true,
+    "link_still_present": true,
+    "listing_unchanged": true
+   },
+   "product_output": [
+    "ledger_directory={'problems': ['unexpected ledger-directory file: link.db/'], 'neighbors': []}",
+    "clean=False",
+    "job_problems=[]"
+   ],
+   "repeat_command": "cmd /c mklink /J \"<link>\" \"<target-dir>\"",
+   "status": "pass",
+   "surface": "ledgerdir",
+   "target": {
+    "is_directory": true,
+    "path": "F:\\Claude-Workforce-git\\.claude\\worktrees\\cand-FQ-pr25-01b105b-220449\\fixtures\\tmp\\fsq-220449\\windows-junction\\ledgerdir\\external-target",
+    "sentinel": "F:\\Claude-Workforce-git\\.claude\\worktrees\\cand-FQ-pr25-01b105b-220449\\fixtures\\tmp\\fsq-220449\\windows-junction\\ledgerdir\\external-target\\secret.txt"
+   }
+  }
+ ],
+ "environment": {
+  "filesystem": {
+   "case_insensitive": true,
+   "scratch": "F:\\Claude-Workforce-git\\.claude\\worktrees\\cand-FQ-pr25-01b105b-220449\\fixtures\\tmp\\fsq-220449",
+   "type": "NTFS"
+  },
+  "host": {
+   "machine": "AMD64",
+   "node": "White-Z",
+   "platform": "Windows-11-10.0.26300-SP0",
+   "release": "11",
+   "sys_platform": "win32",
+   "system": "Windows",
+   "windows_build": 26300
+  },
+  "privilege": {
+   "developer_mode_read_only": false,
+   "is_admin": false,
+   "note": "read only; nothing enabled"
+  },
+  "python": {
+   "implementation": "CPython",
+   "isolated": true,
+   "sqlite": "3.50.4",
+   "version": "3.14.4"
+  },
+  "revision": {
+   "branch": "HEAD",
+   "dirty": false,
+   "head": "01b105b9b292a9494dae117d02d168df140ea2f4",
+   "head12": "01b105b9b292",
+   "manifest_line": "a7b41ea696ecfe69d797e2f2091cd31976c848ea267d09277b22e75c06d4c856  .gitignore"
+  },
+  "timestamp_utc": "2026-10-16T05:04:58Z"
+ },
+ "link_capability": {
+  "junction": {
+   "created": true,
+   "error": null
+  },
+  "repeat_commands": {
+   "junction": "cmd /c mklink /J \"<link>\" \"<target-dir>\"",
+   "symlink": "python -c \"import os; os.symlink(r'<target>', r'<link>', target_is_directory=<bool>)\""
+  },
+  "symlink_dir": {
+   "created": false,
+   "error": "OSError: [WinError 1314] A required privilege is not held by the client: 'F:\\\\Claude-Workforce-git\\\\.claude\\\\worktrees\\\\cand-FQ-pr25-01b105b-220449\\\\fixtures\\\\tmp\\\\fsq-220449\\\\capability\\\\target-dir' -> 'F:\\\\Claude-Workforce-git\\\\.claude\\\\worktrees\\\\cand-FQ-pr25-01b105b-220449\\\\fixtures\\\\tmp\\\\fsq-220449\\\\capability\\\\sym-dir' (WinError 1314)"
+  },
+  "symlink_file": {
+   "created": false,
+   "error": "OSError: [WinError 1314] A required privilege is not held by the client: 'F:\\\\Claude-Workforce-git\\\\.claude\\\\worktrees\\\\cand-FQ-pr25-01b105b-220449\\\\fixtures\\\\tmp\\\\fsq-220449\\\\capability\\\\target.txt' -> 'F:\\\\Claude-Workforce-git\\\\.claude\\\\worktrees\\\\cand-FQ-pr25-01b105b-220449\\\\fixtures\\\\tmp\\\\fsq-220449\\\\capability\\\\sym-file' (WinError 1314)"
+  },
+  "without_privilege_change": true
+ },
+ "probe": "fixtures/filesystem_qualification/probe_links.py",
+ "qualification_scope": {
+  "evidence_for": [
+   "windows-junction"
+  ],
+  "mechanism_control": "skip",
+  "not_tested": [
+   "control",
+   "linux-symlink",
+   "windows-symlink"
+  ],
+  "statement": "evidence applies only to the listed host/filesystem/revision; Linux output is not Windows qualification and a skip or not-applicable entry is not evidence"
+ },
+ "schema": 1,
+ "summary": {
+  "fail": 0,
+  "not-applicable": 3,
+  "pass": 3,
+  "skip": 4
+ }
+}
