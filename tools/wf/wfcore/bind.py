@@ -181,7 +181,15 @@ def validate_bind(conn: sqlite3.Connection, job: str, *, role: str, session: str
     (recovery-open) -> actor (explicit mode: the author is the bound, not-stopped coordinator: unbound-session /
     stopped-session) -> activated grant (no-grant) -> ARS parses and names the role (ars) -> declared tools/paths
     inside the ARS (ars) -> role not already bound (bound) -> bootstrap when the table is empty (bootstrap) ->
-    reviewer precondition (reviewer-precondition) -> generation 1 (generation)."""
+    reviewer precondition (reviewer-precondition) -> generation 1 (generation).
+
+    The §3 precondition list is exhaustive, so for role builder this function intentionally does NOT read the
+    implicit `builder_session` (only the reviewer precondition reads it). Contract-determined consequence (White's
+    review of PR #29, case (b)): if session B1 already acted as builder implicitly and the coordinator then binds a
+    different session B2 as builder, the bind commits; B2's first event is a claimant conflict against the implicit
+    holder B1 (`validate.build_row`, existing rule, owner Q6), B1's next event is a claimant conflict against the bound
+    B2 (`check_actor`), and the builder role is then blocked for the job. The only exit is replacement /
+    generation+1 (T33), outside this slice. No precondition is added here; a different rule needs a #27 amendment."""
     if role not in ARS_ROLES:
         raise WfRejected("malformed", f"bind role {role!r} is not one of {list(ARS_ROLES)}")
     if not _nonempty_str(session):

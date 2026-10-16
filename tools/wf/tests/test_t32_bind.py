@@ -464,6 +464,86 @@ class ActorCheck(_Engine):
         self.assertConflict(self.do_intent, "B2")                # a new session is no replacement (T33)
 
 
+# ===================================================================================================== implicit -> explicit
+
+class ImplicitThenExplicit(_Engine):
+    """White's review of PR #29 (S1B cycle 1/3), cases (a) and (b): explicit binding after implicit builder work.
+    Contract-determined (§3 precondition list exhaustive; owner Q6 keeps build_row's implicit rules). Asserted on the
+    real rows. Fixture seqs: 1 contract, 2 grant proposed, 3 grant activated."""
+
+    def rows(self) -> list[dict]:
+        c = self.conn()
+        try:
+            return dbm.rows(c, "j")
+        finally:
+            c.close()
+
+    def last(self) -> tuple[dict, dict]:
+        r = self.rows()[-1]
+        return r, json.loads(r["content"])
+
+    def test_case_a_same_session_implicit_then_bound(self):
+        """(a) B1 acts implicitly -> C1 self-bind -> bind builder B1 -> B1 intent and ack: all committed, no conflict."""
+        self.new_job(); self.activate()
+        self.do_intent("B1")
+        r, _ = self.last()
+        self.assertEqual((r["seq"], r["type"], r["session_id"]), (4, "intent", "B1"))
+        self.do_bind("coordinator", "C1")
+        self.do_bind("builder", "B1")
+        r, c = self.last()
+        self.assertEqual((r["seq"], r["type"], r["author_role"], r["session_id"]), (6, "bind", "coordinator", "C1"))
+        self.assertEqual((c["role"], c["session"], c["generation"]), ("builder", "B1", 1))
+        self.do_intent("B1")
+        r, _ = self.last()
+        self.assertEqual((r["seq"], r["type"], r["author_role"], r["session_id"]), (7, "intent", "builder", "B1"))
+        self.do_ack("builder", "B1")
+        r, c = self.last()
+        self.assertEqual((r["seq"], r["type"], r["session_id"]), (8, "ack-assignment", "B1"))
+        self.assertEqual(c["bind_seq"], 6)
+        self.assertEqual([x["type"] for x in self.rows()].count("blocker"), 0)
+        b = self.table()["builder"]
+        self.assertEqual((b.session, b.bind_seq, b.ack_seq, b.stopped_seq), ("B1", 6, 8, None))
+
+    def test_case_b_different_session_bound_after_implicit_builder(self):
+        """(b) B1 acts implicitly (4) -> C1 self-bind (5) -> bind builder B2 commits (6) -> B2's first event:
+        claimant conflict, holder B1 (build_row implicit rule), blocker 7 -> B1's event: claimant conflict, holder B2
+        (check_actor), blocker 8 -> builder role-blocked -> stop-confirmed for B2 commits (9); for B1 invalid-stop.
+        The builder role stays unusable in this slice; the exit is replacement/generation+1 (T33)."""
+        self.new_job(); self.activate()
+        self.do_intent("B1")
+        self.do_bind("coordinator", "C1")
+        r, _ = self.last()
+        self.assertEqual((r["seq"], r["type"]), (5, "bind"))
+        self.do_bind("builder", "B2")                       # no implicit-holder check for builder (§3 exhaustive)
+        r, c = self.last()
+        self.assertEqual((r["seq"], r["type"], r["session_id"]), (6, "bind", "C1"))
+        self.assertEqual((c["role"], c["session"]), ("builder", "B2"))
+
+        bc = self.assertConflict(self.do_intent, "B2")
+        r, _ = self.last()
+        self.assertEqual((r["seq"], r["type"], r["author_role"], r["session_id"]), (7, "blocker", "builder", "B2"))
+        self.assertEqual((bc["role"], bc["generation"], bc["holder_session"], bc["claimant_session"],
+                          bc["attempted_type"]), ("builder", 1, "B1", "B2", "intent"))
+
+        bc = self.assertConflict(self.do_intent, "B1")
+        r, _ = self.last()
+        self.assertEqual((r["seq"], r["type"], r["author_role"], r["session_id"]), (8, "blocker", "builder", "B1"))
+        self.assertEqual((bc["role"], bc["holder_session"], bc["claimant_session"]), ("builder", "B2", "B1"))
+
+        self.assertRejected("role-blocked", self.do_intent, "B2")
+        self.assertEqual(self.head(), 8)
+
+        self.do_stop("builder", "B2")
+        r, c = self.last()
+        self.assertEqual((r["seq"], r["type"], r["author_role"], r["session_id"]), (9, "stop-confirmed", "coordinator", "C1"))
+        self.assertEqual((c["role"], c["session"], c["generation"]), ("builder", "B2", 1))
+        self.assertRejected("invalid-stop", self.do_stop, "builder", "B1")
+        self.assertEqual([x["type"] for x in self.rows()][3:],
+                         ["intent", "bind", "bind", "blocker", "blocker", "stop-confirmed"])
+        b = self.table()["builder"]
+        self.assertEqual((b.session, b.bind_seq, b.stopped_seq), ("B2", 6, 9))
+
+
 # ===================================================================================================== ack / stop
 
 class AckAssignment(_Engine):
