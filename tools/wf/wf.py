@@ -50,6 +50,22 @@ def _parser() -> argparse.ArgumentParser:
     cl = sp.add_parser("close"); cl.add_argument("job"); cl.add_argument("--intervention", required=True)
     rs = sp.add_parser("resolve"); rs.add_argument("job"); rs.add_argument("seq", type=int)
     rs.add_argument("--attempt"); rs.add_argument("--disposition")
+    # B2 slice 1 (INTERFACE-CONTRACT 6): bind / reconcile / ack-reconcile / recover begin. The global --role and
+    # --session name the invoking coordinator; the assignment being recorded uses --bind-role/--bind-session.
+    bd = sp.add_parser("bind", help="record a role assignment checked against the activated grant's ARS (spec 2B)")
+    bd.add_argument("job"); bd.add_argument("--bind-role", required=True, choices=("coordinator", "builder", "reviewer"))
+    bd.add_argument("--bind-session", required=True); bd.add_argument("--bind-generation", type=int, default=1)
+    bd.add_argument("--tool", action="append", default=None, help="declared tool (repeatable; default: contract allowed_tools)")
+    bd.add_argument("--path", action="append", default=None, help="declared path glob (repeatable; default: contract scope)")
+    rc = sp.add_parser("reconcile", help="compare in-scope files with baseline, receipts and intents; append the report")
+    rc.add_argument("job"); rc.add_argument("--target-role", default="builder")
+    ak = sp.add_parser("ack-reconcile", help="acknowledge a reconcile report (same as append --type ack-reconcile)")
+    ak.add_argument("job"); ak.add_argument("--report", type=int, required=True, metavar="SEQ")
+    ak.add_argument("--exceptions", required=True, help="JSON list of the report's exception ids (exactly)")
+    ak.add_argument("--note", default=None)
+    rv = sp.add_parser("recover").add_subparsers(dest="sub", required=True)
+    rb = rv.add_parser("begin"); rb.add_argument("job"); rb.add_argument("--reason", required=True)
+    rb.add_argument("--turn", required=True, help="owner turn text naming the job")
     return p
 
 
@@ -119,6 +135,21 @@ def run(argv: list[str]) -> tuple[int, dict]:
             res = commands.close(db, args.job, args.intervention, faults=faults, **common)
         elif args.cmd == "resolve":
             res = commands.resolve(db, args.job, args.seq, args.attempt, args.disposition, oplog)
+        elif args.cmd == "bind":
+            _need(args, "role", "session")
+            res = commands.bind_cmd(db, args.job, bind_role=args.bind_role, bind_session=args.bind_session,
+                                    bind_generation=args.bind_generation, tools=args.tool, paths_=args.path,
+                                    faults=faults, **common)
+        elif args.cmd == "reconcile":
+            _need(args, "role", "session")
+            res = commands.reconcile_cmd(db, args.job, target_role=args.target_role, faults=faults, **common)
+        elif args.cmd == "ack-reconcile":
+            _need(args, "role", "session")
+            res = commands.ack_reconcile(db, args.job, report_seq=args.report, exceptions_src=args.exceptions,
+                                         note=args.note, faults=faults, **common)
+        elif args.cmd == "recover":  # only `begin` is registered in this slice (reconcile/close excluded)
+            _need(args, "role", "session")
+            res = commands.recover_begin(db, args.job, reason=args.reason, turn=args.turn, faults=faults, **common)
         else:  # pragma: no cover
             raise WfUsage("unknown command")
     except WfError as exc:
@@ -152,7 +183,8 @@ def run(argv: list[str]) -> tuple[int, dict]:
     if not args.oplog:
         res.pop("ops", None)
     res["db"] = res.get("db", db)
-    res["msg_id"] = msg_id if args.cmd in ("job", "grant", "append", "accept", "close") else None
+    res["msg_id"] = (msg_id if args.cmd in ("job", "grant", "append", "accept", "close", "bind", "reconcile",
+                                            "ack-reconcile", "recover") else None)
     return EXIT_OK, res
 
 
@@ -170,7 +202,7 @@ def main() -> int:
             sys.stdout.write(res["block_text"] + "\n")
         elif res.get("ok", True):
             keys = [k for k in ("outcome", "job", "seq", "self", "attempt_id", "commit_attempts", "axes", "head",
-                                "clean", "decision", "block_hash") if k in res]
+                                "clean", "decision", "block_hash", "binding", "exceptions", "recovery") if k in res]
             sys.stdout.write(" ".join(f"{k}={json.dumps(res[k], default=str)}" for k in keys) + "\n")
         else:
             sys.stdout.write(f"{res.get('code', 'error')}: {res.get('error', res.get('outcome'))}\n")
