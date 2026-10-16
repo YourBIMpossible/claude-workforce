@@ -230,38 +230,39 @@ class R3UnexpectedFilesInLedgerAndRuntimeFolders(_Flow):
         self.assertFalse(v["clean"], v)
         self.assertIn("export file missing: head.json", v["jobs"]["j"]["export"])
 
-    def test_LIMIT_added_stray_file_in_the_export_folder_is_unreported_by_verify(self):
-        """R3 limit (observed present behaviour). Spec sentence (section 4.4 P4 row): "Added or deleted files in the
-        ledger/runtime folders other than the listed ones -> violation". Present behaviour: an added file in
-        jobs/<job>/export/ that the manifest does not list is NOT reported by `wf verify` (clean stays true, export
-        problems empty): export.check walks the manifest entries only (`for e in entries`) and never lists the
-        directory. Missing mechanism: a directory listing compared against the manifest or the fixed FILES set in
-        export.check. missing-implementation; T35 stays PARTIAL on this element."""
+    def test_added_stray_file_in_the_export_folder_is_reported_by_verify(self):
+        """R3 observed (corrected 2026-10-15 by the integrator when A3 landed; was `test_LIMIT_..._is_unreported_by_verify`,
+        which pinned the PRESENT behaviour of rev12 1b005a42f204). Spec sentence (section 4.4 P4 row): "Added or
+        deleted files in the ledger/runtime folders other than the listed ones -> violation". Mechanism: export.check
+        lists the export directory (Zen, A3) and reports `unexpected export file: <name>`; `wf verify` is not clean.
+        The requirement assertion itself (R3a) lives in test_t35_stray_files.py, moved from requirements_t35_unmet.py."""
         self.start()
         stray = os.path.join(paths.export_dir(self.db, "j"), "stray.txt")
         with open(stray, "w", encoding="utf-8") as fh:
             fh.write("unexpected\n")
         v = self.verify()
-        self.assertTrue(v["clean"], v)
-        self.assertEqual(v["jobs"]["j"]["export"], [])
-        self.assertNotIn("stray.txt", json.dumps(v))
+        self.assertFalse(v["clean"], v)
+        self.assertIn("unexpected export file: stray.txt", v["jobs"]["j"]["export"])
+        self.assertTrue(os.path.isfile(stray))  # report only, never deleted
 
-    def test_stray_files_survive_export_refresh_and_remain_unreported(self):
-        """R3 observed, current behaviour pinned honestly: after `wf export` regenerates the four files, the stray
-        file is still there and verify is still clean. Detects: a silent behaviour change in either direction
-        (export starting to delete strays, or verify starting to report them) without the gap tests above
-        flipping. Not a requirement PASS; a record of the present limit."""
+    def test_stray_files_survive_export_refresh_and_are_reported(self):
+        """R3 observed (corrected 2026-10-15 by the integrator when A3 landed; was `..._and_remain_unreported`):
+        `wf export` regenerates the four files, leaves the stray in place (never deletes), and now exits non-zero
+        with code `export-error` naming the stray; verify stays not clean. Detects: export starting to delete strays,
+        or verify going silent again."""
         self.start()
         stray = os.path.join(paths.export_dir(self.db, "j"), "stray.txt")
         with open(stray, "w", encoding="utf-8") as fh:
             fh.write("unexpected\n")
         c, e = self.run_wf("export", "j")
-        self.assertEqual(c, 0, e)
+        self.assertNotEqual(c, 0, e)
+        self.assertEqual(e.get("code"), "export-error", e)
+        self.assertIn("unexpected export file: stray.txt", e["problems"], e)
         self.assertTrue(os.path.isfile(stray))
         self.assertEqual(sorted(os.listdir(paths.export_dir(self.db, "j"))), sorted([*EXPORT_FILES, "stray.txt"]))
         v = self.verify()
-        self.assertTrue(v["clean"], v)
-        self.assertEqual(v["jobs"]["j"]["export"], [])
+        self.assertFalse(v["clean"], v)
+        self.assertIn("unexpected export file: stray.txt", v["jobs"]["j"]["export"])
 
 
 if __name__ == "__main__":
