@@ -14,7 +14,7 @@ import os
 import sqlite3
 import unittest
 
-from test_wf import Base, GRANT  # noqa: E402  (fixture, fresh WF_TEST_TMP, refuse-existing)
+from test_wf import DECLARATIONS, Base, GRANT  # noqa: E402  (fixture, fresh WF_TEST_TMP, refuse-existing)
 from wfcore import commands  # noqa: E402
 
 GRANT_ARS = dict(GRANT, ars={
@@ -117,9 +117,6 @@ class B2S1(Base):
         bad = json.dumps({"role": "builder", "session": "B1", "bind_seq": bind_seq - 1})
         self.assert_rejected(self.run_wf("append", "j", "--type", "ack-assignment", "--content", bad), "invalid-ack")
         good = json.dumps({"role": "builder", "session": "B1", "bind_seq": bind_seq})
-        c, r = self.run_wf("append", "j", "--type", "ack-assignment", "--content", good, session="B2")
-        self.assertEqual(c, 1, r)
-        self.assertIn("rejected(", r["error"])  # foreign session: claimant conflict or invalid-ack, never a row
         c, r = self.run_wf("append", "j", "--type", "ack-assignment", "--content", good)
         self.assertEqual(c, 0, r)
         self.assert_rejected(self.run_wf("append", "j", "--type", "ack-assignment", "--content", good, msg_id="again"),
@@ -128,6 +125,12 @@ class B2S1(Base):
         self.assertTrue({row["role"]: row for row in d["bindings"]["rows"]}["builder"]["acknowledged"])
         c, r = self.intent()  # bound, acknowledged builder works
         self.assertEqual(c, 0, r)
+        # foreign session acking the bound role = second claimant: conflict row, role blocked (spec 5 rule 5)
+        c, r = self.run_wf("append", "j", "--type", "ack-assignment", "--content", good, session="B2")
+        self.assertEqual(c, 1, r)
+        self.assertIn("rejected(claimant-conflict)", r["error"])
+        c, st = self.run_wf("status", "j")
+        self.assertEqual(st["axes"]["execution"], "blocked")
 
     def test_T32_refusals_no_grant_ars_duplicate_foreign(self):
         self.new_job()
@@ -195,7 +198,7 @@ class B2S1(Base):
         c, r = self.intent()                   # intent for jobs/j/work/a.txt, no receipt
         self.assertEqual(c, 0, r)
         self.write_work("jobs/j/work/a.txt", "changed")
-        self.write_work("jobs/j/work/b.txt", "unrecorded")
+        self.write_work("tools/wf/stray.txt", "unrecorded")   # read-scope change without receipt
         self.assert_rejected(self.run_wf("reconcile", "j"), "role")                              # builder cannot
         self.assert_rejected(self.run_wf("reconcile", "j", "--target-role", "reviewer", role="coordinator", session="C1"), "role")
         c, r = self.run_wf("reconcile", "j", role="coordinator", session="C1")
@@ -204,7 +207,7 @@ class B2S1(Base):
         ids = [e["id"] for e in r["exceptions"]]
         classes = {e["path"]: e["class"] for e in r["exceptions"]}
         self.assertEqual(classes.get("jobs/j/work/a.txt"), "attempt-without-completion")
-        self.assertEqual(classes.get("jobs/j/work/b.txt"), "matches-neither")
+        self.assertEqual(classes.get("tools/wf/stray.txt"), "matches-neither")
         self.assertEqual(r["through_seq"], report_seq - 1)
         # unreconciled: builder mutations refuse, read-only commands run, ack-reconcile is the only mutation
         self.assert_rejected(self.intent(), "unreconciled")
@@ -227,8 +230,7 @@ class B2S1(Base):
         self.assertNotIn("unreconciled builder", [n["item"] for n in d["needs_owner"]])
         self.assertTrue({row["role"]: row for row in d["bindings"]["rows"]}["builder"]["reconciled"])
         # a second report with zero exceptions still needs an ack (via append --type ack-reconcile)
-        self.write_work("jobs/j/work/b.txt", "")
-        os.remove(os.path.join(self.dir, "jobs", "j", "work", "b.txt"))
+        os.remove(os.path.join(self.dir, "tools", "wf", "stray.txt"))
         c, r = self.run_wf("append", "j", "--type", "receipt", "--content",
                            '{"path":"jobs/j/work/a.txt","sha_before":"","sha_after":"' + self.sha("changed") + '","note":"n"}')
         self.assertEqual(c, 0, r)
@@ -266,7 +268,7 @@ class B2S1(Base):
         c, r = self.intent()
         self.assertEqual(c, 0, r)
         n = self.events()
-        c, r = self.run_wf("recover", "begin", "j", "--reason", "stale export", "--turn", "owner turn without the job",
+        c, r = self.run_wf("recover", "begin", "j", "--reason", "stale export", "--turn", "owner: proceed",
                            role="coordinator", session="C1")
         self.assertEqual(c, 1, r)
         self.assertIn("rejected(no-provenance)", r["error"])
@@ -288,8 +290,6 @@ class B2S1(Base):
         self.assert_rejected(self.run_wf("reconcile", "j", role="coordinator", session="C1"), "recovery-open")
         self.assert_rejected(self.run_wf("append", "j", "--type", "stop-confirmed", "--content", json.dumps(STOP),
                                          role="coordinator", session="C1"), "recovery-open")
-        self.assert_rejected(self.run_wf("close", "j", "--intervention", "none", role="coordinator", session="C1"),
-                             "recovery-open")
         self.assert_rejected(self.run_wf("job", "abandon", "j", "--reason", "r"), "recovery-open")
         self.assertEqual(self.events(), opened)
         c, d = self.run_wf("digest", "j")
@@ -303,6 +303,25 @@ class B2S1(Base):
         with self.assertRaises(SystemExit):    # recover reconcile / close are not registered in this slice
             self.run_wf("recover", "close", "j", role="coordinator", session="C1")
 
+    def test_T16a_close_refused_while_open(self):
+        """A closable (accepted) job: `close` reaches the gate and is rejected(recovery-open); nothing appended.
+        (An abandoned job cannot open a recovery: txn refuses every write on it, existing behaviour.)"""
+        self.new_job()
+        self.activate()
+        self.intent()
+        self.run_wf("append", "j", "--type", "delivered", "--content", DELIVERED)
+        results = {"criteria": [{"id": "AC1", "pass": True, "actual": "ok"}], "changed_paths": ["jobs/j/work/a.txt"],
+                   "environment": "disposable local scope", "limits": "none", **DECLARATIONS}
+        c, r = self.run_wf("accept", "j", "--results", json.dumps(results), role="reviewer", session="R1")
+        self.assertEqual((c, r.get("decision")), (0, "accepted"), r)
+        c, r = self.run_wf("recover", "begin", "j", "--reason", "x", "--turn", "owner: recover j", role="coordinator",
+                           session="C1")
+        self.assertEqual(c, 0, r)
+        n = self.events()
+        self.assert_rejected(self.run_wf("close", "j", "--intervention", "none", role="coordinator", session="C1"),
+                             "recovery-open")
+        self.assertEqual(self.events(), n)
+
     def test_T16a_invalid_chain_appends_nothing(self):
         self.new_job()
         self.activate()
@@ -313,6 +332,7 @@ class B2S1(Base):
         n = self.events()
         conn = sqlite3.connect(self.db)
         try:  # tamper a middle row (seq 2, the proposed grant): the bounded head check cannot see it
+            conn.execute("DROP TRIGGER events_no_update")
             conn.execute("UPDATE events SET content = replace(content, 'G1', 'G9') WHERE job='j' AND seq=2")
             conn.commit()
         finally:
