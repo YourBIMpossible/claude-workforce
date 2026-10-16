@@ -1,0 +1,1128 @@
+{
+ "baseline": {
+  "branch": "prep/plexy-foundation-verification",
+  "dirty_tracked_files": [],
+  "head": "7711356b37a79b89e92afbd0d02359e938aff3f2",
+  "platform": "win32",
+  "python": "3.14.6"
+ },
+ "child_exit_code": 1,
+ "complete": false,
+ "counts": {
+  "executed": 0,
+  "fail_or_error": 210,
+  "ok": 0,
+  "selected": 210,
+  "skipped_or_expected_failure": 0
+ },
+ "finished_utc": "20261016T033613Z",
+ "label": "foundation-verification selector (prep); not acceptance, not a gate result",
+ "requirement_verdicts": {
+  "FAIL": [
+   "T01",
+   "T02",
+   "T03",
+   "T04",
+   "T05",
+   "T08",
+   "T09",
+   "T10",
+   "T18",
+   "T19",
+   "T20",
+   "T21",
+   "T23",
+   "T24",
+   "T26",
+   "T27",
+   "T28",
+   "T29",
+   "T31",
+   "T35",
+   "T36",
+   "T37"
+  ],
+  "INCOMPLETE": [],
+  "MISSING": [
+   "T06",
+   "T07",
+   "T14",
+   "T16",
+   "T22",
+   "T30",
+   "T32",
+   "T33",
+   "T34"
+  ],
+  "OUT-OF-LAYER": [
+   "T11",
+   "T12",
+   "T13",
+   "T15",
+   "T17",
+   "T25"
+  ],
+  "PASS": [],
+  "PASS-PARTIAL": []
+ },
+ "requirements": {
+  "T01": {
+   "layer": "V (I if G-05)",
+   "missing": [],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:276",
+    "fixtures/results/t09-closure-9d2210ee082a/coverage-map-t09-closure.md row T01",
+    "tools/wf/tests/test_wf.py:147 (claimant-conflict, blocked_roles)",
+    "tools/wf/tests/test_wf.py:628"
+   ],
+   "spec_line": null,
+   "status": "mapped",
+   "tests": {
+    "test_wf.T03Validate.test_T04_message_rules": "not-run",
+    "test_wf.TConflict.test_C1_pause_holder_locked_out_then_blocked": "not-run",
+    "test_wf.TConflict.test_C3_later_generations_all_blocked": "not-run"
+   },
+   "verdict": "FAIL"
+  },
+  "T02": {
+   "layer": "V",
+   "missing": [],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:277",
+    "fixtures/results/t09-closure-9d2210ee082a/coverage-map-t09-closure.md row T02",
+    "tools/wf/tests/test_wf.py:147,322"
+   ],
+   "spec_line": null,
+   "status": "mapped",
+   "tests": {
+    "test_wf.SpecMapGaps.test_spec_T31_insert_at_existing_seq_refused_by_schema": "not-run",
+    "test_wf.T03Validate.test_T04_message_rules": "not-run"
+   },
+   "verdict": "FAIL"
+  },
+  "T03": {
+   "layer": "V; O procedural",
+   "missing": [],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:278",
+    "fixtures/results/t09-closure-9d2210ee082a/coverage-map-t09-closure.md row T03",
+    "tools/wf/tests/test_wf.py:173,133"
+   ],
+   "spec_line": null,
+   "status": "mapped",
+   "tests": {
+    "test_wf.T03Validate.test_T03_contract_required_fields": "not-run",
+    "test_wf.T03Validate.test_T05_grant_ordering": "not-run"
+   },
+   "verdict": "FAIL"
+  },
+  "T04": {
+   "layer": "V",
+   "missing": [],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:279",
+    "fixtures/results/t09-closure-9d2210ee082a/coverage-map-t09-closure.md row T04 (D-021 slice interpretation)",
+    "tools/wf/tests/test_wf.py:147"
+   ],
+   "spec_line": null,
+   "status": "mapped",
+   "tests": {
+    "test_wf.T03Validate.test_T04_message_rules": "not-run"
+   },
+   "verdict": "FAIL"
+  },
+  "T05": {
+   "layer": "V",
+   "missing": [],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:280",
+    "fixtures/results/t09-closure-9d2210ee082a/coverage-map-t09-closure.md row T05",
+    "tools/wf/tests/test_wf.py:147,642"
+   ],
+   "spec_line": null,
+   "status": "mapped",
+   "tests": {
+    "test_wf.T03Validate.test_T04_message_rules": "not-run",
+    "test_wf.TConflict.test_C4_existing_rules_with_conflict_row": "not-run"
+   },
+   "verdict": "FAIL"
+  },
+  "T06": {
+   "layer": "V",
+   "missing": [
+    {
+     "assertion": "after a worker restart with changed files and no report, reconcile classifies the files and no retry happens before ack-reconcile",
+     "smallest_test": "needs the reconcile mechanism (absent): assert `wf reconcile` output classes for one changed file and that a builder append before ack-reconcile is rejected"
+    }
+   ],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:281",
+    "04-DECISIONS.md D-023"
+   ],
+   "spec_line": null,
+   "status": "missing",
+   "tests": {},
+   "verdict": "MISSING"
+  },
+  "T07": {
+   "layer": "V",
+   "missing": [
+    {
+     "assertion": "a message durably in the ledger is processed on the next read after a missed doorbell; no loss",
+     "smallest_test": "needs a notification/doorbell mechanism (absent): assert that a reader started after an unnotified append sees the row"
+    }
+   ],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:282",
+    "fixtures/results/t09-closure-9d2210ee082a/coverage-map-t09-closure.md row T07"
+   ],
+   "spec_line": null,
+   "status": "missing",
+   "tests": {},
+   "verdict": "MISSING"
+  },
+  "T08": {
+   "layer": "V",
+   "missing": [],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:283",
+    "fixtures/results/t09-closure-9d2210ee082a/coverage-map-t09-closure.md row T08",
+    "tools/wf/tests/test_wf.py:147"
+   ],
+   "spec_line": null,
+   "status": "mapped",
+   "tests": {
+    "test_wf.T03Validate.test_T04_message_rules": "not-run"
+   },
+   "verdict": "FAIL"
+  },
+  "T09": {
+   "layer": "V",
+   "missing": [],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:284 (D-017 clause 1-A)",
+    "fixtures/results/t09-closure-9d2210ee082a/coverage-map-t09-closure.md row T09 (COVERED after T09 closure)",
+    "tools/wf/tests/test_b1_gaps.py:110",
+    "tools/wf/tests/test_engine_missing_fields_closure.py:50-129"
+   ],
+   "spec_line": null,
+   "status": "mapped",
+   "tests": {
+    "test_b1_gaps.B1Gaps.test_T09_missing_role_or_session_exact_result_and_storage_rule": "not-run",
+    "test_engine_missing_fields.T09EngineMissingFields.test_T09_engine_build_row_rejects_missing_identity_fields": "not-run",
+    "test_engine_missing_fields_closure.T09Closure.test_T09_G1_engine_rejects_missing_none_identity_fields": "not-run",
+    "test_engine_missing_fields_closure.T09Closure.test_T09_G2_append_path_rejects_blank_role_or_session_ledger_unchanged": "not-run",
+    "test_engine_missing_fields_closure.T09Closure.test_T09_G3_cli_whitespace_role_or_session_is_usage_error": "not-run",
+    "test_engine_missing_fields_closure.T09Closure.test_T09_G4_payload_and_contract_missing_field_label": "not-run",
+    "test_wf.SpecMapGaps.test_spec_T09_missing_author_or_session": "not-run"
+   },
+   "verdict": "FAIL"
+  },
+  "T10": {
+   "layer": "V",
+   "missing": [],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:285",
+    "fixtures/results/t09-closure-9d2210ee082a/coverage-map-t09-closure.md row T10",
+    "tools/wf/tests/test_wf.py:147,215"
+   ],
+   "spec_line": null,
+   "status": "mapped",
+   "tests": {
+    "test_wf.T03Validate.test_T04_message_rules": "not-run",
+    "test_wf.T03Validate.test_T07_grant_resource_widening": "not-run"
+   },
+   "verdict": "FAIL"
+  },
+  "T11": {
+   "layer": "E / I+E",
+   "missing": [],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:286"
+   ],
+   "spec_line": null,
+   "status": "out-of-layer",
+   "tests": {},
+   "verdict": "OUT-OF-LAYER"
+  },
+  "T12": {
+   "layer": "procedural",
+   "missing": [],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:287"
+   ],
+   "spec_line": null,
+   "status": "out-of-layer",
+   "tests": {},
+   "verdict": "OUT-OF-LAYER"
+  },
+  "T13": {
+   "layer": "E / I+E",
+   "missing": [],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:288"
+   ],
+   "spec_line": null,
+   "status": "out-of-layer",
+   "tests": {},
+   "verdict": "OUT-OF-LAYER"
+  },
+  "T14": {
+   "layer": "V",
+   "missing": [
+    {
+     "assertion": "`wf observe` distinguishes slow-active, silent and blocked builders from the gate log and events",
+     "smallest_test": "needs `wf observe` (absent): three fixtures (recent gate-log write / no write / blocked role) each classified by observe output"
+    }
+   ],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:289"
+   ],
+   "spec_line": null,
+   "status": "missing",
+   "tests": {},
+   "verdict": "MISSING"
+  },
+  "T15": {
+   "layer": "E / I+E",
+   "missing": [],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:290"
+   ],
+   "spec_line": null,
+   "status": "out-of-layer",
+   "tests": {},
+   "verdict": "OUT-OF-LAYER"
+  },
+  "T16": {
+   "layer": "V",
+   "missing": [
+    {
+     "assertion": "a second recovery/replacement for the same interruption is refused; one generation bump; no override path",
+     "smallest_test": "needs recover/replace commands (absent): second `recover begin` refused, generation incremented once"
+    }
+   ],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:291",
+    "04-DECISIONS.md D-023"
+   ],
+   "spec_line": null,
+   "status": "missing",
+   "tests": {},
+   "verdict": "MISSING"
+  },
+  "T17": {
+   "layer": "E / I+E",
+   "missing": [],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:292"
+   ],
+   "spec_line": null,
+   "status": "out-of-layer",
+   "tests": {},
+   "verdict": "OUT-OF-LAYER"
+  },
+  "T18": {
+   "layer": "(a) E; (b) V over boundary",
+   "missing": [
+    {
+     "assertion": "(a) a Write/Edit outside the write scope is denied by the gate",
+     "smallest_test": "gate hook absent in this repository (out of layer here)"
+    },
+    {
+     "assertion": "(b) a shell write outside the boundary is recorded as not detected in the acceptance record's own words",
+     "smallest_test": "assert the accept event content `changed_paths.limitations` contains the NOT_DETECTED sentence (pathpolicy.NOT_DETECTED) after an accept whose results omit an outside-boundary file; test_t35_path_policy.T35Classes.test_accept_rejects_P2_and_P3_and_records_the_limitation asserts the record key, not the omitted-file scenario"
+    }
+   ],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:293",
+    "tools/wf/tests/test_t35_changeset.py:259-301 (undeclared in-boundary change detected)",
+    "tools/wf/tests/test_t35_remaining_requirements.py:101"
+   ],
+   "spec_line": null,
+   "status": "partial",
+   "tests": {
+    "test_pathpolicy_hardening.AcceptIntegration.test_accept_rejects_malformed_entries_and_records_them": "not-run",
+    "test_t35_changeset.EndToEndWithWiring.test_R1_declared_P2_manifest_deletion_is_still_rejected_and_P1_deletion_accepted": "not-run",
+    "test_t35_changeset.EndToEndWithWiring.test_R1_undeclared_P2_manifest_deletion_is_rejected": "not-run",
+    "test_t35_changeset.EndToEndWithWiring.test_R2_stray_under_watched_ledger_still_rejects_fail_closed": "not-run",
+    "test_t35_changeset.EndToEndWithWiring.test_R2_supplied_coordination_update_is_accepted_as_P4": "not-run",
+    "test_t35_remaining_requirements.R1ManifestFileMissingFromP1.test_supplied_P2_deletion_of_a_manifest_file_is_a_violation": "not-run"
+   },
+   "verdict": "FAIL"
+  },
+  "T19": {
+   "layer": "E + V",
+   "missing": [
+    {
+     "assertion": "a corrupt (non-SQLite / integrity_check-failing) ledger file makes every wf command deny with a blocker, never allow",
+     "smallest_test": "overwrite the ledger header bytes under WF_TEST_TMP, run `wf append`/`wf accept`: assert exit non-zero, code refused/rejected, no row; `wf verify` clean false with an integrity problem"
+    },
+    {
+     "assertion": "a ledger at an unexpected identity (different file than the pinned one) is denied",
+     "smallest_test": "no identity pin exists in the product (no mechanism); smallest test waits on that decision"
+    },
+    {
+     "assertion": "a recovery left open denies writes",
+     "smallest_test": "needs recover commands (absent)"
+    }
+   ],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:294",
+    "tools/wf/tests/test_wf.py:362,437,265,497"
+   ],
+   "spec_line": null,
+   "status": "partial",
+   "tests": {
+    "test_wf.SpecMapGaps.test_connect_wait_counts_against_acquisition_bound": "not-run",
+    "test_wf.T08Flow.test_T10_verify_detects_tamper": "not-run",
+    "test_wf.T27Markers.test_T29b_reads_wait_for_write_lock": "not-run",
+    "test_wf.T27Markers.test_T31_faults_not_allowed_on_product_path": "not-run"
+   },
+   "verdict": "FAIL"
+  },
+  "T20": {
+   "layer": "V",
+   "missing": [
+    {
+     "assertion": "`wf accept` is refused when nothing was delivered ('nothing delivered yet')",
+     "smallest_test": "new job + grant, no delivered event, reviewer accept -> assert code refused and error contains 'nothing delivered'; one test in test_wf style"
+    },
+    {
+     "assertion": "a delivered claim without evidence links is refused at accept/close",
+     "smallest_test": "deliver `{claims:[{claim:'c'}]}` (no evidence) -> assert the append or the accept is refused; today validate_content requires `evidence` per claim: assert `rejected(malformed)` on the append"
+    }
+   ],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:295",
+    "tools/wf/tests/test_wf.py:224-253 (close refused before accept; close after accept)"
+   ],
+   "spec_line": null,
+   "status": "partial",
+   "tests": {
+    "test_wf.T08Flow.test_T08_full_flow_status_accept_close": "not-run",
+    "test_wf.T08Flow.test_T09_abandon_then_close": "not-run"
+   },
+   "verdict": "FAIL"
+  },
+  "T21": {
+   "layer": "V",
+   "missing": [],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:296",
+    "tools/wf/tests/test_wf.py:295,255"
+   ],
+   "spec_line": null,
+   "status": "mapped",
+   "tests": {
+    "test_wf.SpecMapGaps.test_spec_T21_close_needs_intervention_declaration": "not-run",
+    "test_wf.T08Flow.test_T09_abandon_then_close": "not-run"
+   },
+   "verdict": "FAIL"
+  },
+  "T22": {
+   "layer": "V",
+   "missing": [
+    {
+     "assertion": "`wf observe` refuses to write elsewhere, contact or resume; writes only its own log",
+     "smallest_test": "needs `wf observe` (absent): invoke with a write/contact/resume request, assert refusal and that only runtime/observe/<job>.log changed"
+    }
+   ],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:297"
+   ],
+   "spec_line": null,
+   "status": "missing",
+   "tests": {},
+   "verdict": "MISSING"
+  },
+  "T23": {
+   "layer": "V",
+   "missing": [],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:298",
+    "fixtures/results/t09-closure-9d2210ee082a/coverage-map-t09-closure.md row T23",
+    "tools/wf/tests/test_wf.py:265,313",
+    "tools/wf/tests/test_b1_gaps.py:154"
+   ],
+   "spec_line": null,
+   "status": "mapped",
+   "tests": {
+    "test_b1_gaps.B1Gaps.test_T23_reordered_rows_detected": "not-run",
+    "test_wf.SpecMapGaps.test_spec_T23_delete_mid_chain_detected": "not-run",
+    "test_wf.T08Flow.test_T10_verify_detects_tamper": "not-run"
+   },
+   "verdict": "FAIL"
+  },
+  "T24": {
+   "layer": "V",
+   "missing": [],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:299",
+    "fixtures/results/t09-closure-9d2210ee082a/coverage-map-t09-closure.md row T24 (PARTIAL before lane A)",
+    "tools/wf/tests/test_t24_accept_declarations.py:26-197",
+    "tools/wf/tests/test_wf.py:305,224"
+   ],
+   "spec_line": null,
+   "status": "mapped",
+   "tests": {
+    "test_t24_accept_declarations.T24Flow.test_baseline_subfield_mismatch_rejected_with_field_named": "not-run",
+    "test_t24_accept_declarations.T24Flow.test_correct_declarations_accepted": "not-run",
+    "test_t24_accept_declarations.T24Flow.test_existing_checks_unchanged_environment_mismatch_still_rejects": "not-run",
+    "test_t24_accept_declarations.T24Flow.test_missing_baseline_rejected": "not-run",
+    "test_t24_accept_declarations.T24Flow.test_missing_contract_hash_rejected": "not-run",
+    "test_t24_accept_declarations.T24Flow.test_non_dict_baseline_rejected_without_exception": "not-run",
+    "test_t24_accept_declarations.T24Flow.test_recorded_reasons_contain_declaration_reasons": "not-run",
+    "test_t24_accept_declarations.T24Flow.test_wrong_contract_hash_rejected": "not-run",
+    "test_t24_accept_declarations.T24Unit.test_bad_ordinary_input_types_return_reasons_not_exceptions": "not-run",
+    "test_t24_accept_declarations.T24Unit.test_canonical_equality_ignores_key_order_and_whitespace": "not-run",
+    "test_t24_accept_declarations.T24Unit.test_correct_declarations_return_no_reasons": "not-run",
+    "test_t24_accept_declarations.T24Unit.test_each_baseline_subfield_mismatch_rejected_with_field_named": "not-run",
+    "test_t24_accept_declarations.T24Unit.test_each_baseline_subfield_missing_rejected_with_field_named": "not-run",
+    "test_t24_accept_declarations.T24Unit.test_extra_baseline_field_rejected_with_field_named": "not-run",
+    "test_t24_accept_declarations.T24Unit.test_hash_and_baseline_both_wrong_gives_both_reasons": "not-run",
+    "test_t24_accept_declarations.T24Unit.test_missing_baseline_rejected": "not-run",
+    "test_t24_accept_declarations.T24Unit.test_missing_contract_hash_rejected": "not-run",
+    "test_t24_accept_declarations.T24Unit.test_non_dict_baseline_rejected_without_exception": "not-run",
+    "test_t24_accept_declarations.T24Unit.test_wrong_contract_hash_rejected": "not-run",
+    "test_wf.SpecMapGaps.test_spec_T24_wrong_environment_rejected": "not-run",
+    "test_wf.T08Flow.test_T08_full_flow_status_accept_close": "not-run"
+   },
+   "verdict": "FAIL"
+  },
+  "T25": {
+   "layer": "E / I+E",
+   "missing": [],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:300"
+   ],
+   "spec_line": null,
+   "status": "out-of-layer",
+   "tests": {},
+   "verdict": "OUT-OF-LAYER"
+  },
+  "T26": {
+   "layer": "V",
+   "missing": [],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:301",
+    "tools/wf/tests/test_digest_t26.py:40-213 (DA1 field-by-field)"
+   ],
+   "spec_line": null,
+   "status": "mapped",
+   "tests": {
+    "test_digest_t26.T26Digest.test_T26a2_db_size_read_inside_snapshot": "not-run",
+    "test_digest_t26.T26Digest.test_T26a_head_matches_status_and_chain": "not-run",
+    "test_digest_t26.T26Digest.test_T26b_sections_across_job_states": "not-run",
+    "test_digest_t26.T26Digest.test_T26c2_interrupted_needs_owner": "not-run",
+    "test_digest_t26.T26Digest.test_T26c_every_needs_owner_item_has_recommendation_and_evidence": "not-run",
+    "test_digest_t26.T26Digest.test_T26d_activated_grant_quote_block_hash_turn": "not-run",
+    "test_digest_t26.T26Digest.test_T26e_ars_verbatim": "not-run",
+    "test_digest_t26.T26Digest.test_T26f2_binding_generation_column": "not-run",
+    "test_digest_t26.T26Digest.test_T26f_binding_table": "not-run",
+    "test_digest_t26.T26Digest.test_T26g_evidence_paths_with_seq": "not-run",
+    "test_digest_t26.T26Digest.test_T26h_no_raw_relay": "not-run",
+    "test_digest_t26.T26Digest.test_T26i_pending_marker_recommends_resolve": "not-run",
+    "test_digest_t26.T26Digest.test_T26j_digest_is_read_only": "not-run"
+   },
+   "verdict": "FAIL"
+  },
+  "T27": {
+   "layer": "V (3A)",
+   "missing": [],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:302 (D-017 clause 2)",
+    "fixtures/results/t09-closure-9d2210ee082a/coverage-map-t09-closure.md row T27 (PARTIAL before C2)",
+    "tools/wf/tests/test_b1_gaps.py:181,220",
+    "tools/wf/tests/test_transaction_sequence_requirements.py:131,170,290"
+   ],
+   "spec_line": null,
+   "status": "mapped",
+   "tests": {
+    "test_b1_gaps.B1Gaps.test_T27_n_simultaneous_appends_one_job": "not-run",
+    "test_b1_gaps.B1Gaps.test_T27_simultaneous_mutations_two_jobs": "not-run",
+    "test_transaction_sequence_requirements.TxSeq.test_R1_two_jobs_contended_exact_committed_set": "not-run",
+    "test_transaction_sequence_requirements.TxSeq.test_R2_reader_holding_read_transaction_while_writer_commits": "not-run",
+    "test_transaction_sequence_requirements.TxSeq.test_R5_no_second_write_connection_per_command": "not-run",
+    "test_wf.SpecMapGaps.test_connect_wait_counts_against_acquisition_bound": "not-run",
+    "test_wf.T27Markers.test_T27_guard_cases": "not-run",
+    "test_wf.T27Markers.test_T29_commit_timeout_give_up": "not-run",
+    "test_wf.T27Markers.test_T29b_reads_wait_for_write_lock": "not-run",
+    "test_wf.TConflict.test_C1_pause_holder_locked_out_then_blocked": "not-run"
+   },
+   "verdict": "FAIL"
+  },
+  "T28": {
+   "layer": "V + engine",
+   "missing": [],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:303",
+    "fixtures/results/t09-closure-9d2210ee082a/coverage-map-t09-closure.md row T28",
+    "04-DECISIONS.md D-018, D-020, D-024, D-026",
+    "tools/wf/tests/test_b1_gaps.py:248",
+    "tools/wf/tests/test_crash_export.py:117,198",
+    "tools/wf/tests/test_transaction_sequence_requirements.py:369,436"
+   ],
+   "spec_line": null,
+   "status": "mapped",
+   "tests": {
+    "test_b1_gaps.B1Gaps.test_T28_hot_journal_at_next_open_rolls_back": "not-run",
+    "test_crash_export.CrashExport.test_X1_after_commit_crash_stale_export_repaired_not_recovered": "not-run",
+    "test_crash_export.CrashExport.test_X2_before_commit_kill_export_publishes_only_committed": "not-run",
+    "test_export_cmd.ExportCmd.test_AC1_stale_events_repaired": "not-run",
+    "test_export_cmd.ExportCmd.test_AC2_missing_manifest_and_missing_dir": "not-run",
+    "test_export_cmd.ExportCmd.test_AC3_t31b_scenario_export_repairs_in_place": "not-run",
+    "test_transaction_sequence_requirements.T28Journal.test_R6_wf_never_deletes_or_moves_the_hot_journal": "not-run",
+    "test_transaction_sequence_requirements.T28Journal.test_R7_D018_journal_presence_after_next_open_observation": "not-run",
+    "test_wf.T27Markers.test_T28_resolve_selection": "not-run",
+    "test_wf.T27Markers.test_T30_commit_error_fault_and_resolve": "not-run",
+    "test_wf.T27Markers.test_T31b_export_refresh_failure_keeps_commit": "not-run",
+    "test_wf.TConflict.test_C2b_kill_before_commit_then_resolve": "not-run"
+   },
+   "verdict": "FAIL"
+  },
+  "T29": {
+   "layer": "V + E; O procedural",
+   "missing": [
+    {
+     "assertion": "a contract amended after approval voids the grant",
+     "smallest_test": "no amend operation exists (missing mechanism); smallest test: `job new` with a changed contract on an existing job is refused (pinned contract) - assert refused"
+    },
+    {
+     "assertion": "gate denies under a quoted-but-unbound approval",
+     "smallest_test": "gate absent (out of layer)"
+    }
+   ],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:304",
+    "fixtures/results/t09-closure-9d2210ee082a/coverage-map-t09-closure.md row T29",
+    "tools/wf/tests/test_wf.py:173,193"
+   ],
+   "spec_line": null,
+   "status": "partial",
+   "tests": {
+    "test_wf.T03Validate.test_T05_grant_ordering": "not-run",
+    "test_wf.T03Validate.test_T05b_block_hash_repeatable_on_fresh_ledger": "not-run"
+   },
+   "verdict": "FAIL"
+  },
+  "T30": {
+   "layer": "V",
+   "missing": [
+    {
+     "assertion": "recover begin while a recovery is open is refused; racing recoverers; recoverer killed at each step leaves a resumable state",
+     "smallest_test": "needs recover commands (absent); test_wf.T27Markers.test_T30_commit_error_fault_and_resolve is resolution only, not recovery"
+    }
+   ],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:305",
+    "fixtures/results/t09-closure-9d2210ee082a/coverage-map-t09-closure.md row T30",
+    "tools/wf/tests/test_wf.py:478 (docstring: recovery out of scope)"
+   ],
+   "spec_line": null,
+   "status": "missing",
+   "tests": {},
+   "verdict": "MISSING"
+  },
+  "T31": {
+   "layer": "V",
+   "missing": [],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:306 (D-017 clause 3)",
+    "fixtures/results/t09-closure-9d2210ee082a/coverage-map-t09-closure.md row T31 (PARTIAL before C2)",
+    "tools/wf/tests/test_b1_gaps.py:292",
+    "tools/wf/tests/test_transaction_sequence_requirements.py:214,252"
+   ],
+   "spec_line": null,
+   "status": "mapped",
+   "tests": {
+    "test_b1_gaps.B1Gaps.test_T31_different_types_race_for_same_seq": "not-run",
+    "test_transaction_sequence_requirements.TxSeq.test_R3_different_types_serialized_loser_takes_next_seq": "not-run",
+    "test_transaction_sequence_requirements.TxSeq.test_R4_constraint_rejection_branch_rolls_back_writes_nothing": "not-run",
+    "test_wf.SpecMapGaps.test_spec_T31_insert_at_existing_seq_refused_by_schema": "not-run",
+    "test_wf.T02Schema.test_T02_schema_constraints_and_immutability": "not-run"
+   },
+   "verdict": "FAIL"
+  },
+  "T32": {
+   "layer": "V + E",
+   "missing": [
+    {
+     "assertion": "binding a session to a role outside the ARS / wider than the ARS / a second live session is refused",
+     "smallest_test": "needs `wf bind` (owner-excluded); no test possible until the bind/ARS decision"
+    }
+   ],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:307",
+    "fixtures/results/t09-closure-9d2210ee082a/coverage-map-t09-closure.md row T32"
+   ],
+   "spec_line": null,
+   "status": "missing",
+   "tests": {},
+   "verdict": "MISSING"
+  },
+  "T33": {
+   "layer": "V",
+   "missing": [
+    {
+     "assertion": "replacement rules (a)-(c)",
+     "smallest_test": "needs bind and recover (absent)"
+    }
+   ],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:308",
+    "fixtures/results/t09-closure-9d2210ee082a/coverage-map-t09-closure.md row T33"
+   ],
+   "spec_line": null,
+   "status": "missing",
+   "tests": {},
+   "verdict": "MISSING"
+  },
+  "T34": {
+   "layer": "V + E",
+   "missing": [
+    {
+     "assertion": "an activated grant leaves 'activated' on amendment, revocation, expiry, environment change",
+     "smallest_test": "no amend/revoke/expire path; smallest test once one exists: grant with past `expiry` -> status authority not 'in-force'; today expiry is stored and not enforced (coverage map T34)"
+    }
+   ],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:309",
+    "fixtures/results/t09-closure-9d2210ee082a/coverage-map-t09-closure.md row T34"
+   ],
+   "spec_line": null,
+   "status": "missing",
+   "tests": {},
+   "verdict": "MISSING"
+  },
+  "T35": {
+   "layer": "V over boundary",
+   "missing": [
+    {
+     "assertion": "a P3 path changed WITH separate authorization is accepted and reported as 'authorized config change'",
+     "smallest_test": "owner-decided limitation (no contract field can express authorization; P3 fail-closed): no test until the owner adds the representation; asserted as fail-closed by test_t35_path_policy.T35Classes.test_P3_change_rejects_and_authorization_is_fail_closed"
+    },
+    {
+     "assertion": "links/junctions resolved before comparison (section 4.4 rule 2)",
+     "smallest_test": "string policy skips, never resolves; test_t35_windows_resolution.T35WindowsResolution.test_W1_junction_inside_scope_pointing_outside records the NTFS fact only on win32 (skips elsewhere) - not a resolution assertion"
+    },
+    {
+     "assertion": "8.3 short names normalized where the platform resolves them",
+     "smallest_test": "test_W2_short_name_maps_to_same_long_path skips on hosts without short names (White's runs: skipped=1); environment, not assertable here"
+    },
+    {
+     "assertion": "P4 'closeout bundle' path in the coordination set",
+     "smallest_test": "no closeout bundle path exists in the code (pathpolicy.coordination_globs docstring); nothing to assert"
+    }
+   ],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:310 and 207-224 (section 4.4)",
+    "fixtures/results/t09-closure-9d2210ee082a/coverage-map-t09-closure.md row T35 (PARTIAL before lanes B/B2/B3 and A3)",
+    "tools/wf/tests/test_t35_*.py, test_pathpolicy_hardening.py (all methods listed)",
+    "issue #13 (A1-A3 repairs), PRs #4 #11 #15 #18 #21 #22 #23 #24"
+   ],
+   "spec_line": null,
+   "status": "partial",
+   "tests": {
+    "test_pathpolicy_hardening.AcceptIntegration.test_accept_rejects_malformed_entries_and_records_them": "not-run",
+    "test_pathpolicy_hardening.MalformedChangedList.test_empty_whitespace_and_control_entries": "not-run",
+    "test_pathpolicy_hardening.MalformedChangedList.test_regression_non_string_entries_leaked_raw_objects_into_the_record": "not-run",
+    "test_pathpolicy_hardening.MalformedChangedList.test_regression_none_and_scalar_changed_raised": "not-run",
+    "test_pathpolicy_hardening.MalformedChangedList.test_regression_string_changed_was_classified_per_character": "not-run",
+    "test_pathpolicy_hardening.MalformedContract.test_empty_and_dot_globs_match_nothing": "not-run",
+    "test_pathpolicy_hardening.MalformedContract.test_regression_dot_dot_in_glob_was_silently_ineffective": "not-run",
+    "test_pathpolicy_hardening.MalformedContract.test_regression_non_dict_contract_raised": "not-run",
+    "test_pathpolicy_hardening.MalformedContract.test_regression_non_list_scope_was_ignored_so_watched_path_became_P1": "not-run",
+    "test_pathpolicy_hardening.MalformedContract.test_regression_non_string_glob_was_skipped_so_excluded_path_became_P1": "not-run",
+    "test_pathpolicy_hardening.MalformedContract.test_scope_globs_normalize_separators_case_and_trailing_separator": "not-run",
+    "test_pathpolicy_hardening.NormalizationBypass.test_device_and_stream_syntax_combined_with_escapes_and_case": "not-run",
+    "test_pathpolicy_hardening.NormalizationBypass.test_dot_dot_escapes_including_round_trips": "not-run",
+    "test_pathpolicy_hardening.NormalizationBypass.test_mixed_separators_and_case_in_both_path_and_glob": "not-run",
+    "test_pathpolicy_hardening.NormalizationBypass.test_nothing_is_read_under_malformed_input": "not-run",
+    "test_pathpolicy_hardening.NormalizationBypass.test_regression_com0_lpt0_and_superscript_device_names_were_P1": "not-run",
+    "test_pathpolicy_hardening.NormalizationBypass.test_sibling_prefix_confusion": "not-run",
+    "test_pathpolicy_hardening.ViolationsRobustness.test_malformed_result_rows_and_contract_problems_reject": "not-run",
+    "test_pathpolicy_hardening.ViolationsRobustness.test_preserved_P2_P3_fail_closed_and_bare_dict_fallback": "not-run",
+    "test_pathpolicy_hardening.ViolationsRobustness.test_regression_violations_on_non_dict_raised": "not-run",
+    "test_t35_changeset.ChangesetModule.test_baseline_captures_P2_hashes_presence_only_existence_and_nothing_else": "not-run",
+    "test_t35_changeset.ChangesetModule.test_boundary_root_rule": "not-run",
+    "test_t35_changeset.ChangesetModule.test_compare_detects_added_modified_deleted_P2_and_presence_only_deletion": "not-run",
+    "test_t35_changeset.ChangesetModule.test_compare_unchanged_tree_reports_nothing": "not-run",
+    "test_t35_changeset.ChangesetModule.test_malformed_baseline_is_a_problem": "not-run",
+    "test_t35_changeset.ChangesetModule.test_nothing_outside_the_root_is_read": "not-run",
+    "test_t35_changeset.ChangesetModule.test_presence_only_content_change_is_not_a_modification": "not-run",
+    "test_t35_changeset.ChangesetModule.test_presence_only_path_is_never_opened_or_hashed": "not-run",
+    "test_t35_changeset.ChangesetModule.test_symlink_is_skipped_and_recorded_never_followed": "not-run",
+    "test_t35_changeset.ChangesetModule.test_unreadable_P2_file_is_a_problem_not_skipped": "not-run",
+    "test_t35_changeset.ChangesetModule.test_whole_tree_glob_and_malformed_contract_fail_closed": "not-run",
+    "test_t35_changeset.CoordinationSemantics.test_bare_dict_fallback_keeps_P4_and_unclassified_as_violations": "not-run",
+    "test_t35_changeset.CoordinationSemantics.test_coordination_globs_are_the_spec_P4_row": "not-run",
+    "test_t35_changeset.CoordinationSemantics.test_coordination_precedes_P3_and_is_allowed": "not-run",
+    "test_t35_changeset.CoordinationSemantics.test_malformed_coordination_set_fails_closed": "not-run",
+    "test_t35_changeset.CoordinationSemantics.test_unclassified_is_a_separate_violation_and_P5_is_untouched": "not-run",
+    "test_t35_changeset.CoordinationSemantics.test_without_a_coordination_set_there_is_no_P4": "not-run",
+    "test_t35_changeset.EndToEndWithWiring.test_R1_declared_P2_manifest_deletion_is_still_rejected_and_P1_deletion_accepted": "not-run",
+    "test_t35_changeset.EndToEndWithWiring.test_R1_undeclared_P2_manifest_deletion_is_rejected": "not-run",
+    "test_t35_changeset.EndToEndWithWiring.test_R2_stray_under_watched_ledger_still_rejects_fail_closed": "not-run",
+    "test_t35_changeset.EndToEndWithWiring.test_R2_supplied_coordination_update_is_accepted_as_P4": "not-run",
+    "test_t35_path_policy.T35Classes.test_P2_change_rejects": "not-run",
+    "test_t35_path_policy.T35Classes.test_P3_change_rejects_and_authorization_is_fail_closed": "not-run",
+    "test_t35_path_policy.T35Classes.test_P5_records_the_not_detected_limitation": "not-run",
+    "test_t35_path_policy.T35Classes.test_accept_rejects_P2_and_P3_and_records_the_limitation": "not-run",
+    "test_t35_path_policy.T35Classes.test_alternate_data_stream_syntax_fails_closed": "not-run",
+    "test_t35_path_policy.T35Classes.test_case_differences_resolve_to_the_same_class": "not-run",
+    "test_t35_path_policy.T35Classes.test_device_names_and_unresolved_forms_fail_closed": "not-run",
+    "test_t35_path_policy.T35Classes.test_dot_dot_boundary_escape_is_P5_not_in_scope": "not-run",
+    "test_t35_path_policy.T35Classes.test_each_class_and_every_change_kind": "not-run",
+    "test_t35_path_policy.T35Classes.test_limitations_are_honest_about_links_and_ntfs": "not-run",
+    "test_t35_path_policy.T35Classes.test_plain_P1_behaviour_is_compatible": "not-run",
+    "test_t35_path_policy.T35Classes.test_separators_and_dot_collapse": "not-run",
+    "test_t35_path_policy.T35Classes.test_unclassified_is_not_hash_compared_and_nothing_is_read": "not-run",
+    "test_t35_path_policy.T35Classes.test_violation_strings_name_every_offending_path": "not-run",
+    "test_t35_path_policy.T35Classes.test_violations_on_a_bare_class_dict_fails_closed": "not-run",
+    "test_t35_path_policy.T35Classes.test_watch_wins_over_write_scope": "not-run",
+    "test_t35_remaining_requirements.R1ManifestFileMissingFromP1.test_manifest_presence_is_not_checked_by_accept_at_all": "not-run",
+    "test_t35_remaining_requirements.R1ManifestFileMissingFromP1.test_supplied_P1_deletion_of_a_manifest_file_is_allowed": "not-run",
+    "test_t35_remaining_requirements.R1ManifestFileMissingFromP1.test_supplied_P2_deletion_of_a_manifest_file_is_a_violation": "not-run",
+    "test_t35_remaining_requirements.R2ExpectedP4UpdatesAndVerify.test_accept_does_not_hash_compare_P4_but_verify_detects_the_tamper": "not-run",
+    "test_t35_remaining_requirements.R2ExpectedP4UpdatesAndVerify.test_coordination_files_change_across_the_flow_and_verify_stays_clean": "not-run",
+    "test_t35_remaining_requirements.R2ExpectedP4UpdatesAndVerify.test_supplied_P4_path_is_classified_not_observed": "not-run",
+    "test_t35_remaining_requirements.R3UnexpectedFilesInLedgerAndRuntimeFolders.test_added_stray_file_in_the_export_folder_is_reported_by_verify": "not-run",
+    "test_t35_remaining_requirements.R3UnexpectedFilesInLedgerAndRuntimeFolders.test_stray_files_survive_export_refresh_and_are_reported": "not-run",
+    "test_t35_remaining_requirements.R3UnexpectedFilesInLedgerAndRuntimeFolders.test_supplied_stray_export_and_ledger_files_are_violations": "not-run",
+    "test_t35_remaining_requirements.R3UnexpectedFilesInLedgerAndRuntimeFolders.test_supplied_stray_under_a_watched_ledger_is_P3_fail_closed": "not-run",
+    "test_t35_remaining_requirements.R3UnexpectedFilesInLedgerAndRuntimeFolders.test_verify_reports_a_deleted_listed_export_file": "not-run",
+    "test_t35_stray_files.ExportStrayFiles.test_checkpoint_file_is_legitimate_and_its_orphan_is_preserved": "not-run",
+    "test_t35_stray_files.ExportStrayFiles.test_legitimate_inventory_is_clean_and_active_staging_not_stray": "not-run",
+    "test_t35_stray_files.ExportStrayFiles.test_missing_manifest_still_reported_with_stray": "not-run",
+    "test_t35_stray_files.ExportStrayFiles.test_orphan_and_stray_both_reported": "not-run",
+    "test_t35_stray_files.ExportStrayFiles.test_stale_events_and_stray_both_reported": "not-run",
+    "test_t35_stray_files.ExportStrayFiles.test_symlink_entry_reported_without_following": "not-run",
+    "test_t35_stray_files.ExportStrayFiles.test_unexpected_directory_reported_without_descent": "not-run",
+    "test_t35_stray_files.ExportStrayFiles.test_unexpected_file_reported_by_check_and_verify": "not-run",
+    "test_t35_stray_files.ExportStrayFiles.test_wf_export_leaves_stray_and_still_reported": "not-run",
+    "test_t35_stray_files.R3UnexpectedFilesInLedgerAndRuntimeFolders.test_R3a_added_stray_file_in_the_export_folder_is_reported_by_verify": "not-run",
+    "test_t35_verify_ledger_dir.VerifyLedgerDirectoryListing.test_R3b_added_stray_file_beside_the_ledger_is_a_violation": "not-run",
+    "test_t35_verify_ledger_dir.VerifyLedgerDirectoryListing.test_clean_ledger_directory_has_no_directory_problems": "not-run",
+    "test_t35_verify_ledger_dir.VerifyLedgerDirectoryListing.test_journal_without_its_database_is_stray": "not-run",
+    "test_t35_verify_ledger_dir.VerifyLedgerDirectoryListing.test_neighbouring_sqlite_ledger_and_its_journal_are_informational_not_stray": "not-run",
+    "test_t35_verify_ledger_dir.VerifyLedgerDirectoryListing.test_non_sqlite_db_named_file_is_stray": "not-run",
+    "test_t35_verify_ledger_dir.VerifyLedgerDirectoryListing.test_stray_directory_is_reported_and_not_descended": "not-run",
+    "test_t35_verify_ledger_dir.VerifyLedgerDirectoryListing.test_symlink_in_ledger_directory_is_reported_and_not_followed": "not-run",
+    "test_t35_verify_ledger_dir.VerifyLedgerDirectoryListing.test_verify_reports_only_and_leaves_the_directory_untouched": "not-run",
+    "test_t35_windows_resolution.T35WindowsResolution.test_W1_junction_inside_scope_pointing_outside": "not-run",
+    "test_t35_windows_resolution.T35WindowsResolution.test_W2_short_name_maps_to_same_long_path": "not-run",
+    "test_t35_windows_resolution.T35WindowsResolution.test_W3_trailing_dot_name": "not-run",
+    "test_t35_windows_resolution.T35WindowsResolution.test_W4_alternate_data_stream_syntax": "not-run",
+    "test_t35_windows_resolution.T35WindowsResolution.test_W5_case_insensitive_and_dotdot": "not-run",
+    "test_t35_wiring.JobNewBaselineWiring.test_job_new_captures_the_baseline_in_the_contract_event": "not-run",
+    "test_t35_wiring.JobNewBaselineWiring.test_job_new_refuses_when_the_ledger_directory_is_not_named_ledger": "not-run",
+    "test_wf.SpecMapGaps.test_spec_T35_path_classes_P1_to_P5": "not-run",
+    "test_wf.T08Flow.test_T08_full_flow_status_accept_close": "not-run"
+   },
+   "verdict": "FAIL"
+  },
+  "T36": {
+   "layer": "V",
+   "missing": [
+    {
+     "assertion": "(d) with a checkpoint kept outside the machine and (e) via an independently retained copy are procedural; the comparison against a retained copy is asserted only for a checkpoint supplied on the command line",
+     "smallest_test": "nothing further assertable in-repo: the 'independently retained' property is about where the owner keeps the value; record as procedural"
+    }
+   ],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:311 and 147-158 (section 3C)",
+    "04-DECISIONS.md D-019",
+    "fixtures/results/t09-closure-9d2210ee082a/coverage-map-t09-closure.md row T36 (PARTIAL before lane C)",
+    "tools/wf/tests/test_t36_verify_checkpoint.py:109-269",
+    "tools/wf/tests/test_checkpoint_clarity.py:75-141"
+   ],
+   "spec_line": null,
+   "status": "partial",
+   "tests": {
+    "test_b1_gaps.B1Gaps.test_T36_verify_output_never_claims_authentic_or_tamper_proof": "not-run",
+    "test_b1_gaps.B1Gaps.test_T36b_consistent_whole_chain_rewrite_passes_verify_without_checkpoint": "not-run",
+    "test_b1_gaps.B1Gaps.test_T36c_tail_deletion_passes_verify_without_checkpoint": "not-run",
+    "test_checkpoint_clarity.CheckpointClarity.test_altered_checkpoint_agreeing_with_altered_chain_passes_and_says_so": "not-run",
+    "test_checkpoint_clarity.CheckpointClarity.test_comparison_behaviour_unchanged": "not-run",
+    "test_checkpoint_clarity.CheckpointClarity.test_match_at_head_states_policy_and_head": "not-run",
+    "test_checkpoint_clarity.CheckpointClarity.test_module_text_is_concise_and_free_of_positive_claims": "not-run",
+    "test_checkpoint_clarity.CheckpointClarity.test_no_checkpoint_output_and_signatures_unchanged": "not-run",
+    "test_checkpoint_clarity.CheckpointClarity.test_non_match_outputs_state_policy_too": "not-run",
+    "test_checkpoint_clarity.CheckpointClarity.test_older_match_says_head_moved_and_later_events_not_covered": "not-run",
+    "test_t36_verify_checkpoint.T36Checkpoint.test_T36_no_checkpoint_behaviour_unchanged": "not-run",
+    "test_t36_verify_checkpoint.T36Checkpoint.test_T36_no_prohibited_positive_claim": "not-run",
+    "test_t36_verify_checkpoint.T36Checkpoint.test_T36_parse_contract_unchanged": "not-run",
+    "test_t36_verify_checkpoint.T36Checkpoint.test_T36d_consistent_whole_chain_rewrite_detected_by_original_checkpoint": "not-run",
+    "test_t36_verify_checkpoint.T36Checkpoint.test_T36d_match_at_head": "not-run",
+    "test_t36_verify_checkpoint.T36Checkpoint.test_T36d_older_checkpoint_valid_after_legitimate_appends": "not-run",
+    "test_t36_verify_checkpoint.T36Checkpoint.test_T36d_same_sequence_different_hash_is_mismatch": "not-run",
+    "test_t36_verify_checkpoint.T36Checkpoint.test_T36d_sequence_beyond_head_is_missing": "not-run",
+    "test_t36_verify_checkpoint.T36Checkpoint.test_T36d_tail_deletion_detected_by_original_checkpoint": "not-run",
+    "test_t36_verify_checkpoint.T36Checkpoint.test_T36e_altered_checkpoint_matching_altered_chain_passes_and_says_trusted": "not-run",
+    "test_wf.T08Flow.test_T10_verify_detects_tamper": "not-run"
+   },
+   "verdict": "FAIL"
+  },
+  "T37": {
+   "layer": "V",
+   "missing": [
+    {
+     "assertion": "backup via the engine's backup interface while a writer is active",
+     "smallest_test": "no `wf backup` command (D-023 exclusion retained): smallest test once it exists: sqlite3 backup API during a paused writer, restored file verifies clean"
+    },
+    {
+     "assertion": "restore into a separate location with all processes stopped; restored file verified against the retained checkpoint",
+     "smallest_test": "no restore command; smallest test: copy the ledger file to a new dir, `wf verify --checkpoint seq:hash` on the copy matches"
+    }
+   ],
+   "sources": [
+    "FIRST-RELEASE-SPEC.md:312",
+    "fixtures/results/t09-closure-9d2210ee082a/coverage-map-t09-closure.md row T37 (MISSING; export part incorporated by D-026)",
+    "04-DECISIONS.md D-024, D-026",
+    "tools/wf/tests/test_export_cmd.py:57-166",
+    "tools/wf/tests/test_export_temp_preservation.py:50-228"
+   ],
+   "spec_line": null,
+   "status": "partial",
+   "tests": {
+    "test_export_cmd.ExportCmd.test_AC1_stale_events_repaired": "not-run",
+    "test_export_cmd.ExportCmd.test_AC2_missing_manifest_and_missing_dir": "not-run",
+    "test_export_cmd.ExportCmd.test_AC3_t31b_scenario_export_repairs_in_place": "not-run",
+    "test_export_cmd.ExportCmd.test_AC4_refresh_failure_surfaced": "not-run",
+    "test_export_cmd.ExportCmd.test_AC5_unknown_job_refused": "not-run",
+    "test_export_cmd.ExportCmd.test_AC6_bounded_read_under_held_write_lock": "not-run",
+    "test_export_temp_preservation.ExportTempPreservation.test_active_staging_of_this_process_not_reported": "not-run",
+    "test_export_temp_preservation.ExportTempPreservation.test_check_lists_orphan_and_stale_together": "not-run",
+    "test_export_temp_preservation.ExportTempPreservation.test_check_reports_orphan_repeatedly": "not-run",
+    "test_export_temp_preservation.ExportTempPreservation.test_concurrent_writers_do_not_collide": "not-run",
+    "test_export_temp_preservation.ExportTempPreservation.test_explicit_export_reports_orphan_preserves_tmp_and_ledger": "not-run",
+    "test_export_temp_preservation.ExportTempPreservation.test_failed_refresh_leftover_reported_next_run": "not-run",
+    "test_export_temp_preservation.ExportTempPreservation.test_lost_publish_race_discards_own_staging_and_reports_error": "not-run",
+    "test_export_temp_preservation.ExportTempPreservation.test_orphan_preserved_refresh_succeeds_and_reports": "not-run",
+    "test_export_temp_preservation.ExportTempPreservation.test_refresh_failure_after_commit_keeps_row_committed": "not-run",
+    "test_export_temp_preservation.ExportTempPreservation.test_successful_refresh_leaves_no_staging_and_reports_none": "not-run",
+    "test_export_temp_preservation.ExportTempPreservation.test_symlink_at_fixed_tmp_not_followed_or_overwritten": "not-run",
+    "test_export_temp_preservation.ExportTempPreservation.test_write_atomic_never_touches_fixed_tmp": "not-run",
+    "test_wf.T27Markers.test_T31b_export_refresh_failure_keeps_commit": "not-run"
+   },
+   "verdict": "FAIL"
+  }
+ },
+ "result": "FAIL",
+ "tests": {
+  "test_b1_gaps.B1Gaps.test_T09_missing_role_or_session_exact_result_and_storage_rule": "not-run",
+  "test_b1_gaps.B1Gaps.test_T23_reordered_rows_detected": "not-run",
+  "test_b1_gaps.B1Gaps.test_T27_n_simultaneous_appends_one_job": "not-run",
+  "test_b1_gaps.B1Gaps.test_T27_simultaneous_mutations_two_jobs": "not-run",
+  "test_b1_gaps.B1Gaps.test_T28_hot_journal_at_next_open_rolls_back": "not-run",
+  "test_b1_gaps.B1Gaps.test_T31_different_types_race_for_same_seq": "not-run",
+  "test_b1_gaps.B1Gaps.test_T36_verify_output_never_claims_authentic_or_tamper_proof": "not-run",
+  "test_b1_gaps.B1Gaps.test_T36b_consistent_whole_chain_rewrite_passes_verify_without_checkpoint": "not-run",
+  "test_b1_gaps.B1Gaps.test_T36c_tail_deletion_passes_verify_without_checkpoint": "not-run",
+  "test_checkpoint_clarity.CheckpointClarity.test_altered_checkpoint_agreeing_with_altered_chain_passes_and_says_so": "not-run",
+  "test_checkpoint_clarity.CheckpointClarity.test_comparison_behaviour_unchanged": "not-run",
+  "test_checkpoint_clarity.CheckpointClarity.test_match_at_head_states_policy_and_head": "not-run",
+  "test_checkpoint_clarity.CheckpointClarity.test_module_text_is_concise_and_free_of_positive_claims": "not-run",
+  "test_checkpoint_clarity.CheckpointClarity.test_no_checkpoint_output_and_signatures_unchanged": "not-run",
+  "test_checkpoint_clarity.CheckpointClarity.test_non_match_outputs_state_policy_too": "not-run",
+  "test_checkpoint_clarity.CheckpointClarity.test_older_match_says_head_moved_and_later_events_not_covered": "not-run",
+  "test_crash_export.CrashExport.test_X1_after_commit_crash_stale_export_repaired_not_recovered": "not-run",
+  "test_crash_export.CrashExport.test_X2_before_commit_kill_export_publishes_only_committed": "not-run",
+  "test_digest_t26.T26Digest.test_T26a2_db_size_read_inside_snapshot": "not-run",
+  "test_digest_t26.T26Digest.test_T26a_head_matches_status_and_chain": "not-run",
+  "test_digest_t26.T26Digest.test_T26b_sections_across_job_states": "not-run",
+  "test_digest_t26.T26Digest.test_T26c2_interrupted_needs_owner": "not-run",
+  "test_digest_t26.T26Digest.test_T26c_every_needs_owner_item_has_recommendation_and_evidence": "not-run",
+  "test_digest_t26.T26Digest.test_T26d_activated_grant_quote_block_hash_turn": "not-run",
+  "test_digest_t26.T26Digest.test_T26e_ars_verbatim": "not-run",
+  "test_digest_t26.T26Digest.test_T26f2_binding_generation_column": "not-run",
+  "test_digest_t26.T26Digest.test_T26f_binding_table": "not-run",
+  "test_digest_t26.T26Digest.test_T26g_evidence_paths_with_seq": "not-run",
+  "test_digest_t26.T26Digest.test_T26h_no_raw_relay": "not-run",
+  "test_digest_t26.T26Digest.test_T26i_pending_marker_recommends_resolve": "not-run",
+  "test_digest_t26.T26Digest.test_T26j_digest_is_read_only": "not-run",
+  "test_engine_missing_fields.T09EngineMissingFields.test_T09_engine_build_row_rejects_missing_identity_fields": "not-run",
+  "test_engine_missing_fields_closure.T09Closure.test_T09_G1_engine_rejects_missing_none_identity_fields": "not-run",
+  "test_engine_missing_fields_closure.T09Closure.test_T09_G2_append_path_rejects_blank_role_or_session_ledger_unchanged": "not-run",
+  "test_engine_missing_fields_closure.T09Closure.test_T09_G3_cli_whitespace_role_or_session_is_usage_error": "not-run",
+  "test_engine_missing_fields_closure.T09Closure.test_T09_G4_payload_and_contract_missing_field_label": "not-run",
+  "test_export_cmd.ExportCmd.test_AC1_stale_events_repaired": "not-run",
+  "test_export_cmd.ExportCmd.test_AC2_missing_manifest_and_missing_dir": "not-run",
+  "test_export_cmd.ExportCmd.test_AC3_t31b_scenario_export_repairs_in_place": "not-run",
+  "test_export_cmd.ExportCmd.test_AC4_refresh_failure_surfaced": "not-run",
+  "test_export_cmd.ExportCmd.test_AC5_unknown_job_refused": "not-run",
+  "test_export_cmd.ExportCmd.test_AC6_bounded_read_under_held_write_lock": "not-run",
+  "test_export_temp_preservation.ExportTempPreservation.test_active_staging_of_this_process_not_reported": "not-run",
+  "test_export_temp_preservation.ExportTempPreservation.test_check_lists_orphan_and_stale_together": "not-run",
+  "test_export_temp_preservation.ExportTempPreservation.test_check_reports_orphan_repeatedly": "not-run",
+  "test_export_temp_preservation.ExportTempPreservation.test_concurrent_writers_do_not_collide": "not-run",
+  "test_export_temp_preservation.ExportTempPreservation.test_explicit_export_reports_orphan_preserves_tmp_and_ledger": "not-run",
+  "test_export_temp_preservation.ExportTempPreservation.test_failed_refresh_leftover_reported_next_run": "not-run",
+  "test_export_temp_preservation.ExportTempPreservation.test_lost_publish_race_discards_own_staging_and_reports_error": "not-run",
+  "test_export_temp_preservation.ExportTempPreservation.test_orphan_preserved_refresh_succeeds_and_reports": "not-run",
+  "test_export_temp_preservation.ExportTempPreservation.test_refresh_failure_after_commit_keeps_row_committed": "not-run",
+  "test_export_temp_preservation.ExportTempPreservation.test_successful_refresh_leaves_no_staging_and_reports_none": "not-run",
+  "test_export_temp_preservation.ExportTempPreservation.test_symlink_at_fixed_tmp_not_followed_or_overwritten": "not-run",
+  "test_export_temp_preservation.ExportTempPreservation.test_write_atomic_never_touches_fixed_tmp": "not-run",
+  "test_pathpolicy_hardening.AcceptIntegration.test_accept_rejects_malformed_entries_and_records_them": "not-run",
+  "test_pathpolicy_hardening.MalformedChangedList.test_empty_whitespace_and_control_entries": "not-run",
+  "test_pathpolicy_hardening.MalformedChangedList.test_regression_non_string_entries_leaked_raw_objects_into_the_record": "not-run",
+  "test_pathpolicy_hardening.MalformedChangedList.test_regression_none_and_scalar_changed_raised": "not-run",
+  "test_pathpolicy_hardening.MalformedChangedList.test_regression_string_changed_was_classified_per_character": "not-run",
+  "test_pathpolicy_hardening.MalformedContract.test_empty_and_dot_globs_match_nothing": "not-run",
+  "test_pathpolicy_hardening.MalformedContract.test_regression_dot_dot_in_glob_was_silently_ineffective": "not-run",
+  "test_pathpolicy_hardening.MalformedContract.test_regression_non_dict_contract_raised": "not-run",
+  "test_pathpolicy_hardening.MalformedContract.test_regression_non_list_scope_was_ignored_so_watched_path_became_P1": "not-run",
+  "test_pathpolicy_hardening.MalformedContract.test_regression_non_string_glob_was_skipped_so_excluded_path_became_P1": "not-run",
+  "test_pathpolicy_hardening.MalformedContract.test_scope_globs_normalize_separators_case_and_trailing_separator": "not-run",
+  "test_pathpolicy_hardening.NormalizationBypass.test_device_and_stream_syntax_combined_with_escapes_and_case": "not-run",
+  "test_pathpolicy_hardening.NormalizationBypass.test_dot_dot_escapes_including_round_trips": "not-run",
+  "test_pathpolicy_hardening.NormalizationBypass.test_mixed_separators_and_case_in_both_path_and_glob": "not-run",
+  "test_pathpolicy_hardening.NormalizationBypass.test_nothing_is_read_under_malformed_input": "not-run",
+  "test_pathpolicy_hardening.NormalizationBypass.test_regression_com0_lpt0_and_superscript_device_names_were_P1": "not-run",
+  "test_pathpolicy_hardening.NormalizationBypass.test_sibling_prefix_confusion": "not-run",
+  "test_pathpolicy_hardening.ViolationsRobustness.test_malformed_result_rows_and_contract_problems_reject": "not-run",
+  "test_pathpolicy_hardening.ViolationsRobustness.test_preserved_P2_P3_fail_closed_and_bare_dict_fallback": "not-run",
+  "test_pathpolicy_hardening.ViolationsRobustness.test_regression_violations_on_non_dict_raised": "not-run",
+  "test_t24_accept_declarations.T24Flow.test_baseline_subfield_mismatch_rejected_with_field_named": "not-run",
+  "test_t24_accept_declarations.T24Flow.test_correct_declarations_accepted": "not-run",
+  "test_t24_accept_declarations.T24Flow.test_existing_checks_unchanged_environment_mismatch_still_rejects": "not-run",
+  "test_t24_accept_declarations.T24Flow.test_missing_baseline_rejected": "not-run",
+  "test_t24_accept_declarations.T24Flow.test_missing_contract_hash_rejected": "not-run",
+  "test_t24_accept_declarations.T24Flow.test_non_dict_baseline_rejected_without_exception": "not-run",
+  "test_t24_accept_declarations.T24Flow.test_recorded_reasons_contain_declaration_reasons": "not-run",
+  "test_t24_accept_declarations.T24Flow.test_wrong_contract_hash_rejected": "not-run",
+  "test_t24_accept_declarations.T24Unit.test_bad_ordinary_input_types_return_reasons_not_exceptions": "not-run",
+  "test_t24_accept_declarations.T24Unit.test_canonical_equality_ignores_key_order_and_whitespace": "not-run",
+  "test_t24_accept_declarations.T24Unit.test_correct_declarations_return_no_reasons": "not-run",
+  "test_t24_accept_declarations.T24Unit.test_each_baseline_subfield_mismatch_rejected_with_field_named": "not-run",
+  "test_t24_accept_declarations.T24Unit.test_each_baseline_subfield_missing_rejected_with_field_named": "not-run",
+  "test_t24_accept_declarations.T24Unit.test_extra_baseline_field_rejected_with_field_named": "not-run",
+  "test_t24_accept_declarations.T24Unit.test_hash_and_baseline_both_wrong_gives_both_reasons": "not-run",
+  "test_t24_accept_declarations.T24Unit.test_missing_baseline_rejected": "not-run",
+  "test_t24_accept_declarations.T24Unit.test_missing_contract_hash_rejected": "not-run",
+  "test_t24_accept_declarations.T24Unit.test_non_dict_baseline_rejected_without_exception": "not-run",
+  "test_t24_accept_declarations.T24Unit.test_wrong_contract_hash_rejected": "not-run",
+  "test_t35_changeset.ChangesetModule.test_baseline_captures_P2_hashes_presence_only_existence_and_nothing_else": "not-run",
+  "test_t35_changeset.ChangesetModule.test_boundary_root_rule": "not-run",
+  "test_t35_changeset.ChangesetModule.test_compare_detects_added_modified_deleted_P2_and_presence_only_deletion": "not-run",
+  "test_t35_changeset.ChangesetModule.test_compare_unchanged_tree_reports_nothing": "not-run",
+  "test_t35_changeset.ChangesetModule.test_malformed_baseline_is_a_problem": "not-run",
+  "test_t35_changeset.ChangesetModule.test_nothing_outside_the_root_is_read": "not-run",
+  "test_t35_changeset.ChangesetModule.test_presence_only_content_change_is_not_a_modification": "not-run",
+  "test_t35_changeset.ChangesetModule.test_presence_only_path_is_never_opened_or_hashed": "not-run",
+  "test_t35_changeset.ChangesetModule.test_symlink_is_skipped_and_recorded_never_followed": "not-run",
+  "test_t35_changeset.ChangesetModule.test_unreadable_P2_file_is_a_problem_not_skipped": "not-run",
+  "test_t35_changeset.ChangesetModule.test_whole_tree_glob_and_malformed_contract_fail_closed": "not-run",
+  "test_t35_changeset.CoordinationSemantics.test_bare_dict_fallback_keeps_P4_and_unclassified_as_violations": "not-run",
+  "test_t35_changeset.CoordinationSemantics.test_coordination_globs_are_the_spec_P4_row": "not-run",
+  "test_t35_changeset.CoordinationSemantics.test_coordination_precedes_P3_and_is_allowed": "not-run",
+  "test_t35_changeset.CoordinationSemantics.test_malformed_coordination_set_fails_closed": "not-run",
+  "test_t35_changeset.CoordinationSemantics.test_unclassified_is_a_separate_violation_and_P5_is_untouched": "not-run",
+  "test_t35_changeset.CoordinationSemantics.test_without_a_coordination_set_there_is_no_P4": "not-run",
+  "test_t35_changeset.EndToEndWithWiring.test_R1_declared_P2_manifest_deletion_is_still_rejected_and_P1_deletion_accepted": "not-run",
+  "test_t35_changeset.EndToEndWithWiring.test_R1_undeclared_P2_manifest_deletion_is_rejected": "not-run",
+  "test_t35_changeset.EndToEndWithWiring.test_R2_stray_under_watched_ledger_still_rejects_fail_closed": "not-run",
+  "test_t35_changeset.EndToEndWithWiring.test_R2_supplied_coordination_update_is_accepted_as_P4": "not-run",
+  "test_t35_path_policy.T35Classes.test_P2_change_rejects": "not-run",
+  "test_t35_path_policy.T35Classes.test_P3_change_rejects_and_authorization_is_fail_closed": "not-run",
+  "test_t35_path_policy.T35Classes.test_P5_records_the_not_detected_limitation": "not-run",
+  "test_t35_path_policy.T35Classes.test_accept_rejects_P2_and_P3_and_records_the_limitation": "not-run",
+  "test_t35_path_policy.T35Classes.test_alternate_data_stream_syntax_fails_closed": "not-run",
+  "test_t35_path_policy.T35Classes.test_case_differences_resolve_to_the_same_class": "not-run",
+  "test_t35_path_policy.T35Classes.test_device_names_and_unresolved_forms_fail_closed": "not-run",
+  "test_t35_path_policy.T35Classes.test_dot_dot_boundary_escape_is_P5_not_in_scope": "not-run",
+  "test_t35_path_policy.T35Classes.test_each_class_and_every_change_kind": "not-run",
+  "test_t35_path_policy.T35Classes.test_limitations_are_honest_about_links_and_ntfs": "not-run",
+  "test_t35_path_policy.T35Classes.test_plain_P1_behaviour_is_compatible": "not-run",
+  "test_t35_path_policy.T35Classes.test_separators_and_dot_collapse": "not-run",
+  "test_t35_path_policy.T35Classes.test_unclassified_is_not_hash_compared_and_nothing_is_read": "not-run",
+  "test_t35_path_policy.T35Classes.test_violation_strings_name_every_offending_path": "not-run",
+  "test_t35_path_policy.T35Classes.test_violations_on_a_bare_class_dict_fails_closed": "not-run",
+  "test_t35_path_policy.T35Classes.test_watch_wins_over_write_scope": "not-run",
+  "test_t35_remaining_requirements.R1ManifestFileMissingFromP1.test_manifest_presence_is_not_checked_by_accept_at_all": "not-run",
+  "test_t35_remaining_requirements.R1ManifestFileMissingFromP1.test_supplied_P1_deletion_of_a_manifest_file_is_allowed": "not-run",
+  "test_t35_remaining_requirements.R1ManifestFileMissingFromP1.test_supplied_P2_deletion_of_a_manifest_file_is_a_violation": "not-run",
+  "test_t35_remaining_requirements.R2ExpectedP4UpdatesAndVerify.test_accept_does_not_hash_compare_P4_but_verify_detects_the_tamper": "not-run",
+  "test_t35_remaining_requirements.R2ExpectedP4UpdatesAndVerify.test_coordination_files_change_across_the_flow_and_verify_stays_clean": "not-run",
+  "test_t35_remaining_requirements.R2ExpectedP4UpdatesAndVerify.test_supplied_P4_path_is_classified_not_observed": "not-run",
+  "test_t35_remaining_requirements.R3UnexpectedFilesInLedgerAndRuntimeFolders.test_added_stray_file_in_the_export_folder_is_reported_by_verify": "not-run",
+  "test_t35_remaining_requirements.R3UnexpectedFilesInLedgerAndRuntimeFolders.test_stray_files_survive_export_refresh_and_are_reported": "not-run",
+  "test_t35_remaining_requirements.R3UnexpectedFilesInLedgerAndRuntimeFolders.test_supplied_stray_export_and_ledger_files_are_violations": "not-run",
+  "test_t35_remaining_requirements.R3UnexpectedFilesInLedgerAndRuntimeFolders.test_supplied_stray_under_a_watched_ledger_is_P3_fail_closed": "not-run",
+  "test_t35_remaining_requirements.R3UnexpectedFilesInLedgerAndRuntimeFolders.test_verify_reports_a_deleted_listed_export_file": "not-run",
+  "test_t35_stray_files.ExportStrayFiles.test_checkpoint_file_is_legitimate_and_its_orphan_is_preserved": "not-run",
+  "test_t35_stray_files.ExportStrayFiles.test_legitimate_inventory_is_clean_and_active_staging_not_stray": "not-run",
+  "test_t35_stray_files.ExportStrayFiles.test_missing_manifest_still_reported_with_stray": "not-run",
+  "test_t35_stray_files.ExportStrayFiles.test_orphan_and_stray_both_reported": "not-run",
+  "test_t35_stray_files.ExportStrayFiles.test_stale_events_and_stray_both_reported": "not-run",
+  "test_t35_stray_files.ExportStrayFiles.test_symlink_entry_reported_without_following": "not-run",
+  "test_t35_stray_files.ExportStrayFiles.test_unexpected_directory_reported_without_descent": "not-run",
+  "test_t35_stray_files.ExportStrayFiles.test_unexpected_file_reported_by_check_and_verify": "not-run",
+  "test_t35_stray_files.ExportStrayFiles.test_wf_export_leaves_stray_and_still_reported": "not-run",
+  "test_t35_stray_files.R3UnexpectedFilesInLedgerAndRuntimeFolders.test_R3a_added_stray_file_in_the_export_folder_is_reported_by_verify": "not-run",
+  "test_t35_verify_ledger_dir.VerifyLedgerDirectoryListing.test_R3b_added_stray_file_beside_the_ledger_is_a_violation": "not-run",
+  "test_t35_verify_ledger_dir.VerifyLedgerDirectoryListing.test_clean_ledger_directory_has_no_directory_problems": "not-run",
+  "test_t35_verify_ledger_dir.VerifyLedgerDirectoryListing.test_journal_without_its_database_is_stray": "not-run",
+  "test_t35_verify_ledger_dir.VerifyLedgerDirectoryListing.test_neighbouring_sqlite_ledger_and_its_journal_are_informational_not_stray": "not-run",
+  "test_t35_verify_ledger_dir.VerifyLedgerDirectoryListing.test_non_sqlite_db_named_file_is_stray": "not-run",
+  "test_t35_verify_ledger_dir.VerifyLedgerDirectoryListing.test_stray_directory_is_reported_and_not_descended": "not-run",
+  "test_t35_verify_ledger_dir.VerifyLedgerDirectoryListing.test_symlink_in_ledger_directory_is_reported_and_not_followed": "not-run",
+  "test_t35_verify_ledger_dir.VerifyLedgerDirectoryListing.test_verify_reports_only_and_leaves_the_directory_untouched": "not-run",
+  "test_t35_windows_resolution.T35WindowsResolution.test_W1_junction_inside_scope_pointing_outside": "not-run",
+  "test_t35_windows_resolution.T35WindowsResolution.test_W2_short_name_maps_to_same_long_path": "not-run",
+  "test_t35_windows_resolution.T35WindowsResolution.test_W3_trailing_dot_name": "not-run",
+  "test_t35_windows_resolution.T35WindowsResolution.test_W4_alternate_data_stream_syntax": "not-run",
+  "test_t35_windows_resolution.T35WindowsResolution.test_W5_case_insensitive_and_dotdot": "not-run",
+  "test_t35_wiring.JobNewBaselineWiring.test_job_new_captures_the_baseline_in_the_contract_event": "not-run",
+  "test_t35_wiring.JobNewBaselineWiring.test_job_new_refuses_when_the_ledger_directory_is_not_named_ledger": "not-run",
+  "test_t36_verify_checkpoint.T36Checkpoint.test_T36_no_checkpoint_behaviour_unchanged": "not-run",
+  "test_t36_verify_checkpoint.T36Checkpoint.test_T36_no_prohibited_positive_claim": "not-run",
+  "test_t36_verify_checkpoint.T36Checkpoint.test_T36_parse_contract_unchanged": "not-run",
+  "test_t36_verify_checkpoint.T36Checkpoint.test_T36d_consistent_whole_chain_rewrite_detected_by_original_checkpoint": "not-run",
+  "test_t36_verify_checkpoint.T36Checkpoint.test_T36d_match_at_head": "not-run",
+  "test_t36_verify_checkpoint.T36Checkpoint.test_T36d_older_checkpoint_valid_after_legitimate_appends": "not-run",
+  "test_t36_verify_checkpoint.T36Checkpoint.test_T36d_same_sequence_different_hash_is_mismatch": "not-run",
+  "test_t36_verify_checkpoint.T36Checkpoint.test_T36d_sequence_beyond_head_is_missing": "not-run",
+  "test_t36_verify_checkpoint.T36Checkpoint.test_T36d_tail_deletion_detected_by_original_checkpoint": "not-run",
+  "test_t36_verify_checkpoint.T36Checkpoint.test_T36e_altered_checkpoint_matching_altered_chain_passes_and_says_trusted": "not-run",
+  "test_transaction_sequence_requirements.T28Journal.test_R6_wf_never_deletes_or_moves_the_hot_journal": "not-run",
+  "test_transaction_sequence_requirements.T28Journal.test_R7_D018_journal_presence_after_next_open_observation": "not-run",
+  "test_transaction_sequence_requirements.TxSeq.test_R1_two_jobs_contended_exact_committed_set": "not-run",
+  "test_transaction_sequence_requirements.TxSeq.test_R2_reader_holding_read_transaction_while_writer_commits": "not-run",
+  "test_transaction_sequence_requirements.TxSeq.test_R3_different_types_serialized_loser_takes_next_seq": "not-run",
+  "test_transaction_sequence_requirements.TxSeq.test_R4_constraint_rejection_branch_rolls_back_writes_nothing": "not-run",
+  "test_transaction_sequence_requirements.TxSeq.test_R5_no_second_write_connection_per_command": "not-run",
+  "test_wf.SpecMapGaps.test_connect_wait_counts_against_acquisition_bound": "not-run",
+  "test_wf.SpecMapGaps.test_spec_T09_missing_author_or_session": "not-run",
+  "test_wf.SpecMapGaps.test_spec_T21_close_needs_intervention_declaration": "not-run",
+  "test_wf.SpecMapGaps.test_spec_T23_delete_mid_chain_detected": "not-run",
+  "test_wf.SpecMapGaps.test_spec_T24_wrong_environment_rejected": "not-run",
+  "test_wf.SpecMapGaps.test_spec_T31_insert_at_existing_seq_refused_by_schema": "not-run",
+  "test_wf.SpecMapGaps.test_spec_T35_path_classes_P1_to_P5": "not-run",
+  "test_wf.T02Schema.test_T02_schema_constraints_and_immutability": "not-run",
+  "test_wf.T03Validate.test_T03_contract_required_fields": "not-run",
+  "test_wf.T03Validate.test_T04_message_rules": "not-run",
+  "test_wf.T03Validate.test_T05_grant_ordering": "not-run",
+  "test_wf.T03Validate.test_T05b_block_hash_repeatable_on_fresh_ledger": "not-run",
+  "test_wf.T03Validate.test_T07_grant_resource_widening": "not-run",
+  "test_wf.T08Flow.test_T08_full_flow_status_accept_close": "not-run",
+  "test_wf.T08Flow.test_T09_abandon_then_close": "not-run",
+  "test_wf.T08Flow.test_T10_verify_detects_tamper": "not-run",
+  "test_wf.T27Markers.test_T27_guard_cases": "not-run",
+  "test_wf.T27Markers.test_T28_resolve_selection": "not-run",
+  "test_wf.T27Markers.test_T29_commit_timeout_give_up": "not-run",
+  "test_wf.T27Markers.test_T29b_reads_wait_for_write_lock": "not-run",
+  "test_wf.T27Markers.test_T30_commit_error_fault_and_resolve": "not-run",
+  "test_wf.T27Markers.test_T31_faults_not_allowed_on_product_path": "not-run",
+  "test_wf.T27Markers.test_T31b_export_refresh_failure_keeps_commit": "not-run",
+  "test_wf.TConflict.test_C1_pause_holder_locked_out_then_blocked": "not-run",
+  "test_wf.TConflict.test_C2b_kill_before_commit_then_resolve": "not-run",
+  "test_wf.TConflict.test_C3_later_generations_all_blocked": "not-run",
+  "test_wf.TConflict.test_C4_existing_rules_with_conflict_row": "not-run"
+ },
+ "validation_errors": [],
+ "wf_test_tmp": "C:\\src\\claude-workforce\\.claude\\worktrees\\foundation-selector\\fixtures\\tmp\\selector-20261016T033519Z-06dceb",
+ "why": "child did not finish"
+}
