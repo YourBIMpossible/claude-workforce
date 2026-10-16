@@ -68,4 +68,4 @@ rehearsed here.
    `presence_only` inside `boundary/`; links and junctions are skipped, not resolved.
 10. **Concurrency under N workers** (T20, T27 beyond the unit fixtures) is not rehearsed; one builder, one reviewer.
 
-Ownership of `fixtures/pilot_rehearsal/` is not registered in OWNERS.md; White registers it before integration.
+Ownership: `fixtures/pilot_rehearsal/**` is registered in OWNERS.md as lane PR (main 9d665bd, owner grant 2026-10-15 ~21:20).
