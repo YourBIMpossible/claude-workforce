@@ -9,7 +9,7 @@ import time
 from typing import Any
 
 from . import db as dbm
-from . import bind, changeset, checkpointcmp, export, grant, markers, observe, pathpolicy, paths, reconcile, txn
+from . import bind, changeset, checkpointcmp, export, gatelog, grant, markers, observe, pathpolicy, paths, reconcile, txn
 from .canon import canonical, sha256_file, sha256_obj, sha256_text
 from .db import OpLog, WfRefused, WfRejected, WfUsage
 from .faults import Faults
@@ -40,6 +40,25 @@ def _ctx(conn: sqlite3.Connection, job: str) -> tuple[str | None, dict | None]:
 
 
 RECOVERY_TYPES = ("recovery-opened", "exception-acknowledged", "recovery-closed")
+
+
+def _gate_view(db: str, job: str | None = None) -> tuple[list[dict[str, Any]] | None, dict[str, Any]]:
+    """INTERFACE-CONTRACT-S4A section 5: gate attempts for consumers only when runtime/gate/gate.db exists and its
+    chain verifies; otherwise (None, status). The gate log is read, never written, by wf."""
+    root = changeset.boundary_root(db)
+    status: dict[str, Any] = {"present": False, "chain_problems": [], "unlogged_attempts": 0, "rows": 0}
+    if root is None:
+        status["note"] = "boundary root unknown; gate log not consulted"
+        return None, status
+    try:
+        v = gatelog.verify(root)
+    except Exception as exc:  # noqa: BLE001 - a broken gate log is reported, never trusted
+        status.update(present=True, chain_problems=[f"gate log unreadable: {exc}"])
+        return None, status
+    status.update({k: v.get(k) for k in ("present", "rows", "chain_problems", "unlogged_attempts")})
+    if not v.get("present") or v.get("chain_problems"):
+        return None, status
+    return gatelog.attempts(root, job), status
 
 
 def _now() -> str:
@@ -342,6 +361,17 @@ def status(db: str, job: str) -> dict[str, Any]:
             "recovery": _recovery_state(rows), "authority": _authority_view(job, rows)}
 
 
+def _gate_digest(db: str, job: str) -> dict[str, Any]:
+    """Counts only (no raw relay): attempts and denials for the job, and whether the log is incomplete."""
+    attempts, status = _gate_view(db, job)
+    out: dict[str, Any] = {"present": status.get("present"), "chain_problems": len(status.get("chain_problems") or []),
+                           "unlogged_attempts": status.get("unlogged_attempts") or 0}
+    if attempts is not None:
+        out.update(attempts=len(attempts), denied=sum(1 for a in attempts if a.get("decision") == "deny"))
+    out["incomplete"] = bool(out["chain_problems"] or out["unlogged_attempts"])
+    return out
+
+
 def _authority_view(job: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
     a = grant.authority(rows, job=job, now=_now())
     out = {"state": a.get("state"), "reason": a.get("reason"), "grant_id": a.get("grant_id"),
@@ -510,6 +540,11 @@ def digest(db: str, job: str) -> dict[str, Any]:
         need(f"authority {authority['state']}", f"grant authority is {authority['state']} ({authority['reason']}); "
              "mediated work is refused", "renew: `wf grant propose`, then the owner confirms and `wf grant activate`",
              [])
+    gate_d = _gate_digest(db, job)
+    if gate_d["incomplete"]:
+        need("gate log incomplete", f"gate log has {gate_d['chain_problems']} chain problem(s) and "
+             f"{gate_d['unlogged_attempts']} attempt(s) recorded only in the failures file",
+             "inspect runtime/gate; do not claim every attempt was logged", [])
     if recovery["open"]:
         need("recovery open", f"recovery opened at seq {recovery['opened_seq']} ({recovery['reason']}); ordinary "
              f"mutations refuse; {recovery['pending']} of {recovery['exceptions']} exceptions unacknowledged",
@@ -576,7 +611,8 @@ def digest(db: str, job: str) -> dict[str, Any]:
               # INTERFACE-CONTRACT-S3 A2: nested under `active` (T26h pins the top-level keys); counts only, no notes
               # (the digest relays no raw event content)
               "authority": authority,
-              "interventions": {k: v for k, v in grant.intervention_summary(rows).items() if k != "entries"}}
+              "interventions": {k: v for k, v in grant.intervention_summary(rows).items() if k != "entries"},
+              "gate": _gate_digest(db, job)}
     return {"job": job, "closed": closed, "contract_sha256": c["sha256"], "events": len(rows), "counts": counts,
             "axes": axes, "pending_markers": marks,
             "head": {"seq": head["seq"] if head else 0, "self": head["self"] if head else None,
@@ -591,7 +627,8 @@ def digest(db: str, job: str) -> dict[str, Any]:
 
 # ---------------------------------------------------------------- verify / checkpoint
 
-def verify(db: str, job: str | None, checkpoint: tuple[int, str] | None = None) -> dict[str, Any]:
+def verify(db: str, job: str | None, checkpoint: tuple[int, str] | None = None, gate_file: str | None = None,
+           gate_sha: str | None = None) -> dict[str, Any]:
     """Integrity ladder (spec section 3C). `checkpoint` = retained (seq, self) for `job`, parsed by
     checkpointcmp.parse; its comparison is delegated to checkpointcmp.compare (lane C) and is never skipped
     silently: before lane C lands, a supplied checkpoint is refused."""
@@ -635,6 +672,16 @@ def verify(db: str, job: str | None, checkpoint: tuple[int, str] | None = None) 
               "ledger_directory": {"problems": dir_problems, "neighbors": neighbors}, "jobs": per_job, "clean": clean,
               "ladder": "level-1 record-and-verify: hash chain, pins, constraints, export manifest; "
                         "internal consistency only; not an authenticity claim"}
+    # INTERFACE-CONTRACT-S4A section 5: gate log state is an exception, not a ledger fault (`clean` unchanged).
+    _, gate_status = _gate_view(db, job)
+    if gate_file is not None or gate_sha is not None:
+        if not gate_file or not gate_sha:
+            raise WfUsage("--gate-file and --gate-sha are used together")
+        actual = sha256_file(gate_file) if os.path.isfile(gate_file) else None
+        gate_status["deployed_hook"] = {"path": os.path.abspath(gate_file), "expected_sha256": gate_sha.lower(),
+                                        "actual_sha256": actual, "matches": actual == gate_sha.lower(),
+                                        "note": "reported only; never repaired"}
+    result["gate"] = gate_status
     if checkpoint is not None:
         result["checkpoint_job"] = job
         result = checkpointcmp.compare(result, checkpoint, chains)
@@ -940,6 +987,7 @@ def reconcile_cmd(db: str, job: str, *, target_role: str, msg_id: str, role: str
         raise WfRefused(f"changed-set boundary cannot be established: the ledger directory of {db!r} is not named "
                         f"'ledger' (no event recorded)")
     holder: dict[str, Any] = {}
+    gate_attempts, _gate_status = _gate_view(db, job)
 
     def build(conn: sqlite3.Connection, head_seq: int, head_self: str) -> dict[str, Any]:
         csha, contract = _ctx(conn, job)
@@ -953,7 +1001,7 @@ def reconcile_cmd(db: str, job: str, *, target_role: str, msg_id: str, role: str
         bsess, bgen = _binding_session(conn, job, target_role)
         binding = (bsess, bgen) if bsess is not None and bgen is not None else None
         content = reconcile.compute_report(root, contract, baseline, rows, role=target_role, binding=binding,
-                                           head_seq=head_seq)
+                                           head_seq=head_seq, gate_attempts=gate_attempts)
         holder.update(exceptions=content.get("exceptions", []), through_seq=content.get("through_seq"))
         return build_row(conn, job, head_seq, head_self, etype="reconcile-report", msg_id=msg_id, author_role=role,
                          session_id=session, generation=generation, reply_to=None, grant_ref=None,
@@ -1306,10 +1354,12 @@ def observe_cmd(db: str, job: str) -> dict[str, Any]:
     contract = json.loads(c["content"])
     th, notes = observe.thresholds(contract if isinstance(contract, dict) else {})
     now = _now()
-    res = observe.classify(rows, now=now, thresholds=th)
+    gate_attempts, gate_status = _gate_view(db, job)
+    res = observe.classify(rows, now=now, thresholds=th, gate_attempts=gate_attempts)
     res = dict(res)
     res["uncertainty"] = list(res.get("uncertainty", [])) + [n for n in notes if n not in res.get("uncertainty", [])]
     res["authority"] = _authority_view(job, rows)
+    res["gate"] = gate_status
     entry = {"job": job, "now": now, "class": res.get("class"), "evidence_seqs": [e.get("seq") for e in res.get("evidence", [])],
              "authority": res["authority"]["state"]}
     try:
@@ -1318,6 +1368,37 @@ def observe_cmd(db: str, job: str) -> dict[str, Any]:
         raise WfRefused(f"observation log not written: {exc}") from exc
     res["job"] = job
     return res
+
+
+# ---------------------------------------------------------------- slice 4a: print-install (prints only)
+
+PRINT_ONLY_NOTE = ("printed only: not installed, not qualified; installation and Q1b re-verification are slice 4b "
+                   "(owner)")
+
+
+def gate_print_install(*, hooks_dir: str, root: str, db: str, wf_dir: str | None = None) -> dict[str, Any]:
+    """`wf gate print-install` (INTERFACE-CONTRACT-S4A section 5). Computes and prints the install record; writes
+    nothing anywhere. The snippet is not an installation and not a qualification."""
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    wf_dir = os.path.abspath(wf_dir or here)
+    hook_src = os.path.join(wf_dir, "gate", "wf_gate_hook.py")
+    if not os.path.isfile(hook_src):
+        raise WfRefused(f"hook source not found: {hook_src}")
+    core = os.path.join(wf_dir, "wfcore")
+    lines = []
+    for name in sorted(os.listdir(core)):
+        if name.endswith(".py"):
+            lines.append(f"{sha256_file(os.path.join(core, name))}  {name}\n")
+    wfcore_sha = sha256_text("".join(lines))
+    hook_sha = sha256_file(hook_src)
+    hook_dst = os.path.join(hooks_dir, "wf_gate_hook.py")
+    config = {"root": os.path.abspath(root), "db": os.path.abspath(db), "wf_dir": wf_dir,
+              "wfcore_sha256": wfcore_sha, "read_timeout_s": 2.0, "hook_sha256": hook_sha}
+    snippet = {"hooks": {"PreToolUse": [{"matcher": "Write|Edit|NotebookEdit|Bash|PowerShell", "hooks": [
+        {"type": "command", "command": f"python -I {hook_dst}", "timeout": 10, "onFailure": "block"}]}]}}
+    return {"ok": True, "hook_source": hook_src, "hook_sha256": hook_sha, "hook_destination": hook_dst,
+            "config_destination": os.path.join(hooks_dir, "wf_gate.json"), "config": config,
+            "settings_snippet": snippet, "note": PRINT_ONLY_NOTE, "written": []}
 
 
 # ---------------------------------------------------------------- resolve
