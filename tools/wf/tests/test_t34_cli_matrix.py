@@ -257,7 +257,12 @@ class T34CliMatrix(Base):
         self.ok(self.wf("close", "j", "--intervention", "none"))
         self.assertEqual(self.types()[-1], "close")
         self.assertEqual(self.authority()["state"], "cancelled")        # final (D-S3-2)
-        self.assert_rejected(self.work(note="after close"), "cancelled")
+        # after abandon + close the engine's own refusal ("job j is abandoned", code refused) runs before the
+        # authority guard (White, F2): assert only that work is refused and nothing is added
+        n = len(self.rows())
+        code, r = self.work(note="after close")
+        self.assertEqual((code, r.get("code")), (1, "refused"), r)
+        self.assertEqual(len(self.rows()), n)
 
     # ---------------------------------------------------------------- D-S3-1 and the agreement table
     def test_D_S3_1_none_and_proposed_record_work_but_grant_check_denies(self):
