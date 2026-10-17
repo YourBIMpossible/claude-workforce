@@ -217,7 +217,7 @@ class LedgerHealth(_Gate):
         self.deny(self.p(tool="Bash"), "chain-tail")                 # B1 bound: its job is touched on the shell channel
         self.allow(self.p(tool="Bash", session="U9"), "shell-not-preventable")   # unbound shell touches no job
 
-    def test_gate_never_writes_the_ledger(self):
+    def test_decide_never_writes_the_ledger(self):
         self.explicit()
         before = (hashlib.sha256(open(self.db, "rb").read()).hexdigest(), os.path.getmtime(self.db),
                   sorted(os.listdir(os.path.dirname(self.db))))
