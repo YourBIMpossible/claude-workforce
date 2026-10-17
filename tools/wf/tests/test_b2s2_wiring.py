@@ -208,9 +208,9 @@ class B2S2(B2S1):
                                          '{"path":"jobs/j/work/a.txt","note":"g2"}', "--generation", "2", session="B2"),
                              "unreconciled")
         ids = json.dumps([e["id"] for e in rep2["exceptions"]])
-        # the stopped session cannot acknowledge; the new one at generation 2 can
+        # the replaced session is stale once generation 2 is bound (5 rule 4); only the new one can acknowledge
         self.assert_rejected(self.run_wf("ack-reconcile", "j", "--report", str(rep2["seq"]), "--exceptions", ids),
-                             "stopped-session")
+                             "stale")
         c, r = self.run_wf("ack-reconcile", "j", "--report", str(rep2["seq"]), "--exceptions", ids, "--generation", "2",
                            session="B2")
         self.assertEqual(c, 0, r)
