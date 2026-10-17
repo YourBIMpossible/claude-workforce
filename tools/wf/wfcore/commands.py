@@ -1028,6 +1028,7 @@ def recover_reconcile(db: str, job: str, *, turn: str, msg_id: str, role: str, s
     already = sorted(reconcile.acknowledged(rows, opened))
     done: list[str] = []
     last: dict[str, Any] = {"seq": None}
+    _recover_kill(faults, oplog, "recover-kill-mid-reconcile", when=1, count=0)  # k = 0: die before any acknowledgement
     for item in pending:
         content = {"opened_seq": opened, "id": item["id"], "class": item["class"], "detail": item["detail"],
                    "owner_turn": turn}
