@@ -35,6 +35,10 @@ def _parser() -> argparse.ArgumentParser:
     gp = grant.add_parser("propose"); gp.add_argument("job"); gp.add_argument("--grant", required=True)
     ga = grant.add_parser("activate"); ga.add_argument("job")
     ga.add_argument("--owner-hash", required=True); ga.add_argument("--quote", default=""); ga.add_argument("--turn", default="")
+    # B2 slice 3 (INTERFACE-CONTRACT-S3 sections 1-5): lifecycle ends, grant-check, cancel, interventions, observe
+    for _name in ("revoke", "expire"):
+        _g = grant.add_parser(_name); _g.add_argument("job")
+        _g.add_argument("--reason", required=True); _g.add_argument("--turn", required=True, help="owner turn naming the job")
 
     ap = sp.add_parser("append"); ap.add_argument("job"); ap.add_argument("--type", required=True)
     ap.add_argument("--content", required=True, help="JSON file or inline JSON")
@@ -63,6 +67,17 @@ def _parser() -> argparse.ArgumentParser:
     ak.add_argument("job"); ak.add_argument("--report", type=int, required=True, metavar="SEQ")
     ak.add_argument("--exceptions", required=True, help="JSON list of the report's exception ids (exactly)")
     ak.add_argument("--note", default=None)
+    gc = sp.add_parser("grant-check", help="pure authority check (exit 0 allow, 1 deny); same logic as the mutation guard")
+    gc.add_argument("job"); gc.add_argument("--check-role", required=True)
+    gc.add_argument("--action", required=True); gc.add_argument("--path", required=True)
+    cn = sp.add_parser("cancel", help="record the owner's cancellation; later work through wf is refused")
+    cn.add_argument("job"); cn.add_argument("--reason", required=True); cn.add_argument("--turn", required=True)
+    li = sp.add_parser("log-intervention", help="append an intervention entry (minutes: integer or 'unknown')")
+    li.add_argument("job"); li.add_argument("--label", required=True)
+    li.add_argument("--necessity", required=True, choices=("avoidable", "necessary", "unknown"))
+    li.add_argument("--minutes", required=True); li.add_argument("--note", default="")
+    ob = sp.add_parser("observe", help="read-only supervision report; writes only its bounded observation log")
+    ob.add_argument("job")
     rv = sp.add_parser("recover").add_subparsers(dest="sub", required=True)
     rb = rv.add_parser("begin"); rb.add_argument("job"); rb.add_argument("--reason", required=True)
     rb.add_argument("--turn", required=True, help="owner turn text naming the job")
@@ -115,6 +130,23 @@ def run(argv: list[str]) -> tuple[int, dict]:
             res = commands.job_new(db, args.job, args.contract, faults=faults, **common)
         elif args.cmd == "job":
             res = commands.job_abandon(db, args.job, args.reason, oplog)
+        elif args.cmd == "grant" and args.sub in ("revoke", "expire"):
+            _need(args, "role", "session")
+            fn = commands.grant_revoke if args.sub == "revoke" else commands.grant_expire
+            res = fn(db, args.job, reason=args.reason, turn=args.turn, faults=faults, **common)
+        elif args.cmd == "grant-check":
+            res = commands.grant_check_cmd(db, args.job, check_role=args.check_role, action=args.action, path=args.path)
+            if not res.get("allow"):
+                return EXIT_ERR, {**res, "ok": False, "code": "deny", "db": db, "msg_id": None}
+        elif args.cmd == "cancel":
+            _need(args, "role", "session")
+            res = commands.cancel(db, args.job, reason=args.reason, turn=args.turn, faults=faults, **common)
+        elif args.cmd == "log-intervention":
+            _need(args, "role", "session")
+            res = commands.log_intervention(db, args.job, label=args.label, necessity=args.necessity,
+                                            minutes=args.minutes, note=args.note, faults=faults, **common)
+        elif args.cmd == "observe":
+            res = commands.observe_cmd(db, args.job)
         elif args.cmd == "grant" and args.sub == "propose":
             _need(args, "role", "session")
             res = commands.grant_propose(db, args.job, args.grant, faults=faults, **common)
@@ -206,7 +238,7 @@ def run(argv: list[str]) -> tuple[int, dict]:
         res.pop("ops", None)
     res["db"] = res.get("db", db)
     res["msg_id"] = (msg_id if args.cmd in ("job", "grant", "append", "accept", "close", "bind", "reconcile",
-                                            "ack-reconcile", "recover") else None)
+                                            "ack-reconcile", "recover", "cancel", "log-intervention") else None)
     return EXIT_OK, res
 
 
