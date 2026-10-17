@@ -51,6 +51,15 @@ def _parser() -> argparse.ArgumentParser:
     v.add_argument("--gate-sha", help="expected sha256 of --gate-file")
     v.add_argument("--checkpoint", metavar="SEQ:HASH",
                    help="independently retained checkpoint (seq:self) to compare with the chain (spec 3C)")
+    # B2 slice 5 (INTERFACE-CONTRACT-S5 section 2): read-only check of a restored copy (restore is an owner procedure)
+    v.add_argument("--restored", metavar="PATH", help="verify a restored copy at PATH (read-only; see RESTORE-RUNBOOK.md)")
+    v.add_argument("--job", dest="restored_job", metavar="J", help="job for --checkpoint with --restored")
+    # B2 slice 5 (INTERFACE-CONTRACT-S5 section 1): engine backup to a new file; coordinator or owner; ledger read-only
+    bk = sp.add_parser("backup", help="engine backup of the ledger to a NEW file outside the ledger directory, then verify it")
+    bk.add_argument("job", nargs="?"); bk.add_argument("--all", dest="all_jobs", action="store_true")
+    bk.add_argument("--to", dest="dest", required=True, metavar="PATH")
+    bk.add_argument("--writer-stopped", action="store_true",
+                    help="the caller states every writer is stopped: head equality with the source is then asserted")
     sp.add_parser("export", help="regenerate jobs\\<job>\\export (ledger-read-only, export-writing)").add_argument("job")
     ac = sp.add_parser("accept"); ac.add_argument("job"); ac.add_argument("--results", required=True)
     cl = sp.add_parser("close"); cl.add_argument("job"); cl.add_argument("--intervention", required=True)
@@ -169,9 +178,21 @@ def run(argv: list[str]) -> tuple[int, dict]:
             res = commands.status(db, args.job)
         elif args.cmd == "digest":
             res = commands.digest(db, args.job)
+        elif args.cmd == "verify" and args.restored is not None:
+            if args.gate_file is not None or args.gate_sha is not None:
+                raise WfUsage("--gate-file/--gate-sha do not apply to --restored")
+            if args.job and args.restored_job and args.job != args.restored_job:
+                raise WfUsage("give the job once (positional or --job)")
+            res = commands.verify_restored(args.restored, args.restored_job or args.job, args.checkpoint)
         elif args.cmd == "verify":
+            if args.restored_job is not None:
+                raise WfUsage("--job applies only with --restored")
             cp = checkpointcmp.parse(args.checkpoint, args.job) if args.checkpoint is not None else None
             res = commands.verify(db, args.job, checkpoint=cp, gate_file=args.gate_file, gate_sha=args.gate_sha)
+        elif args.cmd == "backup":
+            _need(args, "role")
+            res = commands.backup_cmd(db, args.job, all_jobs=args.all_jobs, dest=args.dest,
+                                      writer_stopped=args.writer_stopped, role=args.role)
         elif args.cmd == "checkpoint":
             res = commands.checkpoint(db, args.job)
         elif args.cmd == "export":
