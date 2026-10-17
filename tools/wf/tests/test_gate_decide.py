@@ -309,9 +309,10 @@ class BoundAndUnbound(_Gate):
         self.deny(self.p("jobs/j/work/secret/key.txt"), "path-excluded")
 
     def test_bound_role_decision_is_exactly_grant_check(self):
-        """Rule 5 reuses grant.check unchanged (owner item 4): a bound reviewer writing in the work scope gets exactly
-        grant.check's answer. Observed and reported: slice-3 grant.check does not compare the role's ARS actions or
-        the binding's paths with the target, so this write is ALLOWED; the gate adds no second authority logic."""
+        """Rule 5 reuses grant.check (owner item 4): a bound reviewer writing into the builder's work scope gets
+        exactly grant.check's answer. Since AMENDMENT S4A-A2 grant.check compares the target with the role's ARS
+        actions/paths and the binding's paths, so the reviewer (ARS actions ["review"]) is denied
+        `action-outside-role`, passed through by rule 5; the gate adds no second authority logic."""
         self.explicit()
         self.ok(self.run_wf("append", "j", "--type", "delivered", "--content",
                             '{"claims":[{"claim":"c","evidence":["e"]}]}', session="B1"))
@@ -320,7 +321,9 @@ class BoundAndUnbound(_Gate):
         g = grant.check(self.ledger_rows(), job="j", now=NOW, role="reviewer", action="write", path="jobs/j/work/a.txt",
                         contract=CONTRACT, binding={"role": "reviewer", "tools": ["Read"], "paths": ["tools/wf/**"]})
         self.assertEqual((r["decision"] == "allow", r["reason"]), (g["allow"], g["reason"]))
-        self.assertEqual((r["decision"], r["reason"]), ("allow", "allowed"))   # pinned present behaviour (reported)
+        self.assertEqual((r["decision"], r["reason"]), ("deny", "action-outside-role"))     # S4A-A2
+        self.assertIn(r["reason"], gatecore.REASONS)
+        self.allow(self.p("jobs/j/work/a.txt", session="B1"), "allowed")       # the builder's own scope is unchanged
 
     def test_T17_unbound_session_into_write_scope_or_job_tree(self):
         self.explicit()

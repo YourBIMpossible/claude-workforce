@@ -268,8 +268,11 @@ def check(rows: list[dict], *, job: str, now: str, role: str, action: str, path:
           binding: dict | None) -> dict:
     """§4 grant-check: {"allow", "reason", "authority", "grant_id", "block_hash"}; the first failing reason in order:
     authority in-force (else the state name) -> action granted -> path relative, inside the contract write_scope and
-    matched by a revision resource -> not excluded -> ARS role (if the ARS has `roles`) -> in explicit mode a binding
-    for the role with recorded tools/paths inside the ARS role spec."""
+    matched by a revision resource -> not excluded -> ARS role (if the ARS has `roles`) -> action in the role's ARS
+    `actions` (`action-outside-role`) -> path matched by the role's ARS `paths` (`path-outside-role`) -> in explicit
+    mode a binding for the role with recorded tools/paths inside the ARS role spec -> path matched by the binding's
+    declared `paths` (`path-outside-binding`). The three role/binding target checks are AMENDMENT S4A-A2; an ARS
+    without a `roles` object keeps the S3 behaviour."""
     auth = authority(rows, job=job, now=now)
     if auth["state"] != "in-force":
         return _deny(auth["state"], auth)
@@ -291,11 +294,19 @@ def check(rows: list[dict], *, job: str, now: str, role: str, action: str, path:
     if isinstance(roles, dict):
         if role not in roles:
             return _deny("role-not-in-ars", auth)
+        spec = roles[role] if isinstance(roles[role], dict) else {}
+        if not _str_list(spec.get("actions")) or action not in spec["actions"]:      # S4A-A2
+            return _deny("action-outside-role", auth)
+        if not _str_list(spec.get("paths")) or not _glob_in(rel, spec["paths"]):     # S4A-A2
+            return _deny("path-outside-role", auth)
         if _explicit_mode(rows):
             if not isinstance(binding, dict) or binding.get("role") != role:
                 return _deny("unbound-role", auth)
             if not _binding_in_ars(binding, cur):
                 return _deny("binding-outside-ars", auth)
+            paths = binding.get("paths")
+            if not _str_list(paths) or not _glob_in(rel, paths):                     # S4A-A2
+                return _deny("path-outside-binding", auth)
     return {"allow": True, "reason": "allowed", "authority": auth["state"], "grant_id": auth["grant_id"],
             "block_hash": auth["block_hash"]}
 

@@ -63,7 +63,8 @@ SHELL_LIMITATION = ("shell commands are recorded as invocations only; their file
                     "by wf reconcile/accept only")
 CHAIN_TAIL_ROWS = 50  # D-S4-4
 _GRANT_CHECK_REASONS: tuple[str, ...] = ("allowed", "action-not-granted", "path-not-granted", "path-excluded",
-                                         "role-not-in-ars", "unbound-role", "binding-outside-ars")
+                                         "role-not-in-ars", "unbound-role", "binding-outside-ars",
+                                         "action-outside-role", "path-outside-role", "path-outside-binding")  # S4A-A2
 #: Every reason string `decide` returns (§2), including the grant.check reasons rule 5 passes through.
 REASONS: tuple[str, ...] = (
     "malformed-payload", "unresolvable-path", "protected-path",

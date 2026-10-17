@@ -332,6 +332,67 @@ class MutationGuardMatrix(unittest.TestCase):
                              binding={"role": "builder", "tools": ["Bash"], "paths": ["**"]})
 
 
+class GrantCheckRoleTargets(unittest.TestCase):
+    """AMENDMENT S4A-A2: grant.check compares the target with the role's ARS actions and paths and, in explicit mode,
+    with the binding's declared paths. An ARS without a `roles` object keeps the S3 behaviour."""
+
+    def check(self, steps: list[dict], role: str, action: str, path: str) -> dict:
+        rows = build_rows(steps)
+        return grant.check(rows, job=JOB, now=NOW, role=role, action=action, path=path, contract=CONTRACT,
+                           binding=binding_of(rows, role))
+
+    def test_reviewer_into_builder_scope_is_path_outside_role(self):
+        roles = copy.deepcopy(ROLES)
+        roles["reviewer"] = {"tools": ["Write"], "actions": ["write", "review"], "paths": ["jobs/j/work/review/**"]}
+        steps = [{"op": "contract"}, {"op": "propose", "grant": {"ars": {"roles": roles}}}, {"op": "activate"}]
+        got = self.check(steps, "reviewer", "write", "jobs/j/work/a.txt")
+        self.assertEqual((got["allow"], got["reason"]), (False, "path-outside-role"))
+        got = self.check(steps, "reviewer", "write", "jobs/j/work/review/r.txt")       # its own ARS paths
+        self.assertEqual((got["allow"], got["reason"]), (True, "allowed"))
+        got = self.check(steps, "builder", "write", "jobs/j/work/a.txt")
+        self.assertEqual((got["allow"], got["reason"]), (True, "allowed"))
+
+    def test_builder_action_outside_role(self):
+        steps = S["in-force"]                                   # revision actions write+review; builder ARS: write
+        got = self.check(steps, "builder", "review", "jobs/j/work/a.txt")
+        self.assertEqual((got["allow"], got["reason"]), (False, "action-outside-role"))
+        got = self.check(steps, "reviewer", "review", "jobs/j/work/a.txt")
+        self.assertEqual((got["allow"], got["reason"]), (True, "allowed"))
+        got = self.check(steps, "reviewer", "write", "jobs/j/work/a.txt")            # the WF-007 finding 6 case
+        self.assertEqual((got["allow"], got["reason"]), (False, "action-outside-role"))
+        got = self.check(steps, "builder", "deploy", "jobs/j/work/a.txt")            # revision check still first
+        self.assertEqual(got["reason"], "action-not-granted")
+        got = self.check(steps, "owner", "write", "jobs/j/work/a.txt")               # role check still first
+        self.assertEqual(got["reason"], "role-not-in-ars")
+
+    def test_action_checked_before_role_paths(self):
+        roles = copy.deepcopy(ROLES)
+        roles["builder"] = {"tools": ["Write"], "actions": ["write"], "paths": ["jobs/j/work/sub/**"]}
+        steps = [{"op": "contract"}, {"op": "propose", "grant": {"ars": {"roles": roles}}}, {"op": "activate"}]
+        self.assertEqual(self.check(steps, "builder", "review", "jobs/j/work/a.txt")["reason"], "action-outside-role")
+        self.assertEqual(self.check(steps, "builder", "write", "jobs/j/work/a.txt")["reason"], "path-outside-role")
+
+    def test_binding_narrower_than_ars_is_path_outside_binding(self):
+        steps = S["in-force"] + [{"op": "bind", "role": "builder", "session": "B1", "tools": ["Write"],
+                                  "paths": ["jobs/j/work/sub/**"]}]
+        got = self.check(steps, "builder", "write", "jobs/j/work/a.txt")
+        self.assertEqual((got["allow"], got["reason"]), (False, "path-outside-binding"))
+        got = self.check(steps, "builder", "write", "jobs/j/work/sub/x.txt")
+        self.assertEqual((got["allow"], got["reason"]), (True, "allowed"))
+        rows = build_rows(steps)                                 # binding-outside-ars still precedes the new check
+        wide = {"role": "builder", "tools": ["Bash"], "paths": ["jobs/j/work/sub/**"]}
+        got = grant.check(rows, job=JOB, now=NOW, role="builder", action="write", path="jobs/j/work/a.txt",
+                          contract=CONTRACT, binding=wide)
+        self.assertEqual(got["reason"], "binding-outside-ars")
+
+    def test_ars_without_roles_unchanged(self):
+        steps = [{"op": "contract"}, {"op": "propose", "grant": {"ars": {"a": "owner"}}}, {"op": "activate"}]
+        for role, action in (("reviewer", "write"), ("builder", "review"), ("anyone", "write")):
+            with self.subTest(role=role, action=action):
+                got = self.check(steps, role, action, "jobs/j/work/a.txt")
+                self.assertEqual((got["allow"], got["reason"]), (True, "allowed"))
+
+
 # ===================================================================================================== validators
 
 class Validators(unittest.TestCase):
