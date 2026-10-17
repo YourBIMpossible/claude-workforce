@@ -1,0 +1,1243 @@
+[
+ {
+  "name": "allow_builder_write",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": true,
+  "expect_reason": "allowed"
+ },
+ {
+  "name": "allow_reviewer_review",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "reviewer",
+  "action": "review",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": true,
+  "expect_reason": "allowed"
+ },
+ {
+  "name": "allow_nested_path",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/sub/deep/x.py",
+  "expect_allow": true,
+  "expect_reason": "allowed"
+ },
+ {
+  "name": "allow_path_normalised",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs\\j\\work\\.\\a.txt",
+  "expect_allow": true,
+  "expect_reason": "allowed"
+ },
+ {
+  "name": "allow_one_second_before_expiry",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-12-30T23:59:59Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": true,
+  "expect_reason": "allowed"
+ },
+ {
+  "name": "allow_revoke_naming_other_revision_ignored",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   },
+   {
+    "op": "revoke_named",
+    "grant_id": "G9",
+    "block_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": true,
+  "expect_reason": "allowed"
+ },
+ {
+  "name": "allow_free_form_ars_any_role",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose",
+    "grant": {
+     "ars": {
+      "a": "owner"
+     }
+    }
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "auditor",
+  "action": "write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": true,
+  "expect_reason": "allowed"
+ },
+ {
+  "name": "allow_bound_role_explicit",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   },
+   {
+    "op": "bind",
+    "role": "coordinator",
+    "session": "C1",
+    "tools": [],
+    "paths": [
+     "tools/wf/**"
+    ]
+   },
+   {
+    "op": "bind",
+    "role": "builder",
+    "session": "B1",
+    "tools": [
+     "Write"
+    ],
+    "paths": [
+     "jobs/j/work/**"
+    ]
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": true,
+  "expect_reason": "allowed"
+ },
+ {
+  "name": "deny_none",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": false,
+  "expect_reason": "none"
+ },
+ {
+  "name": "deny_proposed",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": false,
+  "expect_reason": "proposed"
+ },
+ {
+  "name": "deny_expired_time",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-12-31T00:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": false,
+  "expect_reason": "expired"
+ },
+ {
+  "name": "deny_expired_time_later",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2027-03-01T08:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": false,
+  "expect_reason": "expired"
+ },
+ {
+  "name": "deny_expired_explicit",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   },
+   {
+    "op": "expire"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": false,
+  "expect_reason": "expired"
+ },
+ {
+  "name": "deny_revoked",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   },
+   {
+    "op": "revoke"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": false,
+  "expect_reason": "revoked"
+ },
+ {
+  "name": "deny_voided_by_new_proposal",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   },
+   {
+    "op": "propose",
+    "grant": {
+     "grant_id": "G2"
+    }
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": false,
+  "expect_reason": "voided"
+ },
+ {
+  "name": "deny_malformed_tampered_actions",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   },
+   {
+    "op": "tamper_activated",
+    "field": "actions",
+    "value": [
+     "write",
+     "deploy"
+    ]
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": false,
+  "expect_reason": "malformed"
+ },
+ {
+  "name": "deny_malformed_tampered_resources",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   },
+   {
+    "op": "tamper_activated",
+    "field": "resources",
+    "value": [
+     "**"
+    ]
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": false,
+  "expect_reason": "malformed"
+ },
+ {
+  "name": "deny_malformed_tampered_contract_pin",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   },
+   {
+    "op": "tamper_pin"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": false,
+  "expect_reason": "malformed"
+ },
+ {
+  "name": "deny_malformed_expiry_form",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose",
+    "grant": {
+     "expiry": "2026-12-31"
+    }
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": false,
+  "expect_reason": "malformed"
+ },
+ {
+  "name": "deny_malformed_field_type",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose",
+    "grant": {
+     "actions": "write"
+    }
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": false,
+  "expect_reason": "malformed"
+ },
+ {
+  "name": "deny_cancelled",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   },
+   {
+    "op": "cancel"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": false,
+  "expect_reason": "cancelled"
+ },
+ {
+  "name": "deny_cancelled_before_activation",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "cancel"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": false,
+  "expect_reason": "cancelled"
+ },
+ {
+  "name": "deny_cancelled_renewal_does_not_help",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   },
+   {
+    "op": "cancel"
+   },
+   {
+    "op": "propose",
+    "grant": {
+     "grant_id": "G2"
+    }
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": false,
+  "expect_reason": "cancelled"
+ },
+ {
+  "name": "allow_renewal_after_revoke",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   },
+   {
+    "op": "revoke"
+   },
+   {
+    "op": "propose",
+    "grant": {
+     "grant_id": "G2"
+    }
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": true,
+  "expect_reason": "allowed"
+ },
+ {
+  "name": "allow_renewal_after_explicit_expiry",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   },
+   {
+    "op": "expire"
+   },
+   {
+    "op": "propose",
+    "grant": {
+     "grant_id": "G2"
+    }
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": true,
+  "expect_reason": "allowed"
+ },
+ {
+  "name": "allow_renewal_after_void",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   },
+   {
+    "op": "propose",
+    "grant": {
+     "grant_id": "G2"
+    }
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": true,
+  "expect_reason": "allowed"
+ },
+ {
+  "name": "allow_renewal_after_malformed",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   },
+   {
+    "op": "tamper_activated",
+    "field": "actions",
+    "value": [
+     "deploy"
+    ]
+   },
+   {
+    "op": "propose",
+    "grant": {
+     "grant_id": "G2"
+    }
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": true,
+  "expect_reason": "allowed"
+ },
+ {
+  "name": "allow_renewal_after_time_expiry",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   },
+   {
+    "op": "propose",
+    "grant": {
+     "grant_id": "G2",
+     "expiry": "2027-06-30T00:00:00Z"
+    }
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2027-01-15T00:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": true,
+  "expect_reason": "allowed"
+ },
+ {
+  "name": "deny_renewed_revision_revoked_again",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   },
+   {
+    "op": "revoke"
+   },
+   {
+    "op": "propose",
+    "grant": {
+     "grant_id": "G2"
+    }
+   },
+   {
+    "op": "activate"
+   },
+   {
+    "op": "revoke"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": false,
+  "expect_reason": "revoked"
+ },
+ {
+  "name": "deny_binding_outside_new_ars_after_renewal",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   },
+   {
+    "op": "bind",
+    "role": "coordinator",
+    "session": "C1",
+    "tools": [],
+    "paths": [
+     "tools/wf/**"
+    ]
+   },
+   {
+    "op": "bind",
+    "role": "builder",
+    "session": "B1",
+    "tools": [
+     "Write"
+    ],
+    "paths": [
+     "jobs/j/work/**"
+    ]
+   },
+   {
+    "op": "revoke"
+   },
+   {
+    "op": "propose",
+    "grant": {
+     "grant_id": "G3",
+     "ars": {
+      "roles": {
+       "coordinator": {
+        "tools": [
+         "Read"
+        ],
+        "actions": [
+         "bind"
+        ],
+        "paths": [
+         "tools/wf/**"
+        ]
+       },
+       "builder": {
+        "tools": [
+         "Write"
+        ],
+        "actions": [
+         "write"
+        ],
+        "paths": [
+         "jobs/j/work/sub/**"
+        ]
+       },
+       "reviewer": {
+        "tools": [
+         "Read"
+        ],
+        "actions": [
+         "review"
+        ],
+        "paths": [
+         "jobs/j/work/**"
+        ]
+       }
+      }
+     }
+    }
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/sub/a.txt",
+  "expect_allow": false,
+  "expect_reason": "binding-outside-ars"
+ },
+ {
+  "name": "allow_binding_inside_new_ars_after_renewal",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   },
+   {
+    "op": "bind",
+    "role": "coordinator",
+    "session": "C1",
+    "tools": [],
+    "paths": [
+     "tools/wf/**"
+    ]
+   },
+   {
+    "op": "bind",
+    "role": "builder",
+    "session": "B1",
+    "tools": [
+     "Write"
+    ],
+    "paths": [
+     "jobs/j/work/sub/**"
+    ]
+   },
+   {
+    "op": "revoke"
+   },
+   {
+    "op": "propose",
+    "grant": {
+     "grant_id": "G3",
+     "ars": {
+      "roles": {
+       "coordinator": {
+        "tools": [
+         "Read"
+        ],
+        "actions": [
+         "bind"
+        ],
+        "paths": [
+         "tools/wf/**"
+        ]
+       },
+       "builder": {
+        "tools": [
+         "Write"
+        ],
+        "actions": [
+         "write"
+        ],
+        "paths": [
+         "jobs/j/work/sub/**"
+        ]
+       },
+       "reviewer": {
+        "tools": [
+         "Read"
+        ],
+        "actions": [
+         "review"
+        ],
+        "paths": [
+         "jobs/j/work/**"
+        ]
+       }
+      }
+     }
+    }
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/sub/a.txt",
+  "expect_allow": true,
+  "expect_reason": "allowed"
+ },
+ {
+  "name": "deny_action_not_granted",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "deploy",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": false,
+  "expect_reason": "action-not-granted"
+ },
+ {
+  "name": "deny_action_case_sensitive",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "Write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": false,
+  "expect_reason": "action-not-granted"
+ },
+ {
+  "name": "deny_path_outside_resources_and_scope",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/other/a.txt",
+  "expect_allow": false,
+  "expect_reason": "path-not-granted"
+ },
+ {
+  "name": "deny_path_in_scope_not_in_resources",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose",
+    "grant": {
+     "resources": [
+      "jobs/j/work/sub/**"
+     ]
+    }
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": false,
+  "expect_reason": "path-not-granted"
+ },
+ {
+  "name": "deny_path_absolute",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "C:/jobs/j/work/a.txt",
+  "expect_allow": false,
+  "expect_reason": "path-not-granted"
+ },
+ {
+  "name": "deny_path_escape",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/../../../x.txt",
+  "expect_allow": false,
+  "expect_reason": "path-not-granted"
+ },
+ {
+  "name": "deny_path_leading_dotdot",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "../jobs/j/work/a.txt",
+  "expect_allow": false,
+  "expect_reason": "path-not-granted"
+ },
+ {
+  "name": "deny_path_device_name",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/CON",
+  "expect_allow": false,
+  "expect_reason": "path-not-granted"
+ },
+ {
+  "name": "deny_path_empty",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "",
+  "expect_allow": false,
+  "expect_reason": "path-not-granted"
+ },
+ {
+  "name": "deny_path_excluded",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/secret/key.txt",
+  "expect_allow": false,
+  "expect_reason": "path-excluded"
+ },
+ {
+  "name": "deny_role_not_in_ars",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "auditor",
+  "action": "write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": false,
+  "expect_reason": "role-not-in-ars"
+ },
+ {
+  "name": "deny_unbound_role_explicit",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   },
+   {
+    "op": "bind",
+    "role": "coordinator",
+    "session": "C1",
+    "tools": [],
+    "paths": [
+     "tools/wf/**"
+    ]
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "write",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": false,
+  "expect_reason": "unbound-role"
+ },
+ {
+  "name": "order_state_before_action",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   },
+   {
+    "op": "revoke"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "deploy",
+  "path": "jobs/j/work/a.txt",
+  "expect_allow": false,
+  "expect_reason": "revoked"
+ },
+ {
+  "name": "order_action_before_path",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "builder",
+  "action": "deploy",
+  "path": "elsewhere/x",
+  "expect_allow": false,
+  "expect_reason": "action-not-granted"
+ },
+ {
+  "name": "order_path_before_exclusion_and_role",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "auditor",
+  "action": "write",
+  "path": "elsewhere/x",
+  "expect_allow": false,
+  "expect_reason": "path-not-granted"
+ },
+ {
+  "name": "order_exclusion_before_role",
+  "rows_fixture": [
+   {
+    "op": "contract"
+   },
+   {
+    "op": "propose"
+   },
+   {
+    "op": "activate"
+   }
+  ],
+  "now": "2026-10-17T12:00:00Z",
+  "role": "auditor",
+  "action": "write",
+  "path": "jobs/j/work/secret/k",
+  "expect_allow": false,
+  "expect_reason": "path-excluded"
+ }
+]
