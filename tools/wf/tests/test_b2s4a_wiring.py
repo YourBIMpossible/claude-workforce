@@ -67,7 +67,7 @@ class B2S4A(Base):
         self.new_job()
         c, v = self.run_wf("verify", "j")
         self.assertEqual(c, 0, v)
-        self.assertFalse(v["gate"]["present"])
+        self.assertNotIn("gate", v)                                     # no gate log: verify's frozen keys unchanged
         self.assertTrue(v["clean"])
         f = os.path.join(self.dir, "deployed_hook.py")
         with open(f, "w", encoding="utf-8") as fh:

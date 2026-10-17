@@ -681,7 +681,10 @@ def verify(db: str, job: str | None, checkpoint: tuple[int, str] | None = None, 
         gate_status["deployed_hook"] = {"path": os.path.abspath(gate_file), "expected_sha256": gate_sha.lower(),
                                         "actual_sha256": actual, "matches": actual == gate_sha.lower(),
                                         "note": "reported only; never repaired"}
-    result["gate"] = gate_status
+    # S4A-A3: the key appears only when there is something to report (a gate log or a deployed-hook comparison);
+    # without it verify's frozen top-level keys stay exactly as pinned by lane C (test_checkpoint_clarity, T36).
+    if gate_status.get("present") or "deployed_hook" in gate_status:
+        result["gate"] = gate_status
     if checkpoint is not None:
         result["checkpoint_job"] = job
         result = checkpointcmp.compare(result, checkpoint, chains)
