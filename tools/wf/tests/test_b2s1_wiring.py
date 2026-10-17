@@ -145,7 +145,10 @@ class B2S1(Base):
         self.assert_rejected(self.bind("reviewer", "R1", "--tool", "Bash"), "ars")
         self.assert_rejected(self.bind("reviewer", "R1", "--path", "ledger/**"), "ars")
         self.assert_rejected(self.bind("builder", "B2"), "bound")                      # duplicate role: replacement excluded
-        self.assert_rejected(self.bind("builder", "B1", "--bind-generation", "2"), "bound")
+        # slice 2 (INTERFACE-CONTRACT-S2 section 3): generation 2 is a replacement; with the builder not stop-confirmed
+        # it is refused as termination-unconfirmed (slice 1 refused it as bound; the 'bound' refusal still covers a
+        # duplicate generation-1 bind, asserted above)
+        self.assert_rejected(self.bind("builder", "B1", "--bind-generation", "2"), "termination-unconfirmed")
         self.assert_rejected(self.bind("reviewer", "R1"), "reviewer-precondition")     # nothing delivered yet
         self.assertEqual(self.events(), n)                                            # T32: no assignment event written
         c, r = self.intent()
