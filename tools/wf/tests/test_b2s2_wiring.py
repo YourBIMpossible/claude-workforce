@@ -201,8 +201,9 @@ class B2S2(B2S1):
         rows = {row["role"]: row for row in d["bindings"]["rows"]}
         self.assertEqual(rows["builder"]["session"], "B2")
         self.assertEqual(rows["builder"]["generation"], 2)
-        # the new session's first event must be the ack of the post-stop report (unreconciled rule)
-        self.assert_rejected(self.intent(session="B2", note="first"), "unreconciled")
+        # the new session's first event must be the ack of the post-stop report (unreconciled rule); a generation-1
+        # event by B2 is stale first (bind.check_actor precedes reconcile.check_actor in the guard)
+        self.assert_rejected(self.intent(session="B2", note="first"), "stale")
         self.assert_rejected(self.run_wf("append", "j", "--type", "intent", "--content",
                                          '{"path":"jobs/j/work/a.txt","note":"g2"}', "--generation", "2", session="B2"),
                              "unreconciled")
