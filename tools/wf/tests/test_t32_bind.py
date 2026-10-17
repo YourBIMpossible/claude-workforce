@@ -1,21 +1,15 @@
-"""T32 bind + ARS (B2 slice 1, lane S1B, Plexy): module tests for `wfcore.bind` against the frozen interface contract
-(GitHub issue #27, "B2 slice 1 - frozen interface contract", §1 schemas, §2 ARS, §3 preconditions / actor check /
-bootstrap, §6 signatures, §8 test matrix). Spec: FIRST-RELEASE-SPEC.md §2B l.34-46, §4.1 l.169, §5 rules 4-5,
-§6.2 step 2, T32 l.307.
+"""T32 bind + ARS (B2 slice 1 lane S1B, slice 2 lane S2B; Plexy): module tests for `wfcore.bind` against the frozen
+contracts: slice 1 INTERFACE-CONTRACT.md (v1 §1 schemas, §2 ARS, §3 preconditions / actor check / bootstrap, §6, §8)
+and slice 2 INTERFACE-CONTRACT-S2.md (A-1 implicit-claimant; §6 Binding / digest fields), both in the WorkForce
+collab folder `contracts/b2s1`, `contracts/b2s2`. Replacement (T33) is tested in test_t33_replacement.py.
+Spec: FIRST-RELEASE-SPEC.md §2B l.34-46, §4.1 l.169, §5 rules 4-5, §6.2 step 2, T32 l.307.
 
 Fixture ledgers are built through `wf.run` with `test_wf.Base` (fresh WF_TEST_TMP, refuse-existing, never delete).
-
-Nothing on main writes `bind`, `ack-assignment` or `stop-confirmed` rows yet: validate.py learns those types in S1R
-(contract §7) and the commands in S1W. So that the binding table is built from real chain-protected rows, this file
-carries a TEST-LOCAL harness, `_Engine`, which for the duration of one write:
-  * adds the three bind types to `validate.ROLE_FOR_TYPE` and routes them from `validate.validate_content` to
-    `bind.validate_content` - the §7 additive edit, restricted to S1B's types, applied with `unittest.mock.patch`
-    and removed afterwards;
-  * writes through the real `txn.write_event`, whose `build` runs contract §6 wrapper steps (3) `bind.check_actor`,
-    (5) the bind type-specific check, (6) `validate.build_row`.
-It is not White's wiring (steps 1-2 and 4, recovery gate and reconcile, are other lanes) and is not evidence for it.
-The one `recovery-opened` row used (recovery gate input) is written as a fully hashed row in S1R's §1 shape, because
-its type belongs to S1R.
+`_Engine._write` writes through the real `txn.write_event` and runs the v1 §6 wrapper steps (3) `bind.check_actor`,
+(5) the bind type-specific check, (6) `validate.build_row`; the S1R §7 dispatch of the bind types in validate.py is on
+main, so the real `validate.validate_content` routes them to `bind.validate_content` (the slice-1 test-local mock is
+gone). It is a module-level harness, not the wiring (`commands._guard`), and is not evidence for the wiring.
+The one `recovery-opened` row used (recovery gate input) is written as a fully hashed row in S1R's §1 shape.
 """
 from __future__ import annotations
 
@@ -24,9 +18,7 @@ import json
 import os
 import sqlite3
 import unittest
-from contextlib import contextmanager
-from typing import Any, Iterator
-from unittest import mock
+from typing import Any
 
 from test_wf import Base, CONTRACT, GRANT  # noqa: E402
 from wfcore import bind, db as dbm, txn, validate  # noqa: E402
@@ -38,29 +30,13 @@ ARS = {"roles": {"coordinator": {"tools": ["Read"], "actions": ["bind"], "paths"
                  "builder": {"tools": ["Write", "Edit"], "actions": ["write"], "paths": ["jobs/j/work/**"]},
                  "reviewer": {"tools": ["Read"], "actions": ["review"], "paths": ["tools/wf/**"]}},
        "session_requirements": {"one_live_session_per_role": True, "reviewer_fresh": True},
-       "replacement": {"allowed": False, "max": 0}}
+       "replacement": {"allowed": False, "max": 0, "expiry": "2999-12-31T23:59:59Z"}}
 GRANT_ARS = dict(GRANT, ars=ARS)
 # Declared tools/paths the wiring would default to (contract allowed_tools / scope, contract §3 last sentence).
 DEFAULTS = {"coordinator": ([], list(CONTRACT["read_scope"])),
             "builder": (list(CONTRACT["allowed_tools"]["builder"]), list(CONTRACT["write_scope"])),
             "reviewer": (list(CONTRACT["allowed_tools"]["reviewer"]), list(CONTRACT["read_scope"]))}
 
-
-@contextmanager
-def _bind_types() -> Iterator[None]:
-    """Contract §7 additive edit, S1B types only, scoped to one write (test-local; removed on exit)."""
-    original = validate.validate_content
-
-    def dispatch(etype: str, content: dict, contract: dict, grant_state: dict | None) -> None:
-        if etype in bind.CONTENT_TYPES:
-            bind.validate_content(etype, content, contract, grant_state)
-            return
-        original(etype, content, contract, grant_state)
-
-    roles = {"bind": ("coordinator",), "ack-assignment": ("coordinator", "builder", "reviewer"),
-             "stop-confirmed": ("coordinator",)}
-    with mock.patch.dict(validate.ROLE_FOR_TYPE, roles), mock.patch.object(validate, "validate_content", dispatch):
-        yield
 
 
 class _Engine(Base):
@@ -113,8 +89,7 @@ class _Engine(Base):
             return validate.build_row(conn, "j", head_seq, head_self, etype=etype, msg_id=msg_id, author_role=role,
                                       session_id=session, generation=generation, reply_to=None, grant_ref=None,
                                       content=content, contract_sha=csha, contract_content=contract)
-        with _bind_types():
-            return txn.write_event(self.db, "j", Faults(), OpLog(), build=build, session=session)
+        return txn.write_event(self.db, "j", Faults(), OpLog(), build=build, session=session)
 
     def do_bind(self, role: str, session: str, *, author: str = "C1", tools: list[str] | None = None,
                 paths: list[str] | None = None, generation: int = 1) -> Any:
@@ -272,6 +247,19 @@ class Schemas(unittest.TestCase):
         with self.assertRaises(WfRejected):
             bind.validate_content("intent", {}, CONTRACT, None)
 
+    def test_bind_replaces_seq_schema(self):
+        """S2 §6: `replaces_seq` absent/None at generation 1, int >= 1 at generation >= 2; anything else malformed."""
+        g1 = self.GOOD["bind"]
+        bind.validate_content("bind", dict(g1, replaces_seq=None), CONTRACT, None)
+        bind.validate_content("bind", dict(g1, generation=2, replaces_seq=5), CONTRACT, None)
+        for bad in (dict(g1, replaces_seq=5), dict(g1, generation=2), dict(g1, generation=2, replaces_seq=None),
+                    dict(g1, generation=2, replaces_seq=0), dict(g1, generation=2, replaces_seq=True),
+                    dict(g1, generation=2, replaces_seq="5")):
+            with self.subTest(content=bad):
+                with self.assertRaises(WfRejected) as cm:
+                    bind.validate_content("bind", bad, CONTRACT, None)
+                self.assertEqual(cm.exception.reason, "malformed")
+
 
 # ===================================================================================================== §3 bind preconditions
 
@@ -339,7 +327,7 @@ class BindPreconditions(_Engine):
     def test_duplicate_and_foreign_bind(self):
         self.explicit()
         e = self.assertRejected("bound", self.do_bind, "builder", "B2")
-        self.assertIn("outside this slice (T33)", str(e))
+        self.assertIn("replacement binds generation 2", str(e))          # S2 §3: replacement is generation+1
         self.assertRejected("bound", self.do_bind, "builder", "B1")         # same session twice: still bound
         self.assertRejected("bound", self.do_bind, "coordinator", "C1")
         # foreign coordinator session: claimant conflict at the actor check (conflict row written, role blocked)
@@ -368,11 +356,12 @@ class BindPreconditions(_Engine):
         self.assertRejected("reviewer-precondition", self.do_bind, "reviewer", "B1")
         self.do_bind("reviewer", "R1")
 
-    def test_generation_other_than_one(self):
+    def test_generation_without_a_current_binding(self):
+        """S2 §3 (1): generation >= 2 needs a current binding at g-1; with none -> rejected(generation)."""
         self.new_job(); self.activate()
         self.do_bind("coordinator", "C1")
         e = self.assertRejected("generation", self.do_bind, "builder", "B1", generation=2)
-        self.assertIn("T33", str(e))
+        self.assertIn("current binding at generation 1", str(e))
 
     def test_recovery_open_refuses_bind(self):
         self.new_job(); self.activate()
@@ -406,7 +395,8 @@ class BindPreconditions(_Engine):
             self.assertEqual(cm.exception.reason, "malformed")
             ok = bind.validate_bind(c, "j", role="coordinator", session="C1", state=st, **kw)
             self.assertEqual(ok, {"role": "coordinator", "session": "C1", "generation": 1, "tools": [],
-                                  "paths": ["tools/wf/**"], "grant_seq": 3})
+                                  "paths": ["tools/wf/**"], "grant_seq": 3,
+                                  "replaces_seq": None})
         finally:
             c.close()
 
@@ -504,45 +494,44 @@ class ImplicitThenExplicit(_Engine):
         b = self.table()["builder"]
         self.assertEqual((b.session, b.bind_seq, b.ack_seq, b.stopped_seq), ("B1", 6, 8, None))
 
-    def test_case_b_different_session_bound_after_implicit_builder(self):
-        """(b) B1 acts implicitly (4) -> C1 self-bind (5) -> bind builder B2 commits (6) -> B2's first event:
-        claimant conflict, holder B1 (build_row implicit rule), blocker 7 -> B1's event: claimant conflict, holder B2
-        (check_actor), blocker 8 -> builder role-blocked -> stop-confirmed for B2 commits (9); for B1 invalid-stop.
-        The builder role stays unusable in this slice; the exit is replacement/generation+1 (T33)."""
+    def test_case_b_different_session_refused_implicit_claimant(self):
+        """S2 A-1 (owner item 1): B1 acts implicitly (4) -> C1 self-bind (5) -> bind builder B2 -> rejected(implicit-
+        claimant) naming B1, nothing written; no conflict row, no block. Same-session bind (case a) stays allowed."""
         self.new_job(); self.activate()
         self.do_intent("B1")
         self.do_bind("coordinator", "C1")
         r, _ = self.last()
         self.assertEqual((r["seq"], r["type"]), (5, "bind"))
-        self.do_bind("builder", "B2")                       # no implicit-holder check for builder (§3 exhaustive)
+        e = self.assertRejected("implicit-claimant", self.do_bind, "builder", "B2")
+        self.assertIn("'B1'", str(e))
+        self.assertEqual(self.head(), 5)
+        self.assertEqual([x["type"] for x in self.rows()].count("blocker"), 0)
+        self.assertNotIn("builder", self.table())
+        self.do_bind("builder", "B1")                      # the implicit holder itself may still be bound (case a)
         r, c = self.last()
-        self.assertEqual((r["seq"], r["type"], r["session_id"]), (6, "bind", "C1"))
-        self.assertEqual((c["role"], c["session"]), ("builder", "B2"))
+        self.assertEqual((r["seq"], r["type"], c["session"]), (6, "bind", "B1"))
+        self.do_intent("B1")
 
-        bc = self.assertConflict(self.do_intent, "B2")
-        r, _ = self.last()
-        self.assertEqual((r["seq"], r["type"], r["author_role"], r["session_id"]), (7, "blocker", "builder", "B2"))
-        self.assertEqual((bc["role"], bc["generation"], bc["holder_session"], bc["claimant_session"],
-                          bc["attempted_type"]), ("builder", 1, "B1", "B2", "intent"))
-
-        bc = self.assertConflict(self.do_intent, "B1")
-        r, _ = self.last()
-        self.assertEqual((r["seq"], r["type"], r["author_role"], r["session_id"]), (8, "blocker", "builder", "B1"))
-        self.assertEqual((bc["role"], bc["holder_session"], bc["claimant_session"]), ("builder", "B2", "B1"))
-
-        self.assertRejected("role-blocked", self.do_intent, "B2")
-        self.assertEqual(self.head(), 8)
-
-        self.do_stop("builder", "B2")
+    def test_case_b_allowed_after_the_implicit_holder_is_stop_confirmed(self):
+        """S2 A-1 exception: a stop-confirmed naming the implicit builder session (written in implicit mode) lets the
+        coordinator bind a different session at generation 1."""
+        self.new_job(); self.activate()
+        self.do_intent("B1")
+        self.do_stop("builder", "B1")                       # implicit mode: check_stop_confirmed implicit rule
         r, c = self.last()
-        self.assertEqual((r["seq"], r["type"], r["author_role"], r["session_id"]), (9, "stop-confirmed", "coordinator", "C1"))
-        self.assertEqual((c["role"], c["session"], c["generation"]), ("builder", "B2", 1))
-        self.assertRejected("invalid-stop", self.do_stop, "builder", "B1")
-        self.assertEqual([x["type"] for x in self.rows()][3:],
-                         ["intent", "bind", "bind", "blocker", "blocker", "stop-confirmed"])
-        b = self.table()["builder"]
-        self.assertEqual((b.session, b.bind_seq, b.stopped_seq), ("B2", 6, 9))
+        self.assertEqual((r["seq"], r["type"], c["session"]), (5, "stop-confirmed", "B1"))
+        self.do_bind("coordinator", "C1")
+        self.do_bind("builder", "B2")
+        r, c = self.last()
+        self.assertEqual((r["seq"], r["type"], c["role"], c["session"], c["replaces_seq"]), (7, "bind", "builder", "B2", None))
 
+    def test_implicit_claimant_applies_to_builder_at_generation_one_only(self):
+        """A-1 reads builder_session for role builder only: binding a reviewer is governed by its own precondition."""
+        self.new_job(); self.activate()
+        self.run_wf("append", "j", "--type", "delivered", "--content", '{"claims":[{"claim":"c","evidence":["e"]}]}')
+        self.do_bind("coordinator", "C1")
+        self.do_bind("reviewer", "R1")
+        self.assertEqual(self.table()["reviewer"].session, "R1")
 
 # ===================================================================================================== ack / stop
 
@@ -637,7 +626,9 @@ class DigestRows(_Engine):
         self.assertEqual(rows[1], {"role": "builder", "session": "B1", "generation": 1,
                                    "bind_seq": t["builder"].bind_seq, "acknowledged": True,
                                    "ack_seq": t["builder"].ack_seq, "stopped": True,
-                                   "stopped_seq": t["builder"].stopped_seq, "reconciled": False})
+                                   "stopped_seq": t["builder"].stopped_seq, "reconciled": False,
+                                   "replacements": 0, "replaces_seq": None, "tools": ["Write"],
+                                   "paths": ["jobs/j/work/**"]})
         self.assertEqual((rows[0]["acknowledged"], rows[0]["stopped"], rows[0]["reconciled"]), (False, False, None))
 
     def test_implicit_mode_rows_empty(self):
