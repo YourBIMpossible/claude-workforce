@@ -125,7 +125,7 @@ class B2S3(Base):
     def test_cancel_refuses_work_and_renewal_keeps_owner_control(self):
         self.new_job()
         self.activate()
-        self.assert_rejected(self.coord("cancel", "j", "--reason", "stop", "--turn", "no job named"), "no-provenance")
+        self.assert_rejected(self.coord("cancel", "j", "--reason", "stop", "--turn", "owner says stop"), "no-provenance")
         c, r = self.run_wf("cancel", "j", "--reason", "owner stops the job", "--turn", TURN)   # anyone may record it
         self.assertEqual(c, 0, r)
         self.assertIn("does not stop running processes", r["limitation"])
@@ -184,8 +184,10 @@ class B2S3(Base):
             self.assertEqual(len(fh.read().splitlines()), 2)
         # T22: no option to write elsewhere, contact or resume
         for bad in (["--out", "x"], ["--resume"], ["--contact", "zen"]):
-            code, res = self.run_wf("observe", "j", *bad)
-            self.assertEqual(code, 2, res)
+            with self.assertRaises(SystemExit) as cm:   # argparse refuses the option (usage, exit 2)
+                self.run_wf("observe", "j", *bad)
+            self.assertEqual(cm.exception.code, 2)
+        self.assertEqual(self.events(), n + 1)                                    # only the blocker row was added
 
 
 if __name__ == "__main__":  # pragma: no cover
