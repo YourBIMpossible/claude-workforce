@@ -1310,7 +1310,10 @@ def observe_cmd(db: str, job: str) -> dict[str, Any]:
     res["authority"] = _authority_view(job, rows)
     entry = {"job": job, "now": now, "class": res.get("class"), "evidence_seqs": [e.get("seq") for e in res.get("evidence", [])],
              "authority": res["authority"]["state"]}
-    res["log"] = observe.append_log(db, job, entry)
+    try:
+        res["log"] = observe.append_log(db, job, entry)
+    except (ValueError, TypeError, OSError) as exc:  # S3O refusals (link/junction, non-regular log, bad entry): fail closed
+        raise WfRefused(f"observation log not written: {exc}") from exc
     res["job"] = job
     return res
 
