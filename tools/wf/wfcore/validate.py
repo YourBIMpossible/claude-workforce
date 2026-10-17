@@ -29,6 +29,9 @@ ROLE_FOR_TYPE: dict[str, tuple[str, ...]] = {
     "reconcile-report": ("coordinator",),
     "ack-reconcile": ("coordinator", "builder", "reviewer"),
     "recovery-opened": ("coordinator",),
+    "exception-acknowledged": ("coordinator",),
+    "recovery-closed": ("coordinator",),
+    "recovery-decision": ("coordinator",),
 }
 APPEND_TYPES = ("intent", "receipt", "blocker", "handoff", "delivered", "ack-assignment", "stop-confirmed",
                 "ack-reconcile")
@@ -197,7 +200,8 @@ def validate_content(etype: str, content: dict, contract: dict, grant_state: dic
     elif etype in ("bind", "ack-assignment", "stop-confirmed"):
         from . import bind  # B2 slice 1, section 7: S1B schemas (module delivered by lane S1B)
         bind.validate_content(etype, content, contract, grant_state)
-    elif etype in ("reconcile-report", "ack-reconcile", "recovery-opened"):
+    elif etype in ("reconcile-report", "ack-reconcile", "recovery-opened", "exception-acknowledged", "recovery-closed",
+                   "recovery-decision"):
         from . import reconcile  # B2 slice 1, section 7: S1R schemas
         reconcile.validate_content(etype, content, contract, grant_state)
     else:

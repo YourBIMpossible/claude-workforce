@@ -1,7 +1,8 @@
-"""T06 reconcile + ack-reconcile (B2 slice 1, lane S1R, Zen): module tests for `wfcore.reconcile` against the frozen
-interface contract (GitHub issue #27 §1 schemas, §4 report / ack rules and CLASSES, §6 signatures and state keys,
-§9 D-S1-3 / D-S1-5; AMENDMENT A2: compare never walks the write scope). Spec: FIRST-RELEASE-SPEC.md §4.1 l.178,
-§6.2 steps 3 and 5, case T06 l.281. Revised in S1R cycle 1 (White F1 on PR #30) to pin the frozen shapes.
+"""T06 reconcile + ack-reconcile (lane S1R, revised for lane S2R, Zen): module tests for `wfcore.reconcile` against
+the slice-1 contract (issue #27 §1 schemas, §4 report / ack rules and CLASSES, §6 signatures and state keys, §9
+D-S1-3) as amended by INTERFACE-CONTRACT-S2.md A-2 (write scope walked by compare; the old "not discoverable" pin is
+removed), A-3 (precedence; matches-baseline with receipt evidence is an exception) and A-4 (unresolvable paths).
+Spec: FIRST-RELEASE-SPEC.md §4.1 l.178, §6.2 steps 3 and 5, case T06 l.281.
 
 Fixture ledgers are built through `wf.run` with `test_wf.Base` (fresh WF_TEST_TMP, refuse-existing, never delete);
 `wf job new` on main captures the changed-set baseline into the contract event (A1), which `compute_report` reads.
@@ -20,6 +21,7 @@ import os
 import sqlite3
 import unittest
 from typing import Any
+from unittest import mock
 
 from test_wf import Base, CONTRACT  # noqa: E402
 from wfcore import changeset, db as dbm, reconcile, txn, validate  # noqa: E402
@@ -166,8 +168,11 @@ class ReportClassification(_Engine):
         # exceptions: every matches-neither / attempt-without-completion item, ids X1.. in path order
         self.assertEqual(content["exceptions"], [{"id": "X1", "path": WORK, "class": "attempt-without-completion"},
                                                  {"id": "X2", "path": STRAY, "class": "matches-neither"}])
-        # D-S1-5 stated in limitations; the compare limitations are carried too
-        self.assertTrue(any("write scope is not walked" in x for x in content["limitations"]))
+        # S2 A-2: the old D-S1-5 "write scope not walked / not discoverable" limitation is gone; the A-3 meaning of
+        # matches-baseline is stated; the compare limitations are carried too
+        self.assertFalse(any("not discoverable" in x or "write scope is not walked" in x
+                             for x in content["limitations"]), content["limitations"])
+        self.assertTrue(any("never asserts that no operation executed" in x for x in content["limitations"]))
         self.assertTrue(any("outside-boundary changes are not detected" in x for x in content["limitations"]))
 
     def test_receipt_rules_matches_receipt_then_matches_neither(self) -> None:
@@ -198,28 +203,61 @@ class ReportClassification(_Engine):
         res = self.report()
         cl = self.by_path(self.report_content(res["seq"]))
         self.assertEqual(cl[STRAY]["class"], "matches-receipt")
-        # ... and a path named by a receipt that is absent now and was absent in the baseline is matches-baseline
-        # only without a receipt: here the receipt exists, so an absent file is matches-neither
+        # ... and once removed it is absent now and absent in the baseline: S2 A-3 (3) matches-baseline even though a
+        # receipt exists; with receipt evidence it is an exception (D-S2-4) and keeps that evidence
         self.ack(res["seq"], [])
         os.remove(os.path.join(self.root(), *STRAY.split("/")))
         res2 = self.report()
-        cl2 = self.by_path(self.report_content(res2["seq"]))
-        self.assertEqual(cl2[STRAY]["class"], "matches-neither")
-        self.assertIsNone(cl2[STRAY]["sha_now"])
+        content2 = self.report_content(res2["seq"])
+        cl2 = self.by_path(content2)
+        self.assertEqual(cl2[STRAY]["class"], "matches-baseline")
+        self.assertEqual((cl2[STRAY]["sha_now"], cl2[STRAY]["sha_baseline"], cl2[STRAY]["sha_receipt"]),
+                         (None, None, _sha("gone")))
+        self.assertIsNotNone(cl2[STRAY]["receipt_seq"])
+        self.assertEqual(content2["exceptions"], [{"id": "X1", "path": STRAY, "class": "matches-baseline"}])
 
-    def test_matches_baseline_rule_is_not_reachable_from_the_in_scope_union(self) -> None:
-        """Observation pinned for White: a path enters scope only through compare (which lists a path only when it
-        differs from the baseline) or through an intent/receipt (an intent without later receipt is
-        attempt-without-completion; a receipt excludes the rule), so matches-baseline cannot occur under the frozen
-        rules. A receipt-named path absent now is matches-neither; a compare-listed path unchanged vs the baseline
-        does not exist. Not a defect of this module; reported on #27."""
+    def test_A3_receipt_then_reverted_is_matches_baseline_exception_with_receipt_evidence(self) -> None:
+        """S2 A-3 (3) + D-S2-4: a receipt says the file changed, the disk equals the recorded baseline. The class
+        states only current equality with the baseline; the receipt evidence survives and the row is an exception
+        the ack must name."""
         self.new_job(); self.activate()
-        self.builder_intent(path="jobs/j/work/never-made.txt")
-        self.builder_receipt(_sha(""), path="jobs/j/work/never-made.txt")
-        content = self.compute()
-        c = self.by_path(content)["jobs/j/work/never-made.txt"]
-        self.assertEqual((c["class"], c["sha_now"], c["sha_baseline"]), ("matches-neither", None, None))
-        self.assertNotIn("matches-baseline", {x["class"] for x in content["classification"]})
+        rows = self.rows()
+        base = self.baseline()
+        base = {**base, "entries": {**base["entries"], WORK: {"sha256": _sha("v0"), "size": 2}}}
+        self.write_file(WORK, "v0")                                      # disk == recorded baseline
+        self.builder_intent()
+        rec = self.builder_receipt(_sha("v1"))                           # receipt claims v1
+        rows = self.rows()
+        content = reconcile.compute_report(self.root(), CONTRACT, base, rows, role="builder", binding=("B1", 1),
+                                           head_seq=rows[-1]["seq"])
+        c = self.by_path(content)[WORK]
+        self.assertEqual(c["class"], "matches-baseline")
+        self.assertEqual((c["receipt_seq"], c["sha_receipt"], c["sha_now"], c["sha_baseline"]),
+                         (rec["seq"], _sha("v1"), _sha("v0"), _sha("v0")))
+        self.assertIsNotNone(c["intent_seq"])
+        self.assertEqual(content["exceptions"], [{"id": "X1", "path": WORK, "class": "matches-baseline"}])
+        reconcile.validate_content("reconcile-report", content, CONTRACT, None)
+
+    def test_A3_zero_receipt_baseline_equal_is_matches_baseline_not_exception(self) -> None:
+        """S2 A-3 (3): a compare-listed path with no intent/receipt whose content equals the recorded baseline is
+        matches-baseline and NOT an exception (no receipt evidence). Fed through `changeset.compare` output at module
+        level, since only compare can list such a path."""
+        self.new_job(); self.activate()
+        self.write_file(STRAY, "same")
+        base = self.baseline()
+        base = {**base, "entries": {**base["entries"], STRAY: {"sha256": _sha("same"), "size": 4}}}
+        real = changeset.compare
+
+        def listing(root: str, contract: dict, baseline: dict) -> dict:
+            out = real(root, contract, baseline)
+            return {**out, "modified": sorted(set(out["modified"]) | {STRAY})}
+        rows = self.rows()
+        with mock.patch.object(changeset, "compare", listing):
+            content = reconcile.compute_report(self.root(), CONTRACT, base, rows, role="builder", binding=("B1", 1),
+                                               head_seq=rows[-1]["seq"])
+        c = self.by_path(content)[STRAY]
+        self.assertEqual((c["class"], c["receipt_seq"], c["intent_seq"]), ("matches-baseline", None, None))
+        self.assertEqual(content["exceptions"], [])
 
     def test_attempt_without_completion_regardless_of_sha(self) -> None:
         """An older receipt whose sha matches the file does not clear a later intent (§6.2 step 3)."""
@@ -232,15 +270,59 @@ class ReportClassification(_Engine):
         self.assertEqual(c["class"], "attempt-without-completion")
         self.assertEqual(c["sha_now"], c["sha_receipt"])                 # sha matches, class unchanged
 
-    def test_unrelatable_path_is_matches_neither_with_null_sha_and_named_limitation(self) -> None:
+    @staticmethod
+    def _hand_row(seq: int, etype: str, path: str, sha_after: str | None = None) -> dict[str, Any]:
+        """A builder intent/receipt row built by hand: the CLI refuses an escaping path before any row exists, so
+        S2 A-4 is reachable only at module level (White's WF-001 note)."""
+        content: dict[str, Any] = {"path": path, "sha_before": "", "note": "n"}
+        if sha_after is not None:
+            content["sha_after"] = sha_after
+        return {"seq": seq, "type": etype, "author_role": "builder", "content": json.dumps(content)}
+
+    def test_A4_unresolvable_paths_are_matches_neither_with_null_shas_and_exact_limitation(self) -> None:
         self.new_job(); self.activate()
-        self.builder_intent(path="../outside.txt")
-        self.builder_receipt(_sha("x"), path="../outside.txt")           # receipt after intent: not an attempt
-        content = self.compute()
-        c = self.by_path(content)["../outside.txt"]
-        self.assertEqual((c["class"], c["sha_now"]), ("matches-neither", None))
-        self.assertTrue(any("'../outside.txt' cannot be related" in x for x in content["limitations"]))
-        self.assertEqual(content["exceptions"], [{"id": "X1", "path": "../outside.txt", "class": "matches-neither"}])
+        head = self.rows()[-1]["seq"]
+        odd = ["../outside.txt", "C:/abs/file.txt", "/rooted/file.txt"]
+        rows = [*self.rows()]
+        for i, p in enumerate(odd):
+            rows.append(self._hand_row(head + 1 + 2 * i, "intent", p))
+            rows.append(self._hand_row(head + 2 + 2 * i, "receipt", p, _sha("x")))
+        content = reconcile.compute_report(self.root(), CONTRACT, self.baseline(), rows, role="builder",
+                                           binding=("B1", 1), head_seq=rows[-1]["seq"])
+        for p in odd:
+            c = self.by_path(content)[p]
+            self.assertEqual((c["class"], c["sha_now"], c["sha_baseline"]), ("matches-neither", None, None), c)
+            self.assertIn(reconcile.UNRESOLVABLE.format(p), content["limitations"])
+        self.assertIn("unresolvable path ../outside.txt: filesystem state unknown; inspection limitation",
+                      content["limitations"])                            # the A-4 string, verbatim
+        self.assertEqual(sorted(e["path"] for e in content["exceptions"]), sorted(odd))
+        self.assertEqual(sorted(reconcile.unresolvable_paths(content)), sorted(odd))
+        # an unresolvable intent without receipt is still A-4 (state unknown), not attempt-without-completion
+        rows2 = [*self.rows(), self._hand_row(head + 1, "intent", "../only-intent.txt")]
+        c2 = reconcile.compute_report(self.root(), CONTRACT, self.baseline(), rows2, role="builder", binding=None,
+                                      head_seq=head + 1)
+        self.assertEqual(self.by_path(c2)["../only-intent.txt"]["class"], "matches-neither")
+
+    def test_A4_path_crossing_a_junction_is_unresolvable_and_never_followed(self) -> None:
+        try:
+            import _winapi
+            create = _winapi.CreateJunction
+        except (ImportError, AttributeError) as exc:
+            self.skipTest(f"no junction support here: {exc}")
+        self.new_job(); self.activate()
+        target = os.path.join(self.dir, "elsewhere")
+        os.makedirs(target)
+        with open(os.path.join(target, "f.txt"), "w", encoding="utf-8") as fh:
+            fh.write("behind the junction")
+        os.makedirs(os.path.join(self.root(), "jobs", "j", "work"), exist_ok=True)
+        create(target, os.path.join(self.root(), "jobs", "j", "work", "jn"))
+        rows = [*self.rows(), self._hand_row(self.head() + 1, "intent", "jobs/j/work/jn/f.txt"),
+                self._hand_row(self.head() + 2, "receipt", "jobs/j/work/jn/f.txt", _sha("behind the junction"))]
+        content = reconcile.compute_report(self.root(), CONTRACT, self.baseline(), rows, role="builder", binding=None,
+                                           head_seq=rows[-1]["seq"])
+        c = self.by_path(content)["jobs/j/work/jn/f.txt"]
+        self.assertEqual((c["class"], c["sha_now"]), ("matches-neither", None))   # not matches-receipt via the link
+        self.assertEqual(reconcile.unresolvable_paths(content), ["jobs/j/work/jn/f.txt"])
 
     def test_report_is_deterministic(self) -> None:
         self.new_job(); self.activate()
@@ -270,16 +352,36 @@ class ReportClassification(_Engine):
                             self.root(), CONTRACT, {"entries": "nope"}, rs, role="builder", binding=None, head_seq=head))
         self.assertEqual(self.head(), before)                            # fail closed: nothing appended
 
-    def test_write_scope_change_without_intent_or_receipt_is_not_discovered(self) -> None:
-        """D-S1-5 / A2 limit, pinned: a write-scope file nobody named is not classified; the limit is stated."""
+    def test_A2_unrecorded_write_scope_change_is_matches_neither(self) -> None:
+        """S2 A-2 replaces the old D-S1-5 pin (removed: it asserted the gap A-2 closes). Once `changeset.compare`
+        walks the write scope (lane S2B), an unrecorded P1 change reaches reconcile as an added path and is
+        matches-neither. compare is S2B's file, not on main yet, so its A-2 output is fed here as compare's documented
+        result shape; the end-to-end walk is S2B's test_t35_changeset and the combined candidate."""
         self.new_job(); self.activate()
-        self.write_file("jobs/j/work/silent.txt", "no intent, no receipt")
-        res = self.report(binding=None)
+        silent = "jobs/j/work/silent.txt"
+        self.write_file(silent, "no intent, no receipt")
+        real = changeset.compare
+
+        def a2(root: str, contract: dict, baseline: dict) -> dict:
+            out = real(root, contract, baseline)
+            return out if silent in out["added"] else {**out, "added": sorted([*out["added"], silent])}
+        with mock.patch.object(changeset, "compare", a2):
+            res = self.report(binding=None)
         content = self.report_content(res["seq"])
-        self.assertEqual(content["classification"], [])
-        self.assertEqual(content["exceptions"], [])
+        c = self.by_path(content)[silent]
+        self.assertEqual((c["class"], c["sha_now"], c["sha_baseline"], c["intent_seq"], c["receipt_seq"]),
+                         ("matches-neither", _sha("no intent, no receipt"), None, None, None))
+        self.assertEqual(content["exceptions"], [{"id": "X1", "path": silent, "class": "matches-neither"}])
         self.assertEqual((content["session"], content["generation"]), (None, None))
-        self.assertTrue(any("not discoverable here" in x for x in content["limitations"]))
+        self.assertFalse(any("not discoverable" in x for x in content["limitations"]))
+
+    @unittest.skipUnless("write_scope" in changeset._SCOPE_KEYS,
+                         "S2 A-2 changeset.compare (lane S2B) not on this base: runs in the combined candidate")
+    def test_A2_unrecorded_write_scope_change_through_real_compare(self) -> None:
+        self.new_job(); self.activate()
+        self.write_file("jobs/j/work/silent2.txt", "x")
+        content = self.compute(binding=None)
+        self.assertEqual(self.by_path(content)["jobs/j/work/silent2.txt"]["class"], "matches-neither")
 
 
 class AckRules(_Engine):
