@@ -88,8 +88,8 @@ class B2S3(Base):
         c, r = self.intent(note="after renewal")
         self.assertEqual(c, 0, r)
         c, d = self.run_wf("digest", "j")
-        self.assertEqual(d["authority"]["state"], "in-force")
-        self.assertEqual((d["interventions"]["count"], d["interventions"]["minutes_known"]), (1, 5))
+        self.assertEqual(d["active"]["authority"]["state"], "in-force")
+        self.assertEqual((d["active"]["interventions"]["count"], d["active"]["interventions"]["minutes_known"]), (1, 5))
 
     def test_explicit_and_time_expiry_and_amendment_voids(self):
         self.new_job()
@@ -147,7 +147,7 @@ class B2S3(Base):
         self.assertEqual(c, 0, r)
         c, d = self.run_wf("digest", "j")
         self.assertIn("cancelled", [x["item"] for x in d["needs_owner"]])
-        self.assertEqual((d["interventions"]["unknown_count"], d["interventions"]["minutes_known"]), (1, 0))
+        self.assertEqual((d["active"]["interventions"]["unknown_count"], d["active"]["interventions"]["minutes_known"]), (1, 0))
         c, st = self.run_wf("status", "j")
         self.assertIn("no enforcement on real workers", st["authority"]["limitation"])
 

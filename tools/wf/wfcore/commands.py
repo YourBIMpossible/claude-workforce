@@ -572,7 +572,11 @@ def digest(db: str, job: str) -> dict[str, Any]:
     active = {"axes": axes,
               "latest_event_seq": {ax: max((latest[t] for t in ts if t in latest), default=None)
                                    for ax, ts in axis_types.items()},
-              "recovery": dict(recovery, audit=reconcile.recovery_audit(rows))}
+              "recovery": dict(recovery, audit=reconcile.recovery_audit(rows)),
+              # INTERFACE-CONTRACT-S3 A2: nested under `active` (T26h pins the top-level keys); counts only, no notes
+              # (the digest relays no raw event content)
+              "authority": authority,
+              "interventions": {k: v for k, v in grant.intervention_summary(rows).items() if k != "entries"}}
     return {"job": job, "closed": closed, "contract_sha256": c["sha256"], "events": len(rows), "counts": counts,
             "axes": axes, "pending_markers": marks,
             "head": {"seq": head["seq"] if head else 0, "self": head["self"] if head else None,
@@ -582,8 +586,7 @@ def digest(db: str, job: str) -> dict[str, Any]:
             "ars": [{"grant_id": g["grant_id"], "activation_seq": g["activation_seq"], "ars": g["ars"]} for g in grants],
             "bindings": ({"source": BINDING_SOURCE_EXPLICIT, "rows": explicit_rows} if explicit
                          else {"source": BINDING_SOURCE, "rows": list(bindings.values())}),
-            "evidence": evidence, "identity_note": IDENTITY_NOTE,
-            "authority": authority, "interventions": grant.intervention_summary(rows)}
+            "evidence": evidence, "identity_note": IDENTITY_NOTE}
 
 
 # ---------------------------------------------------------------- verify / checkpoint
