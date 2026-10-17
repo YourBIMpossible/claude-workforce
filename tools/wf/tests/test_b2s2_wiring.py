@@ -21,6 +21,9 @@ GRANT_REPL["ars"]["replacement"] = {"allowed": True, "max": 1, "expiry": "2030-0
 
 
 class B2S2(B2S1):
+    """Inherits the slice-1 helpers only; the inherited test methods are detached below so discovery runs them once
+    (in test_b2s1_wiring) and this class never reuses their fixture directories."""
+
     def setUp(self) -> None:
         super().setUp()
         self.gpath_repl = os.path.join(self.dir, "grant_repl.json")
@@ -70,12 +73,11 @@ class B2S2(B2S1):
         self.assertEqual(c, 0, r)
         self.assert_rejected(self.coord("recover", "reconcile", "j", "--turn", "owner: recover j"), "no-recovery")
         self.assert_rejected(self.coord("recover", "close", "j", "--turn", "owner: recover j"), "no-recovery")
-        # a stale export is a recoverable exception: make one so the opened row lists at least one item
+        # an orphan export temp file is a recoverable exception (export.orphans): the opened row lists it
         c, r = self.run_wf("export", "j")
         self.assertEqual(c, 0, r)
-        c, r = self.run_wf("append", "j", "--type", "receipt", "--content",
-                           '{"path":"jobs/j/work/a.txt","sha_before":"","sha_after":"' + self.sha("x") + '","note":"n"}')
-        self.assertEqual(c, 0, r)
+        with open(os.path.join(r["export"]["dir"], "head.json.tmp"), "xb") as fh:
+            fh.write(b"orphan" + bytes([10]))
         opened = self.open_recovery()
         c, st = self.run_wf("status", "j")
         self.assertTrue(st["recovery"]["open"])
@@ -147,6 +149,7 @@ class B2S2(B2S1):
         import sqlite3
         conn = sqlite3.connect(self.db)
         try:
+            conn.execute("DROP TRIGGER events_no_update")  # the bounded head check cannot see a middle-row tamper
             conn.execute("UPDATE events SET content = content || ' ' WHERE job = 'j' AND seq = 2")
             conn.commit()
         finally:
@@ -248,6 +251,10 @@ class B2S2(B2S1):
                                "--unresolved", "nodisposition")
         self.assertEqual(code, 2, res)
         self.assertEqual(res.get("code"), "usage", res)
+
+
+for _name in [n for n in dir(B2S1) if n.startswith("test_") and n not in B2S2.__dict__]:
+    setattr(B2S2, _name, None)  # not a test here
 
 
 if __name__ == "__main__":  # pragma: no cover
