@@ -36,6 +36,13 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_t16a_recover_begin.py | S2R |
 | tools/wf/tests/test_t30_recover_close.py | S2R |
 | tools/wf/tests/test_t30_recovery_faults.py | S2C |
+| tools/wf/wfcore/grant.py | S3G |
+| tools/wf/tests/test_t34_grant_lifecycle.py | S3G |
+| tools/wf/tests/test_grant_check_corpus.py | S3G |
+| tools/wf/tests/data/grant_check_corpus.json | S3G |
+| tools/wf/wfcore/observe.py | S3O |
+| tools/wf/tests/test_t14_observe.py | S3O |
+| tools/wf/tests/test_t34_cli_matrix.py | S3M |
 | ** | D |
 
 Lane A owns only the body of `accept_declarations` inside validate.py; other functions in that file are frozen
@@ -90,3 +97,14 @@ B2 slice 2 (recovery closure + replacement; INTERFACE-CONTRACT-S2.md frozen by W
 | S2R | Zen | worker-chosen, from main e628353 or later | `tools/wf/wfcore/reconcile.py`, `tools/wf/tests/test_t06_reconcile.py`, `tools/wf/tests/test_t16a_recover_begin.py`, `tools/wf/tests/test_t30_recover_close.py` (new) + the additive validate.py edit of INTERFACE-CONTRACT-S2.md §7 (registered exception, same rule as slice 1: the S2R checker run reports exactly `tools/wf/wfcore/validate.py` outside the lane; accepted only if its diff equals the §7 text) |
 | S2C | MyBuddy | worker-chosen, from main e628353 or later | `tools/wf/tests/test_t30_recovery_faults.py` (new) only |
 | S2W | White | `sprint/white-b2s2-wiring` | `tools/wf/wfcore/commands.py`, `tools/wf/wf.py`, `tools/wf/wfcore/faults.py` (KNOWN names), `tools/wf/tests/test_b2s2_wiring.py` (new), OWNERS.md, MANIFEST.sha256 (lane D) |
+
+## Registration 2026-10-17 (owner grant "APPROVE AND EXECUTE — WORKFORCE B2 SLICE 3")
+
+B2 slice 3 (grant lifecycle and invalidation, grant-check, cancel, observe, log-intervention; INTERFACE-CONTRACT-S3.md frozen by White 2026-10-17, published in the WorkForce collab folder `contracts/b2s3/`, mirrored to MyBuddy and on the GitHub dispatch issue). Registration only; no validation disabled.
+
+| Lane | Worker | Branch | Scope |
+|---|---|---|---|
+| S3G | Plexy | worker-chosen, from current main | `tools/wf/wfcore/grant.py`, `tools/wf/tests/test_t34_grant_lifecycle.py`, `tools/wf/tests/test_grant_check_corpus.py`, `tools/wf/tests/data/grant_check_corpus.json` (all new) + the additive validate.py edit of INTERFACE-CONTRACT-S3.md section 7 (registered exception: the S3G checker run reports exactly `tools/wf/wfcore/validate.py` outside the lane; accepted only if its diff equals the section 7 text) |
+| S3O | Zen | worker-chosen, from current main | `tools/wf/wfcore/observe.py`, `tools/wf/tests/test_t14_observe.py` (new) |
+| S3M | MyBuddy | worker-chosen, from current main | `tools/wf/tests/test_t34_cli_matrix.py` (new) only |
+| S3W | White | `sprint/white-b2s3-wiring` | `tools/wf/wfcore/commands.py`, `tools/wf/wf.py`, `tools/wf/tests/test_b2s3_wiring.py` (new), OWNERS.md, MANIFEST.sha256 (lane D) |
