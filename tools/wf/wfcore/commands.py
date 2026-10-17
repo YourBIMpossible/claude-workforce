@@ -207,10 +207,10 @@ def _render_block(text: str, h: str) -> str:
 
 def grant_propose(db: str, job: str, grant_src: str, msg_id: str, role: str, session: str, generation: int,
                   faults: Faults, oplog: OpLog) -> dict[str, Any]:
-    grant = _load_json(grant_src)
-    if not isinstance(grant, dict):
+    proposal = _load_json(grant_src)
+    if not isinstance(proposal, dict):
         raise WfRejected("malformed", "grant must be a JSON object")
-    content = dict(grant)
+    content = dict(proposal)
     content["state"] = "proposed"
     content.pop("block_hash", None)
     res = _append(db, job, faults, oplog, etype="grant", content=content, msg_id=msg_id, role=role,
