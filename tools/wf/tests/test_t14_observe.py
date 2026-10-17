@@ -1,4 +1,4 @@
-"""T14 (event half) and T22: `wfcore.observe` module tests (B2 slice 3, lane S3O; INTERFACE-CONTRACT-S3 sections 5,
+"""T14 (event half; gate half on fixture attempts, S4A section 5) and T22: `wfcore.observe` module tests (B2 slice 3, lane S3O; INTERFACE-CONTRACT-S3 sections 5,
 6 and 8 S3O).
 
 Covers each class (active, slow, silent, blocked, unknown) with its evidence, basis and uncertainty; default and
@@ -29,6 +29,7 @@ SILENT_NOTE = "silent does not establish that the process stopped"
 GATE = "gate evidence unavailable in this release: tool activity between events is not observed"
 RESULT_KEYS = {"class", "evidence", "basis", "uncertainty", "gate_log", "thresholds", "now"}
 EVIDENCE_KEYS = {"seq", "type", "ts", "role", "session"}
+GATE_EVIDENCE_KEYS = EVIDENCE_KEYS | {"source", "tool_name", "channel"}
 
 
 NOW_DT = datetime(2026, 10, 17, 12, 0, 0, tzinfo=timezone.utc)
@@ -45,6 +46,18 @@ def row(seq: int, etype: str, role: str, age: float, session: str = "S1") -> dic
             "content": "{}", "msg_id": f"m{seq}"}
 
 
+def gts(seconds_before_now: float) -> str:
+    """A gate-log timestamp (whole seconds, as the hook writes) `seconds_before_now` before NOW."""
+    return (NOW_DT - timedelta(seconds=int(seconds_before_now))).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def gate_attempt(seq: int, *, age: float, session: str = "B1", channel: str = "preventable", tool: str = "Write",
+                 decision: str = "allow") -> dict:
+    """A row in the gatelog.attempts shape."""
+    return {"seq": seq, "ts": gts(age), "session_id": session, "tool_name": tool, "channel": channel,
+            "decision": decision, "reason": "x", "jobs": ["j"], "paths": [], "jobs_json": '["j"]', "paths_json": "[]"}
+
+
 def base_rows() -> list[dict]:
     return [row(1, "contract", "coordinator", 5000, "C1"), row(2, "grant", "coordinator", 4900, "C1"),
             row(3, "grant", "coordinator", 4800, "C1")]
@@ -55,16 +68,27 @@ class Classify(unittest.TestCase):
         self.assertEqual(set(res), RESULT_KEYS)
         self.assertIn(res["class"], observe.CLASSES)
         self.assertIn(RECORDED_ONLY, res["uncertainty"])
-        self.assertEqual(res["gate_log"], {"available": False, "statement": GATE})
+        if res["gate_log"]["available"]:                                # only when gate attempts were supplied
+            self.assertEqual(set(res["gate_log"]), {"available", "statement"})
+            self.assertTrue(res["gate_log"]["statement"].startswith("gate attempts consulted: "))
+        else:
+            self.assertEqual(res["gate_log"], {"available": False, "statement": GATE})
         self.assertEqual(res["now"], now)
         self.assertIsInstance(res["basis"], str)
         self.assertTrue(res["basis"])
         for e in res["evidence"]:
-            self.assertEqual(set(e), EVIDENCE_KEYS)
+            self.assertEqual(set(e), GATE_EVIDENCE_KEYS if e.get("source") == "gate-log" else EVIDENCE_KEYS)
 
     def classify(self, rows, th=None, now=NOW):
         res = observe.classify(rows, now=now, thresholds=dict(observe.DEFAULT_THRESHOLDS) if th is None else th)
         self.check_common(res, now)
+        self.assertFalse(res["gate_log"]["available"])
+        return res
+
+    def classify_gate(self, rows, attempts):
+        res = observe.classify(rows, now=NOW, thresholds=dict(observe.DEFAULT_THRESHOLDS), gate_attempts=attempts)
+        self.check_common(res)
+        self.assertTrue(res["gate_log"]["available"])
         return res
 
     def test_frozen_constants(self):
@@ -198,6 +222,68 @@ class Classify(unittest.TestCase):
         before = (copy.deepcopy(rows), copy.deepcopy(th))
         observe.classify(rows, now=NOW, thresholds=th)
         self.assertEqual((rows, th), before)
+
+    # ---- B2 slice 4a (INTERFACE-CONTRACT-S4A section 5, lane S4L): gate_attempts
+    def test_gate_attempts_none_is_todays_behaviour(self):
+        rows = base_rows() + [row(4, "intent", "builder", 10, "B1")]
+        res = observe.classify(rows, now=NOW, thresholds=dict(observe.DEFAULT_THRESHOLDS), gate_attempts=None)
+        self.assertEqual(res, observe.classify(rows, now=NOW, thresholds=dict(observe.DEFAULT_THRESHOLDS)))
+        self.assertEqual(res["gate_log"], {"available": False, "statement": GATE})
+
+    def test_gate_log_available_only_when_attempts_supplied(self):
+        rows = base_rows() + [row(4, "intent", "builder", 10, "B1")]
+        res = self.classify_gate(rows, [])
+        self.assertTrue(res["gate_log"]["available"])
+        self.assertIn("0 attempt(s)", res["gate_log"]["statement"])
+        self.assertIn("never as file changes", res["gate_log"]["statement"])
+        self.assertEqual((res["class"], res["evidence"][0]["seq"]), ("active", 4))
+
+    def test_recent_builder_gate_attempt_is_activity(self):
+        rows = base_rows() + [row(4, "intent", "builder", 5000, "B1")]          # silent by ledger alone
+        res = self.classify_gate(rows, [gate_attempt(7, age=20, channel="preventable", tool="Write")])
+        self.assertEqual(res["class"], "active")
+        self.assertEqual(res["evidence"][0], {"seq": 7, "type": "gate-attempt", "ts": gts(20), "role": "builder",
+                                              "session": "B1", "source": "gate-log", "tool_name": "Write",
+                                              "channel": "preventable"})
+        self.assertEqual(res["evidence"][1]["seq"], 4)
+        self.assertIn("gate attempt", res["basis"])
+        self.assertNotIn(SILENT_NOTE, res["uncertainty"])
+
+    def test_shell_invocation_counts_as_activity_only(self):
+        rows = base_rows() + [row(4, "intent", "builder", 700, "B1")]           # slow by ledger alone
+        res = self.classify_gate(rows, [gate_attempt(3, age=30, channel="shell", tool="Bash")])
+        self.assertEqual(res["class"], "active")
+        self.assertEqual(res["evidence"][0]["channel"], "shell")
+        self.assertIn("never as file changes", res["gate_log"]["statement"])
+
+    def test_older_gate_attempt_does_not_override_newer_event(self):
+        rows = base_rows() + [row(4, "receipt", "builder", 10, "B1")]
+        res = self.classify_gate(rows, [gate_attempt(2, age=4000)])
+        self.assertEqual(res["class"], "active")
+        self.assertEqual([e.get("source") for e in res["evidence"]], [None, "gate-log"])
+        self.assertIn("seq 4", res["basis"])
+
+    def test_attempts_from_non_builder_sessions_are_not_attributed(self):
+        rows = base_rows() + [row(4, "intent", "builder", 5000, "B1")]
+        res = self.classify_gate(rows, [gate_attempt(1, age=5, session="X9"), gate_attempt(2, age=5, session="C1")])
+        self.assertEqual(res["class"], "silent")
+        self.assertIn(observe.GATE_UNATTRIBUTED, res["uncertainty"])
+        self.assertEqual(len(res["evidence"]), 1)
+        res = self.classify_gate(base_rows(), [gate_attempt(1, age=5, session="B1")])   # no builder event at all
+        self.assertEqual(res["class"], "unknown")
+        self.assertIn(observe.GATE_UNATTRIBUTED, res["uncertainty"])
+
+    def test_gate_attempts_never_decide_blocked(self):
+        rows = base_rows() + [row(4, "intent", "builder", 100, "B1"), row(5, "blocker", "builder", 50, "B1")]
+        res = self.classify_gate(rows, [gate_attempt(9, age=1)])
+        self.assertEqual(res["class"], "blocked")
+        self.assertEqual(res["evidence"][0]["seq"], 5)
+
+    def test_gate_attempts_input_not_mutated(self):
+        attempts = [gate_attempt(1, age=10)]
+        before = copy.deepcopy(attempts)
+        self.classify_gate(base_rows() + [row(4, "intent", "builder", 10, "B1")], attempts)
+        self.assertEqual(attempts, before)
 
 
 class ObserveLog(Base):
@@ -336,10 +422,12 @@ class ModuleT22(unittest.TestCase):
     def test_frozen_signatures(self):
         sig = {name: list(inspect.signature(getattr(observe, name)).parameters)
                for name in ("thresholds", "classify", "log_path", "append_log")}
-        self.assertEqual(sig, {"thresholds": ["contract"], "classify": ["rows", "now", "thresholds"],
+        self.assertEqual(sig, {"thresholds": ["contract"], "classify": ["rows", "now", "thresholds", "gate_attempts"],
                                "log_path": ["db_path", "job"], "append_log": ["db_path", "job", "entry"]})
         p = inspect.signature(observe.classify).parameters
-        self.assertEqual([p["now"].kind, p["thresholds"].kind], [inspect.Parameter.KEYWORD_ONLY] * 2)
+        self.assertEqual([p["now"].kind, p["thresholds"].kind, p["gate_attempts"].kind],
+                         [inspect.Parameter.KEYWORD_ONLY] * 3)
+        self.assertIsNone(p["gate_attempts"].default)                    # S4A section 6: default = today
 
     def test_no_output_contact_or_resume_surface(self):
         for name, fn in inspect.getmembers(observe, inspect.isfunction):
