@@ -32,6 +32,10 @@ ROLE_FOR_TYPE: dict[str, tuple[str, ...]] = {
     "exception-acknowledged": ("coordinator",),
     "recovery-closed": ("coordinator",),
     "recovery-decision": ("coordinator",),
+    "grant-revoked": ("coordinator", "builder", "reviewer", "owner"),
+    "grant-expired": ("coordinator", "owner"),
+    "job-cancelled": ("coordinator", "builder", "reviewer", "owner"),
+    "intervention": ("coordinator", "owner"),
 }
 APPEND_TYPES = ("intent", "receipt", "blocker", "handoff", "delivered", "ack-assignment", "stop-confirmed",
                 "ack-reconcile")
@@ -204,6 +208,9 @@ def validate_content(etype: str, content: dict, contract: dict, grant_state: dic
                    "recovery-decision"):
         from . import reconcile  # B2 slice 1, section 7: S1R schemas
         reconcile.validate_content(etype, content, contract, grant_state)
+    elif etype in ("grant-revoked", "grant-expired", "job-cancelled", "intervention"):
+        from . import grant  # B2 slice 3, section 7
+        grant.validate_content(etype, content, contract, grant_state)
     else:
         raise WfRejected("malformed", f"unknown event type {etype!r}")
 
