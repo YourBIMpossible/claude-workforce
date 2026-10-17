@@ -265,7 +265,7 @@ class T37Backup(Base):
         self.assertEqual(v["chains"], {"j": []})                               # internally consistent, yet detected
 
         rewritten = backup.backup(self.db, self.out("rewritten.db"), writer_stopped=True)["dest"]
-        tamper(rewritten, 2, consistent=True)                                  # consistent rewrite; checkpoint catches it
+        tamper(rewritten, 2, consistent=True)                                # consistent rewrite, checkpoint catches
         v = backup.verify_copy(rewritten, checkpoint=("j", 3, seq3))
         self.assertEqual(v["chains"], {"j": []})
         self.assertEqual(v["checkpoint"]["status"], "differs"); self.assertFalse(v["clean"])
