@@ -47,6 +47,8 @@ def _parser() -> argparse.ArgumentParser:
     for name in ("status", "digest", "checkpoint"):
         sp.add_parser(name).add_argument("job")
     v = sp.add_parser("verify"); v.add_argument("job", nargs="?")
+    v.add_argument("--gate-file", help="deployed hook file to compare (slice 4a: reported, never repaired)")
+    v.add_argument("--gate-sha", help="expected sha256 of --gate-file")
     v.add_argument("--checkpoint", metavar="SEQ:HASH",
                    help="independently retained checkpoint (seq:self) to compare with the chain (spec 3C)")
     sp.add_parser("export", help="regenerate jobs\\<job>\\export (ledger-read-only, export-writing)").add_argument("job")
@@ -76,6 +78,10 @@ def _parser() -> argparse.ArgumentParser:
     li.add_argument("job"); li.add_argument("--label", required=True)
     li.add_argument("--necessity", required=True, choices=("avoidable", "necessary", "unknown"))
     li.add_argument("--minutes", required=True); li.add_argument("--note", default="")
+    gt = sp.add_parser("gate").add_subparsers(dest="sub", required=True)
+    gpi = gt.add_parser("print-install", help="PRINT ONLY the gate install record and settings snippet (no install)")
+    gpi.add_argument("--hooks-dir", required=True); gpi.add_argument("--root", required=True)
+    gpi.add_argument("--wf-dir", default=None)
     ob = sp.add_parser("observe", help="read-only supervision report; writes only its bounded observation log")
     ob.add_argument("job")
     rv = sp.add_parser("recover").add_subparsers(dest="sub", required=True)
@@ -145,6 +151,8 @@ def run(argv: list[str]) -> tuple[int, dict]:
             _need(args, "role", "session")
             res = commands.log_intervention(db, args.job, label=args.label, necessity=args.necessity,
                                             minutes=args.minutes, note=args.note, faults=faults, **common)
+        elif args.cmd == "gate":
+            res = commands.gate_print_install(hooks_dir=args.hooks_dir, root=args.root, db=db, wf_dir=args.wf_dir)
         elif args.cmd == "observe":
             res = commands.observe_cmd(db, args.job)
         elif args.cmd == "grant" and args.sub == "propose":
@@ -163,7 +171,7 @@ def run(argv: list[str]) -> tuple[int, dict]:
             res = commands.digest(db, args.job)
         elif args.cmd == "verify":
             cp = checkpointcmp.parse(args.checkpoint, args.job) if args.checkpoint is not None else None
-            res = commands.verify(db, args.job, checkpoint=cp)
+            res = commands.verify(db, args.job, checkpoint=cp, gate_file=args.gate_file, gate_sha=args.gate_sha)
         elif args.cmd == "checkpoint":
             res = commands.checkpoint(db, args.job)
         elif args.cmd == "export":
