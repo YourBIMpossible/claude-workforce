@@ -1210,6 +1210,8 @@ def _lifecycle_end(db: str, job: str, *, etype: str, reason: str, turn: str, msg
         rows = _guard(conn, job, etype=etype, role=role, session=session, generation=generation, msg_id=msg_id,
                       contract_sha=csha)
         a = grant.authority(rows, job=job, now=_now())
+        if a.get("state") != "in-force":  # D-S3-4: nothing in force to end (incl. cancelled) — before building content
+            raise WfRejected("no-active-grant", f"no grant revision is in force to end (authority {a.get('state')})")
         content = {"grant_id": a.get("grant_id"), "block_hash": a.get("block_hash"), "reason": reason,
                    "owner_turn": turn}
         grant.validate_revoke(rows, job=job, now=_now(), content=content)
