@@ -126,8 +126,8 @@ class T19GateFaults(Base):
         return hook
 
     def wfcore_sha256(self) -> str:
-        """The deployed hook's own convention when it exposes one (any public callable whose name mentions wfcore
-        and sha/hash), else the contract text: sha256 over sorted "sha256  relpath" lines of wf_dir/wfcore/*.py."""
+        """`wf_gate_hook.wfcore_sha256(wf_dir)` when the hook exposes it (S4A-A3 item 2 names it the reference), else
+        the frozen A3 form computed here."""
         spec = importlib.util.spec_from_file_location("_wf_gate_hook_probe", HOOK_SRC)
         if spec and spec.loader:
             mod = importlib.util.module_from_spec(spec)
@@ -145,10 +145,10 @@ class T19GateFaults(Base):
                             continue
             except Exception as exc:  # noqa: BLE001 — a hook that cannot be imported standalone is not our finding
                 self.evidence["hook_probe_error"] = f"{type(exc).__name__}: {exc}"
-        core = os.path.join(WF_DIR, "wfcore")
-        lines = sorted(f"{sha256_file(os.path.join(core, n))}  wfcore/{n}" for n in os.listdir(core) if n.endswith(".py"))
-        self.evidence["wfcore_sha256_source"] = "contract text (sorted 'sha256  relpath' lines, newline-joined)"
-        return hashlib.sha256("\n".join(lines).encode()).hexdigest()
+        core = os.path.join(WF_DIR, "wfcore")  # AMENDMENT S4A-A3 item 2: sorted file names, "<sha256>  <name>\n" each
+        text = "".join(f"{sha256_file(os.path.join(core, n))}  {n}\n" for n in sorted(os.listdir(core)) if n.endswith(".py"))
+        self.evidence["wfcore_sha256_source"] = "S4A-A3 item 2 form (hook exposes no wfcore_sha256 callable)"
+        return hashlib.sha256(text.encode()).hexdigest()
 
     def run_hook(self, payload: dict | None = None, timeout: float = 60.0) -> tuple[int, dict, str]:
         cwd = tempfile.mkdtemp(prefix="elsewhere-", dir=self.dir)     # a different cwd, inside the test root
@@ -199,10 +199,13 @@ class T19GateFaults(Base):
         return c
 
     def replace_file_identity(self) -> dict:
-        """Copy the ledger to a sibling, remove the original, copy back: same bytes, new file identity."""
+        """Replace the ledger file: copy to a sibling (a new file, hence a new identity while both exist), then
+        os.replace it over the original. Same bytes, different st_ino / file id. A remove-then-create sequence is
+        not used because POSIX filesystems may hand the new file the freed inode number."""
         before = self.gatecore.ledger_identity(self.db)
-        tmp = self.db + ".replaced"
-        shutil.copyfile(self.db, tmp); os.remove(self.db); shutil.copyfile(tmp, self.db); os.remove(tmp)
+        tmp = self.db + ".replacement"
+        shutil.copyfile(self.db, tmp)
+        os.replace(tmp, self.db)
         after = self.gatecore.ledger_identity(self.db)
         self.evidence["identity"] = {"before": before, "after": after}
         return before
@@ -301,13 +304,11 @@ class T19GateFaults(Base):
     def _identity(self):
         self.bound_job()
         expected = self.replace_file_identity()
+        ident = self.evidence["identity"]
+        self.assertNotEqual((ident["before"]["dev"], ident["before"]["ino"]), (ident["after"]["dev"], ident["after"]["ino"]),
+                            f"fixture limitation on {PLAT}: the replacement kept the file identity {ident}")
         d = self.decide(expected_identity=expected)
-        self.assertEqual(d["decision"], "deny", d)
-        if self.evidence["identity"]["before"]["ino"] == self.evidence["identity"]["after"]["ino"]:
-            # the platform reused the file identity: the fixture cannot produce the fault here; report, do not pass
-            self.fail(f"file identity unchanged after replacement on {PLAT}: {self.evidence['identity']} "
-                      f"(fixture limitation to report, not a gate finding)")
-        self.assertEqual(d["reason"], "ledger-identity", d)
+        self.assertEqual((d["decision"], d["reason"]), ("deny", "ledger-identity"), d)
         # same bytes, matching identity supplied -> the healthy decision again (identity is the only difference)
         now_id = self.gatecore.ledger_identity(self.db)
         d2 = self.decide(expected_identity=now_id)
@@ -368,19 +369,31 @@ class T19GateFaults(Base):
         self.assertEqual(lines[0].get("tool_name"), "Write", lines[0])
         self.assertTrue(lines[0].get("error") or lines[0].get("error_class"), lines[0])
 
-    def test_T19_gate_db_unwritable_deny_stays_deny_and_shell_allow_stays_allow(self):
+    def test_T19_gate_db_unwritable_deny_stays_deny(self):
+        """Broken ledger + unwritable gate.db: the deny keeps its ledger reason (rule 2 runs before everything else,
+        S4A-A3 item 5) and is never upgraded to another reason; one failures-log line is appended."""
         self.bound_job(); self.deploy_hook()
         self.make_gate_db_unwritable()
         self.make_not_sqlite()
-        out, err = self.assert_hook_denies("ledger-unreadable")        # a deny is never upgraded to a different reason
+        out, err = self.assert_hook_denies("ledger-unreadable")
         self.assertIs(out.get("logged"), False, out)
-        # shell / other channel from an unbound session: allow stays allow, failure reported on stderr
-        code, out2, err2 = self.run_hook(self.payload(session="S-unbound", tool="Bash") | {"tool_input": {"command": "echo"}})
-        self.assertEqual((code, out2.get("decision"), out2.get("channel"), out2.get("logged")), (0, "allow", "shell", False), (out2, err2))
-        self.assertTrue(err2.strip(), "the recording failure is reported on stderr")
         failures = os.path.join(self.root, "runtime", "gate", "gate-audit-failures.log")
         with open(failures, encoding="utf-8") as fh:
-            self.assertEqual(sum(1 for x in fh if x.strip()), 2)
+            self.assertEqual(sum(1 for x in fh if x.strip()), 1)
+
+    def test_T19_gate_db_unwritable_shell_allow_stays_allow(self):
+        """Healthy ledger, only gate.db unwritable: a shell attempt from an unbound session is not preventable, so
+        the allow stands (`logged: false`), the recording failure is reported on stderr and one failures-log line
+        is appended (section 3 write-failure rule)."""
+        self.bound_job(); self.deploy_hook()
+        self.make_gate_db_unwritable()
+        code, out, err = self.run_hook(self.payload(session="S-unbound", tool="Bash") | {"tool_input": {"command": "echo"}})
+        self.assertEqual((code, out.get("decision"), out.get("channel"), out.get("logged")),
+                         (0, "allow", "shell", False), (out, err))
+        self.assertTrue(err.strip(), "the recording failure is reported on stderr")
+        failures = os.path.join(self.root, "runtime", "gate", "gate-audit-failures.log")
+        with open(failures, encoding="utf-8") as fh:
+            self.assertEqual(sum(1 for x in fh if x.strip()), 1)
 
     # ================================================================ never allow: every fault, core + hook, in one sweep
     def test_T19_no_fault_ever_allows(self):
