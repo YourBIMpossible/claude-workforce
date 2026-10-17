@@ -215,16 +215,16 @@ class T36ViaVerifyCopy(_Ladder):
         self.evidence.setdefault("verify_copy", []).append(text[:600])
         return r, text
 
-    def assert_status(self, text: str, status: str, *not_status: str) -> None:
-        self.assertIn(status, text)
-        for s in not_status:
-            self.assertNotIn(s, text, (status, text))
+    def assert_status(self, r: dict, text: str, status: str) -> None:
+        # Field assertion, not a substring of the JSON: the result carries the absolute copy path, which contains
+        # the test name (and so words like "missing"); only checkpoint.status may decide the outcome (F1).
+        self.assertEqual(r["checkpoint"]["status"], status, text)
 
     def test_T36a_bit_flip_detected_in_copy(self):
         seq, h = self.chain(); self.bit_flip()
         r, text = self.verify_copy(self.copy())
-        chains = json.dumps(r.get("chains", r), default=str)
-        self.assertNotEqual(chains, json.dumps({"j": []}), "a chain problem must be reported for job j")
+        self.assertTrue(r["chains"]["j"], text)
+        self.assertFalse(r["clean"], text)
         self.assertTrue(any(k in text for k in ("content_sha256", "self", "hash", "mismatch", "chain")), text)
 
     def test_T36b_c_rewrite_and_tail_deletion_pass_without_checkpoint_with_limit(self):
@@ -235,6 +235,8 @@ class T36ViaVerifyCopy(_Ladder):
             with self.subTest(copy=os.path.basename(p)):
                 r, text = self.verify_copy(p)
                 self.assertEqual(r.get("chains", {}).get("j", ["<chains key missing>"]), [], text)
+                self.assertTrue(r["clean"], text)
+                self.assertIsNone(r["checkpoint"], text)
                 self.assertIn(self.backup.LIMIT_NO_CHECKPOINT, text)
                 self.assertIn("internally consistent only", self.backup.LIMIT_NO_CHECKPOINT)
                 self.assertIn("not detectable", self.backup.LIMIT_NO_CHECKPOINT)
@@ -243,23 +245,24 @@ class T36ViaVerifyCopy(_Ladder):
         seq, h = self.chain()
         self.consistent_rewrite()
         r, text = self.verify_copy(self.copy(), (seq, h))
-        self.assert_status(text, "differs", "matches", "missing")
+        self.assert_status(r, text, "differs")
         self.delete_tail()
         r2, text2 = self.verify_copy(self.copy(), (seq, h))
-        self.assert_status(text2, "missing", "matches", "differs")
+        self.assert_status(r2, text2, "missing")
 
     def test_T36e_altered_checkpoint_matches_copy_and_names_trusted(self):
         seq, h = self.chain()
         self.consistent_rewrite()
         altered = self.head()
         r, text = self.verify_copy(self.copy(), altered)
-        self.assert_status(text, "matches", "differs", "missing")
-        self.assertIn("trusted", text.lower(), "the output names the retained value as trusted (section 4 e)")
+        self.assert_status(r, text, "matches")
+        self.assertTrue(any("trusted as supplied" in line and "not detectable" in line for line in r["limitations"]),
+                        ("the output names the retained value as trusted and what is not detectable (section 4 e)", text))
 
     def test_T36_intact_copy_matches_retained_checkpoint(self):
         seq, h = self.chain()
         r, text = self.verify_copy(self.copy(), (seq, h))
-        self.assert_status(text, "matches", "differs", "missing")
+        self.assert_status(r, text, "matches")
         self.assertEqual(r.get("chains", {}).get("j", ["<chains key missing>"]), [], text)
 
 
