@@ -66,6 +66,17 @@ def _parser() -> argparse.ArgumentParser:
     rv = sp.add_parser("recover").add_subparsers(dest="sub", required=True)
     rb = rv.add_parser("begin"); rb.add_argument("job"); rb.add_argument("--reason", required=True)
     rb.add_argument("--turn", required=True, help="owner turn text naming the job")
+    # B2 slice 2 (INTERFACE-CONTRACT-S2 section 4): recovery closure and the 6.2 step-4 decision
+    rr = rv.add_parser("reconcile", help="acknowledge each recoverable exception listed by the open recovery (idempotent)")
+    rr.add_argument("job"); rr.add_argument("--turn", required=True, help="owner turn text naming the job")
+    rc2 = rv.add_parser("close", help="close the open recovery once every exception is acknowledged and the chain verifies")
+    rc2.add_argument("job"); rc2.add_argument("--turn", required=True, help="owner turn text naming the job")
+    rd = rv.add_parser("decide", help="record the 6.2 step-4 recovery decision for the builder role (resume | restore | abandon)")
+    rd.add_argument("job"); rd.add_argument("--decision", required=True, choices=("resume", "restore", "abandon"))
+    rd.add_argument("--restore-path", action="append", default=None, help="report path to return to baseline (repeatable; owner procedure)")
+    rd.add_argument("--unresolved", action="append", default=None, metavar="PATH=DISPOSITION",
+                    help="disposition for an unresolvable report path: owner-inspected | restore | abandon-path (repeatable)")
+    rd.add_argument("--turn", required=True, help="owner turn text naming the job"); rd.add_argument("--note", default=None)
     return p
 
 
@@ -147,9 +158,20 @@ def run(argv: list[str]) -> tuple[int, dict]:
             _need(args, "role", "session")
             res = commands.ack_reconcile(db, args.job, report_seq=args.report, exceptions_src=args.exceptions,
                                          note=args.note, faults=faults, **common)
-        elif args.cmd == "recover":  # only `begin` is registered in this slice (reconcile/close excluded)
+        elif args.cmd == "recover" and args.sub == "begin":
             _need(args, "role", "session")
             res = commands.recover_begin(db, args.job, reason=args.reason, turn=args.turn, faults=faults, **common)
+        elif args.cmd == "recover" and args.sub == "reconcile":
+            _need(args, "role", "session")
+            res = commands.recover_reconcile(db, args.job, turn=args.turn, faults=faults, **common)
+        elif args.cmd == "recover" and args.sub == "close":
+            _need(args, "role", "session")
+            res = commands.recover_close(db, args.job, turn=args.turn, faults=faults, **common)
+        elif args.cmd == "recover":  # decide
+            _need(args, "role", "session")
+            res = commands.recover_decide(db, args.job, decision=args.decision, restore_paths=args.restore_path,
+                                          unresolved=args.unresolved, turn=args.turn, note=args.note, faults=faults,
+                                          **common)
         else:  # pragma: no cover
             raise WfUsage("unknown command")
     except WfError as exc:
