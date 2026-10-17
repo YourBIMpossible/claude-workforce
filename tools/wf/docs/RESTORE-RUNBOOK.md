@@ -10,7 +10,7 @@ Restore is an **owner procedure**. There is no `wf restore`, and `wf` never over
    - The command refuses an existing destination, a missing parent directory, or a destination inside the ledger directory. A refusal writes nothing.
    - Add `--writer-stopped` only when every `wf` process and session is stopped. Head equality with the live ledger is asserted only then.
 2. **Retain a checkpoint independently.**
-   - Run `wf checkpoint <job>` and keep the `seq:self` value somewhere the ledger's writers cannot change, such as a note outside the repository.
+   - Run `wf checkpoint <job>`. It prints `seq` and `self` as separate fields. Join them with a colon into one value, `<seq>:<self>` (for example `42:` followed by the 64-character `self`), and keep that value, with the job name, somewhere the ledger's writers cannot change, such as a note outside the repository. The `checkpoint.json` that the command writes under the job's export folder does not count, because writers can change it.
    - Without a retained checkpoint, a consistent whole-chain rewrite or a tail deletion is **not detectable**.
 
 ## Restoring

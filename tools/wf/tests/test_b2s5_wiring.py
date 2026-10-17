@@ -89,12 +89,14 @@ class B2S5Wiring(Base):
             (os.path.join(self.dir, "no-such-dir", "b.db"), "dest-parent-missing"),
             (os.path.join(os.path.dirname(self.db), "b.db"), "dest-inside-ledger"),
         ]
+        ledger_sha = _sha(self.db)
         for dest, reason in cases:
             before = _listing(self.dir)
             code, r = self.run_wf("backup", "--all", "--to", dest, role="coordinator", session="C1")
             self.assertNotEqual(code, 0, r)
             self.assertIn(reason, r["error"], r)
             self.assertEqual(_listing(self.dir), before, reason)            # nothing written anywhere
+            self.assertEqual(_sha(self.db), ledger_sha, reason)             # ledger bytes unchanged
         with open(existing, "rb") as fh:
             self.assertEqual(fh.read(), b"keep")
 
@@ -113,6 +115,33 @@ class B2S5Wiring(Base):
             self.assertNotEqual(code, 0, r)
             self.assertIn("not in the ledger", r["error"])
         self.assertFalse(os.path.exists(target))
+
+    @unittest.skipUnless(backup is not None, SKIP)
+    def test_s5w_backup_cli_clean_requires_heads_to_match_source(self):
+        self.new_job()
+        self.new_job("k")
+        real = backup.backup
+
+        def diverged(key, job):
+            def fake(db_path, dest_path, *, writer_stopped=False):
+                res = real(db_path, dest_path, writer_stopped=writer_stopped)
+                res[key][job] = False
+                return res
+            return fake
+
+        cases = [("head_in_source", "k", ("--all",)),                        # the head is not in the source
+                 ("head_in_source", "k", ("j",)),                            # clean covers jobs outside the scope
+                 ("head_equal", "j", ("--all", "--writer-stopped"))]         # stated stopped, head differs
+        for i, (key, job, args) in enumerate(cases):
+            with mock.patch.object(backup, "backup", diverged(key, job)):
+                code, r = self.run_wf("backup", *args, "--to", self.out(f"d{i}.db"), role="owner", session="O1")
+            self.assertEqual(code, 0, r)
+            self.assertTrue(r["integrity"], r)
+            self.assertTrue(r["all_chains_clean"], r)
+            self.assertFalse(r["clean"], (key, job, args, r))
+        code, r = self.run_wf("backup", "j", "--to", self.out("ok.db"), "--writer-stopped", role="owner", session="O1")
+        self.assertEqual(code, 0, r)
+        self.assertTrue(r["clean"], r)                                       # unmodified: every head matches
 
     # ---- wf verify --restored
     @unittest.skipUnless(backup is not None, SKIP)
@@ -152,6 +181,10 @@ class B2S5Wiring(Base):
         self.assertEqual(code, 2, v)
         code, v = self.run_wf("verify", "j", "--job", "j")
         self.assertEqual(code, 2, v)                                         # --job only with --restored
+        code, v = self.run_wf("verify", "j", "--restored", self.db)
+        self.assertEqual(code, 2, v)                                         # a job is never silently ignored
+        code, v = self.run_wf("verify", "--restored", self.db, "--job", "j")
+        self.assertEqual(code, 2, v)
         absent = os.path.join(self.dir, "absent.db")
         code, v = self.run_wf("verify", "--restored", absent)
         self.assertNotEqual(code, 0, v)

@@ -1117,7 +1117,8 @@ def backup_cmd(db: str, job: str | None, *, all_jobs: bool, dest: str, writer_st
     Read-only on the ledger: the copy is the engine backup from a read-only connection (wfcore.backup). The file
     always holds the whole ledger; <job> narrows the reported per-job results and must name a job in the ledger,
     checked before anything is written. Refusals (dest-exists, dest-parent-missing, dest-inside-ledger) write
-    nothing."""
+    nothing. `clean` covers every job in the copy: engine integrity, every chain clean, every head present in the
+    source and, when the writer is stated stopped, every head equal to the source head."""
     if role not in ("coordinator", "owner"):
         raise WfRejected("role", f"backup may not be run by role {role or '(none)'}; coordinator or owner only")
     if bool(job) == bool(all_jobs):
@@ -1142,24 +1143,28 @@ def backup_cmd(db: str, job: str | None, *, all_jobs: bool, dest: str, writer_st
     res = backup.backup(db, dest, writer_stopped=writer_stopped)
     res["scope"] = job if job else "all"
     res["all_chains_clean"] = not any(res["chains"].values())
+    heads_match = all(res["head_in_source"].values()) and (res["head_equal"] is None or all(res["head_equal"].values()))
     if job:
         for key in ("chains", "heads", "head_in_source", "head_equal"):
             if isinstance(res.get(key), dict):
                 res[key] = {k: v for k, v in res[key].items() if k == job}
         res["note"] = ("the backup file holds the whole ledger; per-job results are shown for the named job only, "
-                       "and all_chains_clean covers every job in the copy")
-    res["clean"] = bool(res["integrity"]) and res["all_chains_clean"]
+                       "and all_chains_clean and clean cover every job in the copy")
+    res["clean"] = bool(res["integrity"]) and res["all_chains_clean"] and heads_match
     return res
 
 
 def verify_restored(path: str, job: str | None, checkpoint_text: str | None) -> dict[str, Any]:
     """`wf verify --restored <path> [--checkpoint SEQ:HASH --job J]` (INTERFACE-CONTRACT-S5 section 2; spec 3C,
     10). Read-only check of a restored copy; never writes, repairs or deletes. Restore itself stays the owner's
-    procedure (tools/wf/docs/RESTORE-RUNBOOK.md)."""
+    procedure (tools/wf/docs/RESTORE-RUNBOOK.md). The check always covers every job in the copy; a job is accepted
+    only with --checkpoint, so a named job is never silently ignored."""
     if not path or not path.strip():
         raise WfUsage("--restored <path> is required")
     if checkpoint_text is not None and not job:
         raise WfUsage("--checkpoint with --restored requires --job")
+    if job and checkpoint_text is None:
+        raise WfUsage("a job with --restored applies only with --checkpoint; without one the check covers every job")
     cp = None
     if checkpoint_text is not None:
         check_job_id(job)
