@@ -76,7 +76,8 @@ class B2S2(B2S1):
         # an orphan export temp file is a recoverable exception (export.orphans): the opened row lists it
         c, r = self.run_wf("export", "j")
         self.assertEqual(c, 0, r)
-        with open(os.path.join(r["export"]["dir"], "head.json.tmp"), "xb") as fh:
+        r0_export_dir = r["export"]["dir"]
+        with open(os.path.join(r0_export_dir, "head.json.tmp"), "xb") as fh:
             fh.write(b"orphan" + bytes([10]))
         opened = self.open_recovery()
         c, st = self.run_wf("status", "j")
@@ -124,6 +125,10 @@ class B2S2(B2S1):
         c, st = self.run_wf("status", "j")
         self.assertEqual(st["recovery"], {"open": False})
         self.assertNotEqual(st["axes"]["execution"], "recovering")
+        c, v = self.run_wf("verify", "j")
+        self.assertFalse(v["clean"])          # recovery acknowledged the orphan, it never repaired it (3B)
+        self.assertTrue(any("preserved" in p for p in v["jobs"]["j"]["export"]), v["jobs"]["j"]["export"])
+        os.remove(os.path.join(r0_export_dir, "head.json.tmp"))   # the owner's procedure, outside wf
         c, v = self.run_wf("verify", "j")
         self.assertIsNone(v["jobs"]["j"]["recovery_open"])
         self.assertTrue(v["clean"])
@@ -255,6 +260,7 @@ class B2S2(B2S1):
 
 for _name in [n for n in dir(B2S1) if n.startswith("test_") and n not in B2S2.__dict__]:
     setattr(B2S2, _name, None)  # not a test here
+del B2S1  # keep discovery from collecting the slice-1 class a second time through this module
 
 
 if __name__ == "__main__":  # pragma: no cover
