@@ -14,6 +14,9 @@ KNOWN = {
     # B2 slice 2 (INTERFACE-CONTRACT-S2 section 4): recovery kill points, honoured by the wiring after the named
     # transaction has committed (os._exit(3), same mechanism as kill-before-commit); fixtures-tmp ledgers only.
     "recover-kill-after-open", "recover-kill-mid-reconcile", "recover-kill-before-close",
+    # B2 slice 5 (INTERFACE-CONTRACT-S5 section 3, T30 f): inside `recover begin`, while the reservation is held, a
+    # second connection attempts BEGIN IMMEDIATE on the same file; the command then refuses (nothing appended).
+    "recover-second-writer",
 }
 
 

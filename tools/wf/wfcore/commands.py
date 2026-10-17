@@ -1058,6 +1058,8 @@ def recover_begin(db: str, job: str, *, reason: str, turn: str, msg_id: str, rol
         if problems:
             raise WfRejected("invalid-chain", "chain invalid; recovery not opened (nothing appended): "
                              + "; ".join(problems[:5]), problems=problems)
+        if faults.has(SECOND_WRITER_FAULT):
+            _second_writer_probe(db, faults, oplog)
         holder.update(exceptions=exceptions)
         return build_row(conn, job, head_seq, head_self, etype="recovery-opened", msg_id=msg_id, author_role=role,
                          session_id=session, generation=generation, reply_to=None, grant_ref=None,
@@ -1067,6 +1069,121 @@ def recover_begin(db: str, job: str, *, reason: str, turn: str, msg_id: str, rol
     res.update(holder)
     _recover_kill(faults, oplog, "recover-kill-after-open")
     return res
+
+
+SECOND_WRITER_FAULT = "recover-second-writer"
+
+
+def _second_writer_probe(db: str, faults: Faults, oplog: OpLog) -> None:
+    """INTERFACE-CONTRACT-S5 section 3, T30(f); test-only (WF_TEST_FAULTS, fixtures-tmp ledgers, faults.load rule).
+    Runs inside the `recover begin` build callable while this command holds the reservation: a second connection
+    to the same file attempts BEGIN IMMEDIATE with no busy wait. Every outcome refuses, so the transaction rolls
+    back and nothing is appended. The expected outcome is busy/locked; a second writer that obtains the
+    reservation is reported as a broken single-writer guarantee, never as success."""
+    faults.mark(SECOND_WRITER_FAULT)
+    oplog.add("fault_recover_second_writer")
+    tail = "recovery not opened (nothing appended)"
+    try:
+        other = sqlite3.connect(db, timeout=0, isolation_level=None)
+    except sqlite3.Error as exc:
+        raise WfRefused(f"second-writer probe could not open a second connection ({type(exc).__name__}: {exc}); "
+                        f"{tail}", fault=SECOND_WRITER_FAULT) from exc
+    try:
+        try:
+            other.execute("BEGIN IMMEDIATE")
+        except sqlite3.OperationalError as exc:
+            text = str(exc)
+            if "locked" in text.lower() or "busy" in text.lower():
+                oplog.add("second_writer_refused", error=text)
+                raise WfRefused(f"second-writer: a second BEGIN IMMEDIATE was refused busy/locked ({text}) while this "
+                                f"command held the reservation; {tail}", fault=SECOND_WRITER_FAULT,
+                                second_writer="refused") from exc
+            raise WfRefused(f"second-writer probe failed for another reason ({text}); {tail}",
+                            fault=SECOND_WRITER_FAULT, second_writer="error") from exc
+        try:
+            other.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass  # the probe connection is closed below; its transaction ends with it
+        oplog.add("second_writer_acquired")
+        raise WfRefused("second-writer: a second BEGIN IMMEDIATE obtained the reservation while this command held it; "
+                        f"the single-writer reservation did not hold; {tail}", fault=SECOND_WRITER_FAULT,
+                        second_writer="acquired")
+    finally:
+        other.close()
+
+
+def backup_cmd(db: str, job: str | None, *, all_jobs: bool, dest: str, writer_stopped: bool, role: str) -> dict[str, Any]:
+    """`wf backup <job|--all> --to <path>` (INTERFACE-CONTRACT-S5 section 1; spec 4.1, T37). Coordinator or owner.
+    Read-only on the ledger: the copy is the engine backup from a read-only connection (wfcore.backup). The file
+    always holds the whole ledger; <job> narrows the reported per-job results and must name a job in the ledger,
+    checked before anything is written. Refusals (dest-exists, dest-parent-missing, dest-inside-ledger) write
+    nothing."""
+    if role not in ("coordinator", "owner"):
+        raise WfRejected("role", f"backup may not be run by role {role or '(none)'}; coordinator or owner only")
+    if bool(job) == bool(all_jobs):
+        raise WfUsage("give exactly one of <job> or --all")
+    if not dest or not dest.strip():
+        raise WfUsage("--to <path> is required")
+    backup = _backup_module()
+    if job:
+        check_job_id(job)
+        if not os.path.isfile(db):
+            raise WfRefused(f"ledger not found: {db}")
+        conn = sqlite3.connect(f"{_file_uri(db)}?mode=ro", uri=True, timeout=0, isolation_level=None)
+        try:
+            with dbm.read_snapshot(conn):
+                known = job in dbm.jobs(conn)
+        except sqlite3.Error as exc:
+            raise WfRefused(f"ledger not readable ({type(exc).__name__}: {exc})") from exc
+        finally:
+            conn.close()
+        if not known:
+            raise WfRefused(f"job {job} is not in the ledger; nothing written", job=job)
+    res = backup.backup(db, dest, writer_stopped=writer_stopped)
+    res["scope"] = job if job else "all"
+    res["all_chains_clean"] = not any(res["chains"].values())
+    if job:
+        for key in ("chains", "heads", "head_in_source", "head_equal"):
+            if isinstance(res.get(key), dict):
+                res[key] = {k: v for k, v in res[key].items() if k == job}
+        res["note"] = ("the backup file holds the whole ledger; per-job results are shown for the named job only, "
+                       "and all_chains_clean covers every job in the copy")
+    res["clean"] = bool(res["integrity"]) and res["all_chains_clean"]
+    return res
+
+
+def verify_restored(path: str, job: str | None, checkpoint_text: str | None) -> dict[str, Any]:
+    """`wf verify --restored <path> [--checkpoint SEQ:HASH --job J]` (INTERFACE-CONTRACT-S5 section 2; spec 3C,
+    10). Read-only check of a restored copy; never writes, repairs or deletes. Restore itself stays the owner's
+    procedure (tools/wf/docs/RESTORE-RUNBOOK.md)."""
+    if not path or not path.strip():
+        raise WfUsage("--restored <path> is required")
+    if checkpoint_text is not None and not job:
+        raise WfUsage("--checkpoint with --restored requires --job")
+    cp = None
+    if checkpoint_text is not None:
+        check_job_id(job)
+        seq, self_hash = checkpointcmp.parse(checkpoint_text, job)
+        cp = (job, seq, self_hash)
+    if not os.path.isfile(path):
+        raise WfRefused(f"restored copy not found: {path}", path=path)
+    return _backup_module().verify_copy(path, checkpoint=cp)
+
+
+def _backup_module() -> Any:
+    """wfcore.backup (lane S5B), imported at use so the rest of wf works on a tree without it."""
+    try:
+        from . import backup
+    except ImportError as exc:
+        raise WfRefused(f"backup module not present on this tree ({exc}); nothing written") from exc
+    return backup
+
+
+def _file_uri(path: str) -> str:
+    p = os.path.abspath(path).replace("\\", "/")
+    if not p.startswith("/"):
+        p = "/" + p
+    return "file:" + p.replace("?", "%3f").replace("#", "%23")
 
 
 def _recover_kill(faults: Faults, oplog: OpLog, name: str, *, when: int | None = None, count: int | None = None) -> None:
