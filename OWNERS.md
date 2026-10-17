@@ -36,8 +36,8 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_t16a_recover_begin.py | S2R |
 | tools/wf/tests/test_t30_recover_close.py | S2R |
 | tools/wf/tests/test_t30_recovery_faults.py | S2C |
-| tools/wf/wfcore/grant.py | S3G |
-| tools/wf/tests/test_t34_grant_lifecycle.py | S3G |
+| tools/wf/wfcore/grant.py | S4G |
+| tools/wf/tests/test_t34_grant_lifecycle.py | S4G |
 | tools/wf/tests/test_grant_check_corpus.py | S3G |
 | tools/wf/tests/data/grant_check_corpus.json | S3G |
 | tools/wf/wfcore/observe.py | S4L |
@@ -142,3 +142,7 @@ B2 slice 5 (backup, restored-copy verification, T30 a-race/f/h, T36 re-check, T3
 | S5R | Zen | worker-chosen, after its slice-4a task | `tools/wf/tests/test_t30_race_secondwriter_identity.py` (new) |
 | S5M | MyBuddy | worker-chosen, after its slice-4a task | `tools/wf/tests/test_t37_t36_matrix.py` (new) |
 | S5W | White | `sprint/white-b2s5-wiring` (after slice 4a merges) | `tools/wf/wfcore/commands.py`, `tools/wf/wf.py`, `tools/wf/wfcore/faults.py`, `tools/wf/docs/RESTORE-RUNBOOK.md` (new), `tools/wf/tests/test_b2s5_wiring.py` (new), OWNERS.md, MANIFEST.sha256 |
+
+## Registration 2026-10-17 (slice 4a AMENDMENT S4A-A2, same worker Plexy)
+
+`tools/wf/wfcore/grant.py` and `tools/wf/tests/test_t34_grant_lifecycle.py` re-labelled S3G → S4G for the AMENDMENT S4A-A2 role-path fix (grant.check compares the target with the role's ARS paths/actions and the binding's declared paths). `tools/wf/tests/data/grant_check_corpus.json` stays S3G and must not change. Registration only.
