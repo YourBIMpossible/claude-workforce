@@ -82,11 +82,11 @@ Workers do not edit shared wiring files; a needed change outside the owned set i
 
 ## Registration 2026-10-16 (owner grant "APPROVE AND EXECUTE — WORKFORCE B2 SLICE 2")
 
-B2 slice 2 (recovery closure + replacement; INTERFACE-CONTRACT-S2.md frozen by White 2026-10-16, published in the WorkForce collab folder `contracts2s2\` and mirrored on the GitHub dispatch issue). Slice-1 rows re-labelled to the same workers' slice-2 lanes (S1B→S2B Plexy, S1R→S2R Zen); lane-B rows `changeset.py` / `test_t35_changeset.py` re-labelled S2B (same worker, Plexy; D-S1-5 option B). Registration only; no validation disabled.
+B2 slice 2 (recovery closure + replacement; INTERFACE-CONTRACT-S2.md frozen by White 2026-10-16, published in the WorkForce collab folder `contracts/b2s2/` and mirrored on the GitHub dispatch issue). Slice-1 rows re-labelled to the same workers' slice-2 lanes (S1B→S2B Plexy, S1R→S2R Zen); lane-B rows `changeset.py` / `test_t35_changeset.py` re-labelled S2B (same worker, Plexy; D-S1-5 option B). Registration only; no validation disabled.
 
 | Lane | Worker | Branch | Scope |
 |---|---|---|---|
-| S2B | Plexy | worker-chosen, from main 3590a9a | `tools/wf/wfcore/bind.py`, `tools/wf/tests/test_t32_bind.py`, `tools/wf/tests/test_t33_replacement.py` (new), `tools/wf/wfcore/changeset.py`, `tools/wf/tests/test_t35_changeset.py` |
-| S2R | Zen | worker-chosen, from main 3590a9a | `tools/wf/wfcore/reconcile.py`, `tools/wf/tests/test_t06_reconcile.py`, `tools/wf/tests/test_t16a_recover_begin.py`, `tools/wf/tests/test_t30_recover_close.py` (new) + the additive validate.py edit of INTERFACE-CONTRACT-S2.md §7 (registered exception, same rule as slice 1: the S2R checker run reports exactly `tools/wf/wfcore/validate.py` outside the lane; accepted only if its diff equals the §7 text) |
-| S2C | MyBuddy | worker-chosen, from main 3590a9a | `tools/wf/tests/test_t30_recovery_faults.py` (new) only |
+| S2B | Plexy | worker-chosen, from main e628353 or later | `tools/wf/wfcore/bind.py`, `tools/wf/tests/test_t32_bind.py`, `tools/wf/tests/test_t33_replacement.py` (new), `tools/wf/wfcore/changeset.py`, `tools/wf/tests/test_t35_changeset.py` |
+| S2R | Zen | worker-chosen, from main e628353 or later | `tools/wf/wfcore/reconcile.py`, `tools/wf/tests/test_t06_reconcile.py`, `tools/wf/tests/test_t16a_recover_begin.py`, `tools/wf/tests/test_t30_recover_close.py` (new) + the additive validate.py edit of INTERFACE-CONTRACT-S2.md §7 (registered exception, same rule as slice 1: the S2R checker run reports exactly `tools/wf/wfcore/validate.py` outside the lane; accepted only if its diff equals the §7 text) |
+| S2C | MyBuddy | worker-chosen, from main e628353 or later | `tools/wf/tests/test_t30_recovery_faults.py` (new) only |
 | S2W | White | `sprint/white-b2s2-wiring` | `tools/wf/wfcore/commands.py`, `tools/wf/wf.py`, `tools/wf/wfcore/faults.py` (KNOWN names), `tools/wf/tests/test_b2s2_wiring.py` (new), OWNERS.md, MANIFEST.sha256 (lane D) |
