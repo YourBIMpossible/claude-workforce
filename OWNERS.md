@@ -51,6 +51,10 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_gatelog.py | S4L |
 | tools/wf/tests/test_gate_hook_deployed.py | S4L |
 | tools/wf/tests/test_t19_gate_faults.py | S4M |
+| tools/wf/wfcore/backup.py | S5B |
+| tools/wf/tests/test_t37_backup.py | S5B |
+| tools/wf/tests/test_t30_race_secondwriter_identity.py | S5R |
+| tools/wf/tests/test_t37_t36_matrix.py | S5M |
 | ** | D |
 
 Lane A owns only the body of `accept_declarations` inside validate.py; other functions in that file are frozen
@@ -127,3 +131,14 @@ B2 slice 4a (the gate, build and fixture verification only; INTERFACE-CONTRACT-S
 | S4L | Zen | worker-chosen, from current main | `tools/wf/wfcore/gatelog.py`, `tools/wf/gate/wf_gate_hook.py`, `tools/wf/tests/test_gatelog.py`, `tools/wf/tests/test_gate_hook_deployed.py` (new); `tools/wf/wfcore/reconcile.py`, `tools/wf/wfcore/observe.py`, `tools/wf/tests/test_t06_reconcile.py`, `tools/wf/tests/test_t14_observe.py` (section 5/6 keyword parameters) |
 | S4M | MyBuddy | worker-chosen, from current main | `tools/wf/tests/test_t19_gate_faults.py` (new) only |
 | S4W | White | `sprint/white-b2s4a-wiring` | `tools/wf/wfcore/commands.py`, `tools/wf/wf.py`, `tools/wf/tests/test_b2s4a_wiring.py` (new), OWNERS.md, MANIFEST.sha256 (lane D) |
+
+## Registration 2026-10-17 (owner pre-approval "PRE-APPROVE WORKFORCE SLICES 4b AND 5" — slice 5)
+
+B2 slice 5 (backup, restored-copy verification, T30 a-race/f/h, T36 re-check, T37 export tail; fixture-only; INTERFACE-CONTRACT-S5.md frozen by White 2026-10-17, published in `contracts/b2s5/`). Registration only. No ledger schema or transaction change is registered: S5W adds one test-only fault name in `faults.py` and its call site in `commands.py` (both White/D files).
+
+| Lane | Worker | Branch | Scope |
+|---|---|---|---|
+| S5B | Plexy | worker-chosen, after its slice-4a task | `tools/wf/wfcore/backup.py`, `tools/wf/tests/test_t37_backup.py` (new) |
+| S5R | Zen | worker-chosen, after its slice-4a task | `tools/wf/tests/test_t30_race_secondwriter_identity.py` (new) |
+| S5M | MyBuddy | worker-chosen, after its slice-4a task | `tools/wf/tests/test_t37_t36_matrix.py` (new) |
+| S5W | White | `sprint/white-b2s5-wiring` (after slice 4a merges) | `tools/wf/wfcore/commands.py`, `tools/wf/wf.py`, `tools/wf/wfcore/faults.py`, `tools/wf/docs/RESTORE-RUNBOOK.md` (new), `tools/wf/tests/test_b2s5_wiring.py` (new), OWNERS.md, MANIFEST.sha256 |
