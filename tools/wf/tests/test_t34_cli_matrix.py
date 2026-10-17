@@ -185,7 +185,7 @@ class T34CliMatrix(Base):
     def test_T34_amendment_by_new_proposal_voids_current_revision(self):
         self.job(); h1 = self.activate()
         self.ok(self.work(note="before amendment"))
-        amended = self.grant_file("grant_v2.json", resources=["jobs/j/work/**", "jobs/j/docs/**"])
+        amended = self.grant_file("grant_v2.json", actions=["write", "read"])  # amended actions; resources unchanged
         r = self.propose(gpath=amended)                                  # L allowed while in force (D-S3-3)
         self.assertNotEqual(r["block_hash"], h1)
         a = self.authority(); self.assertEqual(a["state"], "voided", a)
@@ -233,19 +233,17 @@ class T34CliMatrix(Base):
         self.assertIn(CANCEL_LIMITATION_KEY, json.dumps(d), "digest states the enforcement limitation")
         self.assert_agree("j", state="cancelled", check_allow=False, check_reason="cancelled",
                           work_ok=False, work_reason="cancelled")
-        # L refused
-        self.assert_rejected(self.propose(), "cancelled")
-        self.assertEqual(self.types().count("grant"), 1)
+        # L refused, no grant row added (the activated revision already holds proposed + activated rows)
+        grants = self.types().count("grant")
+        self.assert_rejected(self.wf("grant", "propose", "j", "--grant", self.gpath), "cancelled")
+        self.assertEqual(self.types().count("grant"), grants)
         # second cancellation refused
         self.assert_rejected(self.cancel(role="coordinator", session="C1"), "cancelled")
         self.assertEqual(self.types().count("job-cancelled"), 1)
-        # O still runs: revoke — contract section 3 lists it as O under cancelled while validate_revoke needs an
-        # in-force revision; the guard must not refuse it as `cancelled`. Both outcomes are recorded.
-        code, rr = self.revoke()
-        if code == 0:
-            self.assertEqual(self.types()[-1], "grant-revoked")
-        else:
-            self.assert_rejected((code, rr), "no-active-grant")
+        # O still runs: revoke passes the guard (category O) and is then refused by validate_revoke because the
+        # authority state is `cancelled`, not in-force (White, WF-006 review F1) — never a `cancelled` refusal.
+        self.assert_rejected(self.revoke(), "no-active-grant")
+        self.assertNotIn("grant-revoked", self.types())
         self.ok(self.wf("log-intervention", "j", "--label", "restart", "--necessity", "unknown",
                         "--minutes", "unknown", "--note", "owner restarted the worker"))
         self.assertEqual(self.types()[-1], "intervention")
