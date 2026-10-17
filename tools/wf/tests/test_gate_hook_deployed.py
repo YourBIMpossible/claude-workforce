@@ -16,8 +16,8 @@ Three layers:
   TEST DOUBLE written only into a fixture copy of wfcore under the test temp root; it never ships and is not lane
   S4G's module.
 * `HookWithRealGatecore` - the same deployment against the real `wfcore.gatecore` (lane S4G) on a fixture ledger:
-  protected-path deny, outside-boundary allow, shell allow with SHELL_LIMITATION, audit-unavailable, probes. Skipped
-  with a named reason until gatecore is present on the tree.
+  protected-path deny, outside-boundary allow (unbound), T25 out-of-scope deny (bound, S4A-A4), shell allow with
+  SHELL_LIMITATION, audit-unavailable, probes. Skipped with a named reason until gatecore is present on the tree.
 Exit codes are asserted for decisions (0 allow, 2 deny) and not for the forced-error probe (S4A-A1).
 """
 from __future__ import annotations
@@ -415,6 +415,22 @@ class HookWithRealGatecore(HookBase):
         out = self.assert_decision(res, "allow", "outside-boundary", logged=True)
         self.assertEqual(out["channel"], "preventable")
         self.assertEqual(gatelog.verify(self.root)["rows"], 1)
+
+    def test_T25_bound_session_outside_boundary_denied_recorded(self):
+        """T25 (AMENDMENT S4A-A4): the implicit builder B1 is bound to j; its write outside the boundary is exit 2
+        `out-of-scope`, recorded; unbound B9 to the same target stays allow `outside-boundary`."""
+        code, res = self.run_wf("append", "j", "--type", "intent", "--content",
+                                '{"path":"jobs/j/work/a.txt","sha_before":"","note":"n"}')
+        self.assertEqual(code, 0, res)
+        self.deploy()
+        target = self.outside_path()
+        out = self.assert_decision(self.run_hook(self.payload("Write", path=target, session="B1")), "deny",
+                                   "out-of-scope", logged=True)
+        self.assertEqual(out["channel"], "preventable")
+        self.assert_decision(self.run_hook(self.payload("Write", path=target, session="B9")), "allow",
+                             "outside-boundary", logged=True)
+        self.assertFalse(os.path.exists(target))
+        self.assertEqual(gatelog.verify(self.root)["rows"], 2)
 
     def test_shell_allow_carries_limitation(self):
         from wfcore import gatecore  # noqa: PLC0415 - present only on the combined tree

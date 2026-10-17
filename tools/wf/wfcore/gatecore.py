@@ -15,15 +15,18 @@ job; D-S4-4) -> 3 job resolution -> 4 per-job state for every touched job (recov
 `none`/`proposed` deny only for a job the session is bound to, D-S4-1) -> 5 preventable, bound session: current
 binding (stale-session / not-current-binding) and `grant.check(action="write")` -> 6 preventable, unbound session into a
 job's write scope or `jobs/<job>/` (unbound-session) -> 7 shell channel: allow `shell-not-preventable` with
-SHELL_LIMITATION; the command is never parsed, only its sha256 and length are kept (D-S4-2) -> 8 everything else:
-allow `outside-boundary` (target outside the boundary root, T25) or `not-mediated` (other tools, D-S4-5, and in-root
-paths that belong to no job).
+SHELL_LIMITATION; the command is never parsed, only its sha256 and length are kept (D-S4-2) -> 8 a target outside
+the boundary root: `deny` `out-of-scope` for a session bound to a job (T25 allow-list, AMENDMENT S4A-A4), else
+`allow` `outside-boundary`; everything else `allow` `not-mediated` (other tools, D-S4-5, and in-root paths that
+belong to no job).
 
 Reading choices recorded for review (no signature change):
 * Rule 2 runs for every preventable and shell decision, including a preventable target outside the boundary (strict
-  first-match order, fail closed); a healthy ledger then lets such a target reach rule 8 (`outside-boundary`).
-* Rule 4 by binding applies to the shell channel and to preventable decisions with an in-boundary target; a write
-  entirely outside the boundary touches no job (T25: not a Workforce path; no claim about that work).
+  first-match order, fail closed); a healthy ledger then lets such a target reach rule 4 and rule 8.
+* Rule 4 by binding applies to the shell channel and to every preventable decision of a bound session, including
+  a target outside the boundary (S4A-A4). A write outside the boundary by an unbound session touches no job (not a
+  Workforce path; no claim about that work). A bound session may write only where its grant allows, and a grant
+  names boundary-relative paths only, so a bound session's target outside the boundary is `out-of-scope` (T25).
 * Rule 5 checks, for an in-boundary target, the jobs the session is bound to whose scope or `jobs/<job>/` tree holds
   the target (or all of its bound jobs when none does), and allows when `grant.check` allows for one of them.
 * `stale-session` = the session held an earlier binding of a role whose current binding is another session or a
@@ -72,7 +75,7 @@ REASONS: tuple[str, ...] = (
     "recovery-open", "cancelled", "authority-none", "authority-proposed", "authority-expired", "authority-revoked",
     "authority-voided", "authority-malformed",
     "stale-session", "not-current-binding", *_GRANT_CHECK_REASONS,
-    "unbound-session", "shell-not-preventable", "outside-boundary", "not-mediated", "gate-error")
+    "unbound-session", "shell-not-preventable", "out-of-scope", "outside-boundary", "not-mediated", "gate-error")
 
 _PATH_KEY = {"Write": "file_path", "Edit": "file_path", "NotebookEdit": "notebook_path"}
 _DRIVE = re.compile(r"^[A-Za-z]:")
@@ -359,7 +362,7 @@ def _decide(payload: dict, out: dict, *, root: str, db_path: str, now: str, gate
         by_path = sorted({j for j, (_, ctr) in ledger.items() for t in targets if _in_job(t, j, ctr)})
         status = {j: _session_on_job(conn, j, rows, session) for j, (rows, _) in ledger.items()}
         bound = sorted(j for j, (s, _) in status.items() if s == "bound")
-        touched = sorted(set(by_path) | (set(bound) if (channel == "shell" or targets) else set()))
+        touched = sorted(set(by_path) | (set(bound) if (channel == "shell" or targets or outside) else set()))
         out["jobs"] = touched
         # rule 2 (cont.): chain tail of every touched job (D-S4-4)
         try:
@@ -386,7 +389,9 @@ def _decide(payload: dict, out: dict, *, root: str, db_path: str, now: str, gate
             out.update(decision="allow", reason="shell-not-preventable")
             return out
         if outside and not targets:
-            out.update(decision="allow", reason="outside-boundary")  # rule 8, T25
+            if bound:
+                raise _Deny("out-of-scope", touched)  # rule 8, T25: a bound session stays inside its grant
+            out.update(decision="allow", reason="outside-boundary")  # rule 8: unbound, not a Workforce path
             return out
         for t in targets:
             owners = [j for j in by_path if _in_job(t, j, ledger[j][1])]
