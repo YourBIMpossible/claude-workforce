@@ -11,6 +11,9 @@ ENV = "WF_TEST_FAULTS"
 KNOWN = {
     "delay-precommit", "delay-postcommit", "delay-aborting",
     "commit-error", "guard-bypass", "kill-before-commit", "marker-unwritable",
+    # B2 slice 2 (INTERFACE-CONTRACT-S2 section 4): recovery kill points, honoured by the wiring after the named
+    # transaction has committed (os._exit(3), same mechanism as kill-before-commit); fixtures-tmp ledgers only.
+    "recover-kill-after-open", "recover-kill-mid-reconcile", "recover-kill-before-close",
 }
 
 

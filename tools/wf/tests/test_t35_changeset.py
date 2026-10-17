@@ -26,6 +26,7 @@ from wfcore import canon, changeset, pathpolicy  # noqa: E402
 
 # CONTRACT (test_wf): write jobs/j/work/**, read tools/wf/**, watch ledger/**, presence_only fixtures/results/**,
 # exclusions 01-PROJECT-BRIEF.md.
+P1_W = "jobs/j/work/w.txt"
 P2_A = "tools/wf/a.py"
 P2_B = "tools/wf/sub/b.py"
 PRES = "fixtures/results/r.json"
@@ -45,7 +46,7 @@ class ChangesetModule(Base):
     def _seed(self) -> None:
         _write(self.dir, P2_A, "a"); _write(self.dir, P2_B, "b"); _write(self.dir, PRES, "{}")
         _write(self.dir, "ledger/l.db", "not walked"); _write(self.dir, "jobs/j/export/head.json", "not walked")
-        _write(self.dir, "jobs/j/work/w.txt", "write scope: not captured")
+        _write(self.dir, P1_W, "write scope: captured since S2 A-2")
 
     def test_boundary_root_rule(self):
         """Parent of a directory named `ledger` (same rule as paths.jobs_dir); any other name -> None (blocker)."""
@@ -53,17 +54,20 @@ class ChangesetModule(Base):
         self.assertIsNone(changeset.boundary_root(os.path.join(self.dir, "store", "l.db")))
         self.assertIsNone(changeset.boundary_root(os.path.join(self.dir, "l.db")))
 
-    def test_baseline_captures_P2_hashes_presence_only_existence_and_nothing_else(self):
+    def test_baseline_captures_P1_P2_hashes_presence_only_existence_and_nothing_else(self):
+        """S2 A-2: write-scope (P1) files are captured with sha256+size like read-scope/watch files."""
         self._seed()
         b = changeset.baseline(self.dir, CONTRACT)
         self.assertEqual(b["problems"], [])
-        self.assertEqual(sorted(b["entries"]), [PRES, P2_A, P2_B])
+        self.assertEqual(sorted(b["entries"]), [PRES, P1_W, P2_A, P2_B])
+        self.assertEqual(b["entries"][P1_W], {"sha256": canon.sha256_bytes(b"write scope: captured since S2 A-2"),
+                                              "size": len("write scope: captured since S2 A-2")})
         self.assertEqual(b["entries"][PRES], {"present": True})
         self.assertEqual(b["entries"][P2_A], {"sha256": canon.sha256_bytes(b"a"), "size": 1})
         self.assertNotIn("ledger/l.db", b["entries"]); self.assertNotIn("jobs/j/export/head.json", b["entries"])
-        self.assertNotIn("jobs/j/work/w.txt", b["entries"])
         self.assertEqual(b["scopes"], {"read_scope": ["tools/wf/**"], "watch": ["ledger/**"],
-                                       "presence_only": ["fixtures/results/**"]})
+                                       "presence_only": ["fixtures/results/**"], "write_scope": ["jobs/j/work/**"]})
+        self.assertIn("write_scope", b["method"])
         self.assertIn(pathpolicy.NOT_DETECTED, b["limitations"])
         self.assertTrue(any("ledger/**" in x and "not walked" in x for x in b["limitations"]), b["limitations"])
         json.dumps(b); canon.sha256_obj(b)  # chain-protected payload must canonicalise
@@ -76,10 +80,12 @@ class ChangesetModule(Base):
         os.remove(os.path.join(self.dir, *P2_B.split("/")))            # deleted
         _write(self.dir, "tools/wf/c.py", "c")                         # added
         os.remove(os.path.join(self.dir, *PRES.split("/")))            # presence-only deleted
-        _write(self.dir, "jobs/j/work/new.txt", "P1: not observed")
+        _write(self.dir, "jobs/j/work/new.txt", "P1: observed since A-2")   # P1 added
+        _write(self.dir, P1_W, "P1 modified")                                # P1 modified
         _write(self.dir, "ledger/l.db", "changed but not walked")
         c = changeset.compare(self.dir, CONTRACT, b)
-        self.assertEqual((c["added"], c["modified"], c["deleted"]), (["tools/wf/c.py"], [P2_A], [PRES, P2_B]))
+        self.assertEqual((c["added"], c["modified"], c["deleted"]),
+                         (["jobs/j/work/new.txt", "tools/wf/c.py"], [P1_W, P2_A], [PRES, P2_B]))
         self.assertEqual(c["problems"], [])
         self.assertIn(pathpolicy.NOT_DETECTED, c["limitations"])
 
@@ -152,6 +158,52 @@ class ChangesetModule(Base):
         self.assertEqual(b["problems"], [])
         self.assertFalse(any(k.startswith("tools/wf/link") for k in b["entries"]), b["entries"])
         self.assertIn("skipped link or reparse point: tools/wf/link", b["limitations"])
+
+    # ---- S2 A-2: write-scope walk (D-S1-5 option B)
+
+    def test_A2_write_scope_added_modified_deleted_detected(self):
+        """An unrecorded P1 change appears in compare: added, modified and deleted write-scope files."""
+        _write(self.dir, "jobs/j/work/keep.txt", "k"); _write(self.dir, "jobs/j/work/edit.txt", "e")
+        _write(self.dir, "jobs/j/work/sub/gone.txt", "g")
+        b = changeset.baseline(self.dir, CONTRACT)
+        self.assertEqual(sorted(b["entries"]), ["jobs/j/work/edit.txt", "jobs/j/work/keep.txt",
+                                                "jobs/j/work/sub/gone.txt"])
+        _write(self.dir, "jobs/j/work/edit.txt", "edited")
+        os.remove(os.path.join(self.dir, "jobs", "j", "work", "sub", "gone.txt"))
+        _write(self.dir, "jobs/j/work/new/added.txt", "a")
+        c = changeset.compare(self.dir, CONTRACT, b)
+        self.assertEqual((c["added"], c["modified"], c["deleted"], c["problems"]),
+                         (["jobs/j/work/new/added.txt"], ["jobs/j/work/edit.txt"], ["jobs/j/work/sub/gone.txt"], []))
+        self.assertFalse(any("write scope is not walked" in x for x in c["limitations"]), c["limitations"])
+
+    def test_A2_link_under_write_scope_is_never_followed(self):
+        outside = os.path.join(self.dir, "outside-the-walk"); os.makedirs(outside)
+        _write(outside, "secret.txt", "must not be hashed")
+        _write(self.dir, "jobs/j/work/real.txt", "r")
+        link = os.path.join(self.dir, "jobs", "j", "work", "link")
+        try:
+            os.symlink(outside, link, target_is_directory=True)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"symlink not creatable here: {type(exc).__name__}")
+        b = changeset.baseline(self.dir, CONTRACT)
+        self.assertEqual(b["problems"], [])
+        self.assertEqual(sorted(b["entries"]), ["jobs/j/work/real.txt"])
+        self.assertIn("skipped link or reparse point: jobs/j/work/link", b["limitations"])
+        c = changeset.compare(self.dir, CONTRACT, b)
+        self.assertEqual((c["added"], c["modified"], c["deleted"]), ([], [], []))
+
+    def test_A2_pre_A2_baseline_reports_present_P1_files_as_added(self):
+        """A baseline recorded before A-2 has no write-scope entries: compare reports every present P1 file as added
+        (S2 A-2 note: correct and honest)."""
+        self._seed()
+        pre = changeset.baseline(self.dir, dict(CONTRACT, write_scope=[]))   # the pre-A-2 walk: no write scope
+        self.assertNotIn(P1_W, pre["entries"])
+        c = changeset.compare(self.dir, CONTRACT, pre)
+        self.assertEqual((c["added"], c["modified"], c["deleted"], c["problems"]), ([P1_W], [], [], []))
+
+    def test_A2_write_scope_whole_tree_glob_fails_closed(self):
+        b = changeset.baseline(self.dir, dict(CONTRACT, write_scope=["**"]))
+        self.assertTrue(any("write_scope" in x and "no static prefix" in x for x in b["problems"]), b["problems"])
 
     def test_malformed_baseline_is_a_problem(self):
         self._seed()

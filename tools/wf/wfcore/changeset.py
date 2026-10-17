@@ -11,15 +11,19 @@ Interfaces (fixed by White's wiring; keep the signatures):
   compare(root, contract, baseline) -> dict {"added", "modified", "deleted", "problems", "limitations"}
 
 What is walked, and nothing else: the static directory prefix (the components before the first glob character) of
-every `read_scope`, `watch` and `presence_only` glob, under `root`, with `os.walk(followlinks=False)`. Never the
+every `read_scope`, `watch`, `presence_only` and `write_scope` glob (S2 A-2: the write scope is walked too, D-S1-5
+option B), under `root`, with `os.walk(followlinks=False)`. Never the
 whole tree, never the ledger directory (`<ledger_rel>/`), never a job export directory (`jobs/<job>/export/`): both
 are the spec 4.4 P4 coordination set, checked by `wf verify`, not hashed. Every directory or file entry that is a
 symlink or a Windows reparse point (junction) is skipped and recorded under `limitations`, never followed. A glob
 with no static prefix (`**`, `*`) cannot be walked without scanning the whole root and is a `problem` (fail closed).
 
 Entries: a file matching a `presence_only` glob is recorded as {"present": true} and is NEVER opened, hashed or
-sized; a file matching a `read_scope` or `watch` glob is recorded as {"sha256", "size"}; a file matching none is
-not recorded (write-scope files are P1 and not compared). Matching uses pathpolicy's resolution and glob rules.
+sized; a file matching a `read_scope`, `watch` or `write_scope` glob is recorded as {"sha256", "size"}, so an
+unrecorded P1 (write-scope) change appears in `compare` as added / modified / deleted (S2 A-2); a file matching none
+is not recorded. Matching uses pathpolicy's resolution and glob rules.
+A baseline captured before A-2 holds no write-scope entries: `compare` then reports every present write-scope file
+as `added` - correct and honest; a fixture that needs the new form regenerates the baseline.
 An unreadable file is a `problem` (fail closed), never skipped. Paths are repo-relative forward-slash strings.
 
 `compare`: the same walk now against `baseline["entries"]`: added = now and not in baseline, deleted = baseline and
@@ -42,9 +46,9 @@ from .canon import sha256_file
 
 __all__ = ["boundary_root", "baseline", "compare", "walk_entries", "METHOD"]
 
-METHOD = ("static-prefix walk of read_scope/watch/presence_only under the boundary root; sha256+size for "
-          "read_scope/watch files; existence only for presence_only files (never opened); symlinks and reparse "
-          "points skipped; the ledger directory and jobs/*/export/ never walked")
+METHOD = ("static-prefix walk of read_scope/watch/presence_only/write_scope under the boundary root; sha256+size "
+          "for read_scope/watch/write_scope files; existence only for presence_only files (never opened); symlinks "
+          "and reparse points skipped; the ledger directory and jobs/*/export/ never walked")
 NOT_DETECTED = pathpolicy.NOT_DETECTED
 _LIMITS: tuple[str, ...] = (
     NOT_DETECTED,
@@ -54,7 +58,7 @@ _LIMITS: tuple[str, ...] = (
     "a change made between this walk and the ledger write is not observed",
 )
 _GLOB_CHARS = "*?["
-_SCOPE_KEYS = ("read_scope", "watch", "presence_only")
+_SCOPE_KEYS = ("read_scope", "watch", "presence_only", "write_scope")  # S2 A-2: write_scope walked
 
 
 def boundary_root(db_path: str) -> str | None:
@@ -106,7 +110,7 @@ def walk_entries(root: str, contract: dict) -> tuple[dict[str, dict], list[str],
         return entries, problems, limitations
     root_abs = os.path.abspath(root)
     presence = scopes["presence_only"]
-    hashed = scopes["read_scope"] + scopes["watch"]
+    hashed = scopes["read_scope"] + scopes["watch"] + scopes["write_scope"]
     prefixes: list[str] = []
     for key in _SCOPE_KEYS:
         for gg in scopes[key]:
