@@ -9,7 +9,7 @@ import time
 from typing import Any
 
 from . import db as dbm
-from . import bind, changeset, checkpointcmp, export, markers, pathpolicy, paths, reconcile, txn
+from . import bind, changeset, checkpointcmp, export, grant, markers, observe, pathpolicy, paths, reconcile, txn
 from .canon import canonical, sha256_file, sha256_obj, sha256_text
 from .db import OpLog, WfRefused, WfRejected, WfUsage
 from .faults import Faults
@@ -42,6 +42,19 @@ def _ctx(conn: sqlite3.Connection, job: str) -> tuple[str | None, dict | None]:
 RECOVERY_TYPES = ("recovery-opened", "exception-acknowledged", "recovery-closed")
 
 
+def _now() -> str:
+    """INTERFACE-CONTRACT-S3 A1.4: the instant passed to grant.authority, YYYY-MM-DDTHH:MM:SSZ."""
+    return validate.now_ts()[:19] + "Z"
+
+
+def _author_binding(conn: sqlite3.Connection, job: str, role: str) -> dict[str, Any] | None:
+    """The author's explicit binding as grant.mutation_guard / grant.check expect it, or None (implicit mode)."""
+    b = bind.active_roles(conn, job).get(role)
+    if b is None:
+        return None
+    return {"role": b.role, "tools": list(getattr(b, "tools", ()) or ()), "paths": list(getattr(b, "paths", ()) or ())}
+
+
 def _guard(conn: sqlite3.Connection, job: str, *, etype: str, role: str, session: str, generation: int,
            msg_id: str, contract_sha: str | None) -> list[dict[str, Any]]:
     """B2 slice 1 (INTERFACE-CONTRACT 3-6, spec 3A step 2 and 5 rules 4-5): runs inside the write transaction
@@ -57,6 +70,8 @@ def _guard(conn: sqlite3.Connection, job: str, *, etype: str, role: str, session
             raise WfRejected("recovery-open", f"recovery is open since seq {opened}; only `wf recover` and read-only "
                              "commands run (spec 3B)", opened_seq=opened)
     if etype != "contract":
+        # INTERFACE-CONTRACT-S3 section 3: one authority() for this guard and for grant-check, on every call.
+        grant.mutation_guard(rows, job=job, now=_now(), etype=etype, binding=_author_binding(conn, job, role))
         bind.check_actor(conn, job, role=role, session=session, generation=generation, etype=etype, msg_id=msg_id,
                          contract_sha=contract_sha or "")
         reconcile.check_actor(rows, role=role, etype=etype)
@@ -209,7 +224,7 @@ def grant_propose(db: str, job: str, grant_src: str, msg_id: str, role: str, ses
             conn.close()
         if row is None:  # pragma: no cover — the row was just committed
             raise WfRefused(f"proposed grant row {job}/{res['seq']} not readable")
-        text, h = _block(job, json.loads(row["content"]), res["seq"])
+        text, h = grant.block(job, json.loads(row["content"]), res["seq"])
         res.update(block=json.loads(text), block_hash=h, block_text=_render_block(text, h))
     return res
 
@@ -240,7 +255,7 @@ def grant_activate(db: str, job: str, owner_hash: str, quote: str, turn: str, ms
         g = _latest_grant(conn, job)
         if g is None or g.get("state") != "proposed":
             raise WfRefused("no proposed grant to activate")
-        text, h = _block(job, g, g["_seq"])
+        text, h = grant.block(job, g, g["_seq"])
         if not h.startswith(oh):
             raise WfRejected("unbound-approval", f"owner hash {oh[:12]} does not match block hash {h[:12]}")
         content = {k: v for k, v in g.items() if not k.startswith("_") and k != "contract_sha256"}
@@ -324,7 +339,16 @@ def status(db: str, job: str) -> dict[str, Any]:
     return {"job": job, "axes": _axes(rows, c, marks), "closed": closed,
             "head": {"seq": head["seq"], "self": head["self"]} if head else {"seq": 0, "self": None},
             "contract_sha256": c["sha256"], "events": len(rows), "pending_markers": marks,
-            "recovery": _recovery_state(rows)}
+            "recovery": _recovery_state(rows), "authority": _authority_view(job, rows)}
+
+
+def _authority_view(job: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    a = grant.authority(rows, job=job, now=_now())
+    out = {"state": a.get("state"), "reason": a.get("reason"), "grant_id": a.get("grant_id"),
+           "block_hash": a.get("block_hash"), "expiry": a.get("expiry")}
+    if a.get("state") == "cancelled":
+        out["limitation"] = grant.CANCEL_LIMITATION
+    return out
 
 
 def _recovery_state(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -478,6 +502,14 @@ def digest(db: str, job: str) -> dict[str, Any]:
         need("claimant conflict", "roles blocked: " + ", ".join(map(str, axes["blocked_roles"])),
              "settle the conflicting role assignment (owner-only); no dependent work until then",
              [_ref(job, s) for s in conflict_seqs])
+    authority = _authority_view(job, rows)
+    if authority["state"] == "cancelled":
+        need("cancelled", "the job was cancelled; later work recorded through wf is refused",
+             "abandon and close the job, or start a new job (D-S3-2). " + grant.CANCEL_LIMITATION, [])
+    elif authority["state"] in ("expired", "revoked", "voided", "malformed"):
+        need(f"authority {authority['state']}", f"grant authority is {authority['state']} ({authority['reason']}); "
+             "mediated work is refused", "renew: `wf grant propose`, then the owner confirms and `wf grant activate`",
+             [])
     if recovery["open"]:
         need("recovery open", f"recovery opened at seq {recovery['opened_seq']} ({recovery['reason']}); ordinary "
              f"mutations refuse; {recovery['pending']} of {recovery['exceptions']} exceptions unacknowledged",
@@ -550,7 +582,8 @@ def digest(db: str, job: str) -> dict[str, Any]:
             "ars": [{"grant_id": g["grant_id"], "activation_seq": g["activation_seq"], "ars": g["ars"]} for g in grants],
             "bindings": ({"source": BINDING_SOURCE_EXPLICIT, "rows": explicit_rows} if explicit
                          else {"source": BINDING_SOURCE, "rows": list(bindings.values())}),
-            "evidence": evidence, "identity_note": IDENTITY_NOTE}
+            "evidence": evidence, "identity_note": IDENTITY_NOTE,
+            "authority": authority, "interventions": grant.intervention_summary(rows)}
 
 
 # ---------------------------------------------------------------- verify / checkpoint
@@ -873,11 +906,12 @@ def bind_cmd(db: str, job: str, *, bind_role: str, bind_session: str, bind_gener
             raise WfRefused("job has no contract")
         _guard(conn, job, etype="bind", role=role, session=session, generation=generation, msg_id=msg_id,
                contract_sha=csha)
-        grant = _latest_grant(conn, job)
+        auth = grant.authority(dbm.rows(conn, job), job=job, now=_now())
+        g = _latest_grant(conn, job) if auth["state"] == "in-force" else None  # S3 section 3: bind needs authority in force
         t, p = _scope_defaults(contract, bind_role, tools, paths_)
         content = bind.validate_bind(conn, job, role=bind_role, session=bind_session, generation=bind_generation,
-                                     tools=t, paths=p, author_session=session, grant=grant,
-                                     grant_seq=grant["_seq"] if grant else None,
+                                     tools=t, paths=p, author_session=session, grant=g,
+                                     grant_seq=g["_seq"] if g else None,
                                      state=validate.existing_state(conn, job))
         holder.update(binding={"role": bind_role, "session": bind_session, "generation": bind_generation})
         return build_row(conn, job, head_seq, head_self, etype="bind", msg_id=msg_id, author_role=role,
@@ -1154,6 +1188,127 @@ def recover_decide(db: str, job: str, *, decision: str, restore_paths: list[str]
 
     res = txn.write_event(db, job, faults, oplog, build=build, session=session)
     res.update(holder)
+    return res
+
+
+# ---------------------------------------------------------------- slice 3: lifecycle, grant-check, cancel, observe
+
+def _lifecycle_end(db: str, job: str, *, etype: str, reason: str, turn: str, msg_id: str, role: str, session: str,
+                   generation: int, faults: Faults, oplog: OpLog) -> dict[str, Any]:
+    """`wf grant revoke|expire` (spec 2B l.48, 4.1; INTERFACE-CONTRACT-S3 sections 1-3). Ends the current in-force
+    revision at once; renewal stays possible (propose + owner confirmation + activate)."""
+    check_job_id(job)
+    holder: dict[str, Any] = {}
+
+    def build(conn: sqlite3.Connection, head_seq: int, head_self: str) -> dict[str, Any]:
+        csha, contract = _ctx(conn, job)
+        if contract is None:
+            raise WfRefused("job has no contract")
+        rows = _guard(conn, job, etype=etype, role=role, session=session, generation=generation, msg_id=msg_id,
+                      contract_sha=csha)
+        a = grant.authority(rows, job=job, now=_now())
+        content = {"grant_id": a.get("grant_id"), "block_hash": a.get("block_hash"), "reason": reason,
+                   "owner_turn": turn}
+        grant.validate_revoke(rows, job=job, now=_now(), content=content)
+        holder.update(grant_id=a.get("grant_id"), block_hash=a.get("block_hash"))
+        return build_row(conn, job, head_seq, head_self, etype=etype, msg_id=msg_id, author_role=role,
+                         session_id=session, generation=generation, reply_to=None, grant_ref=a.get("grant_id"),
+                         content=content, contract_sha=csha, contract_content=contract)
+
+    res = txn.write_event(db, job, faults, oplog, build=build, session=session)
+    res.update(holder)
+    return res
+
+
+def grant_revoke(db: str, job: str, *, reason: str, turn: str, **kw: Any) -> dict[str, Any]:
+    return _lifecycle_end(db, job, etype="grant-revoked", reason=reason, turn=turn, **kw)
+
+
+def grant_expire(db: str, job: str, *, reason: str, turn: str, **kw: Any) -> dict[str, Any]:
+    return _lifecycle_end(db, job, etype="grant-expired", reason=reason, turn=turn, **kw)
+
+
+def grant_check_cmd(db: str, job: str, *, check_role: str, action: str, path: str) -> dict[str, Any]:
+    """`wf grant-check` (spec 4.1; INTERFACE-CONTRACT-S3 section 4): pure, read-only; same authority() as the guard."""
+    check_job_id(job)
+    conn = dbm.connect(db, create=False)
+    try:
+        with dbm.read_snapshot(conn):
+            c = dbm.contract(conn, job)
+            if c is None:
+                raise WfRefused(f"job {job} not found")
+            rows = dbm.rows(conn, job)
+            binding = _author_binding(conn, job, check_role)
+    finally:
+        conn.close()
+    contract = json.loads(c["content"])
+    res = grant.check(rows, job=job, now=_now(), role=check_role, action=action, path=path, contract=contract,
+                      binding=binding)
+    return dict(res, job=job, role=check_role, action=action, path=path)
+
+
+def cancel(db: str, job: str, *, reason: str, turn: str, msg_id: str, role: str, session: str, generation: int,
+           faults: Faults, oplog: OpLog) -> dict[str, Any]:
+    """`wf cancel` (spec 4.1, 6.3; INTERFACE-CONTRACT-S3 section 5). Records the owner's cancellation."""
+    check_job_id(job)
+
+    def build(conn: sqlite3.Connection, head_seq: int, head_self: str) -> dict[str, Any]:
+        csha, contract = _ctx(conn, job)
+        if contract is None:
+            raise WfRefused("job has no contract")
+        rows = _guard(conn, job, etype="job-cancelled", role=role, session=session, generation=generation,
+                      msg_id=msg_id, contract_sha=csha)
+        content = {"reason": reason, "owner_turn": turn}
+        grant.validate_cancel(rows, job=job, content=content)
+        return build_row(conn, job, head_seq, head_self, etype="job-cancelled", msg_id=msg_id, author_role=role,
+                         session_id=session, generation=generation, reply_to=None, grant_ref=None,
+                         content=content, contract_sha=csha, contract_content=contract)
+
+    res = txn.write_event(db, job, faults, oplog, build=build, session=session)
+    res.update(limitation=grant.CANCEL_LIMITATION)
+    return res
+
+
+def log_intervention(db: str, job: str, *, label: str, necessity: str, minutes: str, note: str, msg_id: str,
+                     role: str, session: str, generation: int, faults: Faults, oplog: OpLog) -> dict[str, Any]:
+    """`wf log-intervention` (spec 4.1, 6.2 step 6). Minutes are an integer or `unknown`, never estimated."""
+    m: int | str
+    if minutes == "unknown":
+        m = "unknown"
+    else:
+        try:
+            m = int(minutes)
+        except ValueError:
+            raise WfUsage("--minutes must be a non-negative integer or 'unknown'") from None
+    content = {"label": label, "necessity": necessity, "minutes": m, "note": note or ""}
+    return _append(db, job, faults, oplog, etype="intervention", content=content, msg_id=msg_id, role=role,
+                   session=session, generation=generation)
+
+
+def observe_cmd(db: str, job: str) -> dict[str, Any]:
+    """`wf observe` (spec 4.1, 6.2 step 1, 7; INTERFACE-CONTRACT-S3 section 5). Read-only on the ledger; its only
+    write is the bounded observation log. No contact, resume, launch or recovery."""
+    check_job_id(job)
+    conn = dbm.connect(db, create=False)
+    try:
+        with dbm.read_snapshot(conn):
+            c = dbm.contract(conn, job)
+            if c is None:
+                raise WfRefused(f"job {job} not found")
+            rows = dbm.rows(conn, job)
+    finally:
+        conn.close()
+    contract = json.loads(c["content"])
+    th, notes = observe.thresholds(contract if isinstance(contract, dict) else {})
+    now = _now()
+    res = observe.classify(rows, now=now, thresholds=th)
+    res = dict(res)
+    res["uncertainty"] = list(res.get("uncertainty", [])) + [n for n in notes if n not in res.get("uncertainty", [])]
+    res["authority"] = _authority_view(job, rows)
+    entry = {"job": job, "now": now, "class": res.get("class"), "evidence_seqs": [e.get("seq") for e in res.get("evidence", [])],
+             "authority": res["authority"]["state"]}
+    res["log"] = observe.append_log(db, job, entry)
+    res["job"] = job
     return res
 
 
