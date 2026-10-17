@@ -12,6 +12,8 @@ What this module decides, as pure checks and computations over rows already read
 * `compute_report(...)` - the §4 `reconcile-report` content: `classification` of every in-scope path into the
   frozen CLASSES (S2 A-3 precedence), `exceptions` (ids `X1..` in path order) for every matches-neither,
   attempt-without-completion and receipt-bearing matches-baseline item, `gate_log: null` (no gate in R1: unavailable, never "no attempts"), `problems` from `changeset.compare`
+  (B2 slice 4a, S4L: optional `gate_attempts` from the gate log add allowed preventable attempts with no later
+  receipt as attempt-without-completion; `gate_log` stays null and `limitations` names the source),
   (non-empty -> `WfRefused`, the caller appends nothing), `limitations`.
 * `state(rows, role)` / `check_actor(rows, role=, etype=)` - unreconciled = the role's latest report has no later
   `ack-reconcile` naming its seq (D-S1-3: zero exceptions still need the ack); while unreconciled every mutation of
@@ -36,11 +38,13 @@ Not here (other lanes / excluded): bind and ARS (S1B), command wiring and CLI (S
 """
 from __future__ import annotations
 
+import fnmatch
 import json
 import os
 import posixpath
 import sqlite3
 import stat
+from datetime import datetime, timezone
 from typing import Any
 
 from . import changeset, export
@@ -67,9 +71,16 @@ UNRESOLVABLE = "unresolvable path {}: filesystem state unknown; inspection limit
 _UNRESOLVABLE_PREFIX, _UNRESOLVABLE_SUFFIX = UNRESOLVABLE.split("{}")
 #: The only writing role in R1, hence the only reconcilable role in this slice (§9).
 REPORT_ROLE = "builder"
+_R1_GATE_LIMIT = "no gate in R1: gate_log is null (unavailable), never a count of attempts"
+#: B2 slice 4a (INTERFACE-CONTRACT-S4A section 5): the limitation when `gate_attempts` is None.
+GATE_NOT_CONSULTED = "gate log not consulted"
+#: ... and the one naming the source when attempts are supplied (replaces the R1 line above).
+GATE_SOURCE = ("gate attempts consulted (source: gate attempts): an allowed preventable write attempt on a write-scope "
+               "path with no receipt for that path at or after the attempt is attempt-without-completion; shell "
+               "invocations never classify a path; attempt times have one-second resolution; gate_log stays null")
 _LIMITS: tuple[str, ...] = (
     "in-scope paths are the union of changeset.compare and every path named by an intent or receipt",
-    "no gate in R1: gate_log is null (unavailable), never a count of attempts",
+    _R1_GATE_LIMIT,
     "links and reparse points are never followed; a path crossing one is unresolvable (sha_now and sha_baseline null)",
     "matches-baseline states only that the current content equals the recorded baseline; it never asserts that no "
     "operation executed",
@@ -209,8 +220,46 @@ def check_actor(rows: list[dict[str, Any]], *, role: str, etype: str) -> None:
 
 # ---------------------------------------------------------------------------------------------- report (§4 / T06)
 
+def _parse_ts(value: object) -> datetime | None:
+    """`YYYY-MM-DDTHH:MM:SS[.fff]Z` (ledger rows carry milliseconds, gate rows whole seconds) -> aware UTC."""
+    if not isinstance(value, str) or not value.endswith("Z"):
+        return None
+    try:
+        return datetime.fromisoformat(value[:-1]).replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def _open_gate_attempts(gate_attempts: list[dict] | None, contract: dict,
+                        receipt_times: dict[str, list[datetime]]) -> set[str]:
+    """S4A section 5: write-scope paths of allowed preventable gate attempts with no receipt at or after the
+    attempt. An attempt whose time cannot be read is never treated as completed."""
+    if not gate_attempts:
+        return set()
+    scope = [g for g in contract.get("write_scope", []) if isinstance(g, str)] if isinstance(contract, dict) else []
+    open_paths: set[str] = set()
+    for a in gate_attempts:
+        if not isinstance(a, dict) or a.get("decision") != "allow" or a.get("channel") != "preventable":
+            continue
+        paths = a.get("paths")
+        if paths is None and isinstance(a.get("paths_json"), str):
+            try:
+                paths = json.loads(a["paths_json"])
+            except ValueError:
+                paths = None
+        at = _parse_ts(a.get("ts"))
+        for path in paths if isinstance(paths, list) else []:
+            if not isinstance(path, str) or not path or not any(fnmatch.fnmatchcase(path, g) for g in scope):
+                continue
+            if at is not None and any(t >= at for t in receipt_times.get(path, [])):
+                continue
+            open_paths.add(path)
+    return open_paths
+
+
 def compute_report(root: str, contract: dict, baseline_manifest: dict, rows: list[dict[str, Any]], *, role: str,
-                   binding: tuple[str, int] | None, head_seq: int) -> dict[str, Any]:
+                   binding: tuple[str, int] | None, head_seq: int,
+                   gate_attempts: list[dict] | None = None) -> dict[str, Any]:
     """The §4 `reconcile-report` content for `role` covering the ledger through `head_seq`.
 
     Per in-scope path: an unresolvable path (A-4) -> matches-neither, `sha_now`/`sha_baseline` null, limitation
@@ -220,6 +269,11 @@ def compute_report(root: str, contract: dict, baseline_manifest: dict, rows: lis
     matches-neither. Exceptions: every matches-neither and attempt-without-completion row, and every matches-baseline
     row with a non-null `receipt_seq` (receipt says changed, disk says baseline). Deterministic: paths sorted,
     exception ids X1.. in that order. `problems` non-empty (compare failed closed) -> `WfRefused`.
+
+    `gate_attempts` (S4A section 5): rows from `gatelog.attempts`. An `allow` on the `preventable` channel for a
+    write-scope path with no receipt for that path at or after the attempt's time joins the in-scope set and takes
+    rule (1) (attempt-without-completion). Shell and other-channel rows and denials never classify a path. None
+    keeps today's behaviour and adds the limitation `GATE_NOT_CONSULTED`.
     """
     if role != REPORT_ROLE:
         raise WfRejected("role", f"nothing to reconcile for read-only role {role!r} (only the builder writes)")
@@ -230,6 +284,7 @@ def compute_report(root: str, contract: dict, baseline_manifest: dict, rows: lis
     entries = baseline_manifest.get("entries", {}) if isinstance(baseline_manifest, dict) else {}
     intents: dict[str, int] = {}                         # path -> latest intent seq
     receipts: dict[str, tuple[int, Any]] = {}            # path -> (latest receipt seq, sha_after)
+    receipt_times: dict[str, list[datetime]] = {}        # path -> receipt instants (gate rule)
     for r in rows:
         if int(r["seq"]) > head_seq or r["author_role"] != role or r["type"] not in ("intent", "receipt"):
             continue
@@ -241,9 +296,16 @@ def compute_report(root: str, contract: dict, baseline_manifest: dict, rows: lis
             intents[path] = int(r["seq"])
         else:
             receipts[path] = (int(r["seq"]), c.get("sha_after"))
+            at = _parse_ts(r.get("ts"))
+            if at is not None:
+                receipt_times.setdefault(path, []).append(at)
+    gate_open = _open_gate_attempts(gate_attempts, contract, receipt_times)
     in_scope = sorted(set(intents) | set(receipts) | set(cmp.get("added", [])) | set(cmp.get("modified", []))
-                      | set(cmp.get("deleted", [])))
-    limitations = [*_LIMITS, *cmp.get("limitations", [])]
+                      | set(cmp.get("deleted", [])) | gate_open)
+    if gate_attempts is None:
+        limitations = [*_LIMITS, *cmp.get("limitations", []), GATE_NOT_CONSULTED]
+    else:
+        limitations = [*(x for x in _LIMITS if x != _R1_GATE_LIMIT), GATE_SOURCE, *cmp.get("limitations", [])]
     classification: list[dict[str, Any]] = []
     for path in in_scope:
         intent_seq = intents.get(path)
@@ -261,7 +323,7 @@ def compute_report(root: str, contract: dict, baseline_manifest: dict, rows: lis
             base = next((e for k, e in entries.items() if isinstance(k, str) and k.lower() == rel), None)
         in_baseline = isinstance(base, dict)
         sha_baseline = base.get("sha256") if in_baseline else None
-        if intent_seq is not None and (receipt_seq is None or receipt_seq < intent_seq):
+        if (intent_seq is not None and (receipt_seq is None or receipt_seq < intent_seq)) or path in gate_open:
             cls = "attempt-without-completion"
         elif receipt_seq is not None and sha_now is not None and sha_now == sha_receipt:
             cls = "matches-receipt"

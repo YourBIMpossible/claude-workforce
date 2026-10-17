@@ -24,7 +24,7 @@ from typing import Any
 from unittest import mock
 
 from test_wf import Base, CONTRACT  # noqa: E402
-from wfcore import changeset, db as dbm, reconcile, txn, validate  # noqa: E402
+from wfcore import changeset, db as dbm, gatelog, reconcile, txn, validate  # noqa: E402
 from wfcore.db import OpLog, WfRefused, WfRejected  # noqa: E402
 from wfcore.faults import Faults  # noqa: E402
 
@@ -495,6 +495,85 @@ class Schemas(_Engine):
                         content_fn=lambda conn, rows, head: reconcile.compute_report(
                             self.root(), CONTRACT, self.baseline(), rows, role="builder", binding=None, head_seq=head))
         self.assertEqual(cm.exception.reason, "role")
+
+
+class GateAttempts(_Engine):
+    """B2 slice 4a (INTERFACE-CONTRACT-S4A section 5, lane S4L): `compute_report(..., gate_attempts=...)`."""
+
+    @staticmethod
+    def attempt(path: str = WORK, *, ts: str = "2000-01-01T00:00:00Z", decision: str = "allow",
+                channel: str = "preventable", seq: int = 1) -> dict:
+        return {"seq": seq, "ts": ts, "session_id": "B1", "tool_name": "Write", "channel": channel,
+                "decision": decision, "reason": "x", "jobs": ["j"], "paths": [path]}
+
+    def compute_gate(self, attempts: list[dict] | None) -> dict:
+        rows = self.rows()
+        return reconcile.compute_report(self.root(), CONTRACT, self.baseline(), rows, role="builder",
+                                        binding=("B1", 1), head_seq=rows[-1]["seq"], gate_attempts=attempts)
+
+    def test_none_keeps_behaviour_and_says_not_consulted(self) -> None:
+        self.new_job(); self.activate()
+        self.builder_intent()
+        content = self.compute_gate(None)
+        self.assertEqual(content, self.compute())                       # default == explicit None
+        self.assertIn(reconcile.GATE_NOT_CONSULTED, content["limitations"])
+        self.assertIn("no gate in R1: gate_log is null (unavailable), never a count of attempts", content["limitations"])
+        self.assertNotIn(reconcile.GATE_SOURCE, content["limitations"])
+        self.assertIsNone(content["gate_log"])
+        self.assertEqual(content["exceptions"], [{"id": "X1", "path": WORK, "class": "attempt-without-completion"}])
+
+    def test_allowed_attempt_without_receipt_is_attempt_without_completion(self) -> None:
+        self.new_job(); self.activate()
+        content = self.compute_gate([self.attempt()])
+        row = self.by_path(content)[WORK]
+        self.assertEqual((row["class"], row["intent_seq"], row["receipt_seq"]), ("attempt-without-completion", None, None))
+        self.assertEqual(content["exceptions"], [{"id": "X1", "path": WORK, "class": "attempt-without-completion"}])
+        self.assertIn(reconcile.GATE_SOURCE, content["limitations"])
+        self.assertIn("gate attempts", reconcile.GATE_SOURCE)
+        self.assertNotIn(reconcile.GATE_NOT_CONSULTED, content["limitations"])
+        self.assertFalse(any(x.startswith("no gate in R1") for x in content["limitations"]))
+        self.assertIsNone(content["gate_log"])                            # schema: gate_log stays null
+        self.assertEqual(self.compute_gate([])["exceptions"], [])         # supplied but empty: nothing added
+
+    def test_later_receipt_completes_the_attempt_earlier_receipt_does_not(self) -> None:
+        self.new_job(); self.activate()
+        self.builder_intent()
+        self.write_file(WORK, "done")
+        self.builder_receipt(_sha("done"))
+        content = self.compute_gate([self.attempt(ts="2000-01-01T00:00:00Z")])      # receipt is later: completed
+        self.assertEqual(self.by_path(content)[WORK]["class"], "matches-receipt")
+        self.assertEqual(content["exceptions"], [])
+        content = self.compute_gate([self.attempt(ts="2999-01-01T00:00:00Z")])      # attempt after the receipt
+        self.assertEqual(self.by_path(content)[WORK]["class"], "attempt-without-completion")
+        content = self.compute_gate([self.attempt(ts="not a time")])                # unreadable: never completed
+        self.assertEqual(self.by_path(content)[WORK]["class"], "attempt-without-completion")
+
+    def test_denials_shell_other_and_out_of_scope_attempts_never_classify(self) -> None:
+        self.new_job(); self.activate()
+        attempts = [self.attempt(decision="deny"), self.attempt(channel="shell"), self.attempt(channel="other"),
+                    self.attempt("tools/wf/outside-write-scope.txt"), self.attempt("ledger/l.db")]
+        content = self.compute_gate(attempts)
+        self.assertEqual(content["classification"], [])
+        self.assertEqual(content["exceptions"], [])
+        self.assertIn(reconcile.GATE_SOURCE, content["limitations"])
+
+    def test_rows_from_the_real_gate_log_through_the_report_write(self) -> None:
+        self.new_job(); self.activate()
+        root = self.root()
+        d = {"decision": "allow", "reason": "allowed", "channel": "preventable", "session": "B1", "tool_name": "Write",
+             "jobs": ["j"], "paths": [WORK], "command_sha256": None, "command_length": None, "limitation": None}
+        gatelog.record(root, d, payload_sha256=_sha("payload"), ts="2000-01-01T00:00:00Z")
+        gatelog.record(root, dict(d, channel="shell", tool_name="Bash", paths=[]), payload_sha256=_sha("p2"),
+                       ts="2000-01-01T00:00:01Z")
+        attempts = gatelog.attempts(root, "j")
+        self.assertEqual(len(attempts), 2)
+        res = self._write(etype="reconcile-report", role="coordinator", session="C1",
+                          content_fn=lambda conn, rows, head: reconcile.compute_report(
+                              root, CONTRACT, self.baseline(), rows, role="builder", binding=("B1", 1),
+                              head_seq=head, gate_attempts=attempts))
+        content = self.report_content(res["seq"])                          # accepted by the section 4 schema
+        self.assertEqual(content["exceptions"], [{"id": "X1", "path": WORK, "class": "attempt-without-completion"}])
+        self.assertEqual(set(content) - {"contract_sha256"}, REPORT_KEYS)
 
 
 if __name__ == "__main__":

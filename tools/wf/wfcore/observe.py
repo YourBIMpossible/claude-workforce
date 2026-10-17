@@ -5,6 +5,11 @@ observation log `jobs/<job>/observe/observe.log` (JSON lines, newest LOG_MAX_ENT
 resumes, launches, binds or recovers a worker, and nothing writes the ledger (owner item 4). The only file this
 module writes is that log, through a staging file in the same directory and `os.replace`.
 
+B2 slice 4a (INTERFACE-CONTRACT-S4A section 5, lane S4L): `classify(..., gate_attempts=None)` takes gate-log rows.
+Attempts by a builder session (a session that authored a builder event) count as activity evidence, shell
+invocations as activity only, never as file changes; `gate_log.available` is true only when attempts are supplied
+(the wiring supplies them only when the gate log exists and verifies). None keeps today's behaviour.
+
 Imports are limited to the frozen set (section 6): stdlib and `.paths` (jobs dir). It must not import `.commands`,
 `.txn`, `.bind`, `.reconcile` or `.grant`.
 """
@@ -25,6 +30,9 @@ DEFAULT_THRESHOLDS: dict[str, float] = {"slow_s": 600.0, "silent_s": 1800.0}
 LOG_MAX_ENTRIES = 500
 GATE_UNAVAILABLE: str = "gate evidence unavailable in this release: tool activity between events is not observed"
 
+GATE_CONSULTED = ("gate attempts consulted: {} attempt(s) supplied; attempts by builder sessions count as activity; "
+                  "shell invocations count as activity, never as file changes")
+GATE_UNATTRIBUTED = "gate attempts from sessions with no builder event are not attributed to the builder"
 RECORDED_ONLY = "classification uses recorded events only; a session can be working without writing events"
 SILENT_NOT_STOPPED = "silent does not establish that the process stopped"
 # W-category execution events (section 5 "blocked" rule).
@@ -104,12 +112,22 @@ def _fmt_s(v: float) -> str:
     return f"{v:g}"
 
 
-def classify(rows: list[dict], *, now: str, thresholds: dict) -> dict:
+def _gate_evidence(a: dict) -> dict:
+    return {"seq": a.get("seq"), "type": "gate-attempt", "ts": a.get("ts"), "role": "builder",
+            "session": a.get("session_id"), "source": "gate-log", "tool_name": a.get("tool_name"),
+            "channel": a.get("channel")}
+
+
+def classify(rows: list[dict], *, now: str, thresholds: dict, gate_attempts: list[dict] | None = None) -> dict:
     """Section 5 rules, from recorded rows only:
     `blocked` when the latest execution event (intent/receipt/handoff/delivered/blocker) is a `blocker`; else
     `unknown` when no builder-authored event exists; else by the age of the latest builder event: below slow_s
     `active`, below silent_s `slow`, otherwise `silent`. `thresholds` that are not a valid pair fall back to the
-    defaults with a note. The gate statement and the recorded-events caveat are always present."""
+    defaults with a note. The gate statement and the recorded-events caveat are always present.
+
+    `gate_attempts` (S4A section 5): gate-log rows whose session authored a builder event are activity evidence;
+    the most recent of the latest builder event and the latest such attempt sets the age. Gate rows never decide
+    `blocked` and never stand for a file change."""
     uncertainty = [RECORDED_ONLY]
     problem = _threshold_problem(thresholds)
     if problem is None:
@@ -118,9 +136,16 @@ def classify(rows: list[dict], *, now: str, thresholds: dict) -> dict:
         th = dict(DEFAULT_THRESHOLDS)
         uncertainty.append(f"thresholds invalid ({problem}); defaults used: {_DEFAULTS_TEXT}")
 
+    if gate_attempts is None:
+        gate_log = {"available": False, "statement": GATE_UNAVAILABLE}
+        gate_rows: list[dict] = []
+    else:
+        gate_rows = [a for a in gate_attempts if isinstance(a, dict)]
+        gate_log = {"available": True, "statement": GATE_CONSULTED.format(len(gate_rows))}
+
     def result(cls: str, evidence: list[dict], basis: str) -> dict:
         return {"class": cls, "evidence": evidence, "basis": basis, "uncertainty": uncertainty,
-                "gate_log": {"available": False, "statement": GATE_UNAVAILABLE}, "thresholds": th, "now": now}
+                "gate_log": gate_log, "thresholds": th, "now": now}
 
     execution = _latest(rows, lambda r: r.get("type") in EXECUTION_TYPES)
     if execution is not None and execution.get("type") == "blocker":
@@ -128,11 +153,25 @@ def classify(rows: list[dict], *, now: str, thresholds: dict) -> dict:
                       f"the latest execution event (seq {execution['seq']}) is a blocker")
 
     builder = _latest(rows, lambda r: r.get("author_role") == "builder")
+    builder_sessions = {r.get("session_id") for r in rows if r.get("author_role") == "builder"}
+    attributed = [a for a in gate_rows if a.get("session_id") in builder_sessions]
+    if len(attributed) < len(gate_rows):
+        uncertainty.append(GATE_UNATTRIBUTED)
     if builder is None:
         return result("unknown", [], "no event authored by the builder role is recorded")
 
     ev = [_evidence(builder)]
     now_dt, at = _parse_ts(now), _parse_ts(builder.get("ts"))
+    latest_gate = _latest(attributed, lambda a: _parse_ts(a.get("ts")) is not None)
+    gate_at = _parse_ts(latest_gate.get("ts")) if latest_gate is not None else None
+    if gate_at is not None and (at is None or gate_at > at):
+        ev.insert(0, _gate_evidence(latest_gate))
+        at = gate_at
+        source = f"the latest builder gate attempt (gate seq {latest_gate['seq']}, {latest_gate.get('tool_name')})"
+    else:
+        if latest_gate is not None:
+            ev.append(_gate_evidence(latest_gate))
+        source = f"the latest builder event (seq {builder['seq']}, {builder.get('type')})"
     if now_dt is None:
         uncertainty.append(f"now is not a UTC instant in YYYY-MM-DDTHH:MM:SSZ form: {now!r}")
         return result("unknown", ev, "the age of the latest builder event cannot be computed")
@@ -142,9 +181,9 @@ def classify(rows: list[dict], *, now: str, thresholds: dict) -> dict:
 
     age = (now_dt - at).total_seconds()
     if age < -1.0:  # `now` is truncated to seconds and rows carry milliseconds, so up to 1 s early is expected
-        uncertainty.append(f"the latest builder event is {_fmt_s(-age)} s later than now; its age is taken as 0")
+        uncertainty.append(f"the latest builder activity is {_fmt_s(-age)} s later than now; its age is taken as 0")
     age = max(age, 0.0)
-    where = (f"the latest builder event (seq {builder['seq']}, {builder.get('type')}) is {_fmt_s(age)} s old; "
+    where = (f"{source} is {_fmt_s(age)} s old; "
              f"active below {_fmt_s(th['slow_s'])} s, slow below {_fmt_s(th['silent_s'])} s, silent from there")
     if age < th["slow_s"]:
         return result("active", ev, where)
