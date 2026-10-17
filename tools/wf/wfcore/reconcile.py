@@ -461,9 +461,16 @@ def unresolvable_paths(report: dict) -> list[str]:
     return out
 
 
+def _int_or_none(content: dict, key: str) -> bool:
+    """The key is present and holds an int or None (None = the wiring found no row to cite; WF-001 F1)."""
+    return key in content and (content[key] is None or _is_int(content[key]))
+
+
 def validate_recovery_decision(rows: list[dict[str, Any]], *, job: str, binding: tuple[str, int] | None,
                                stopped_seq: int | None, content: dict) -> None:
-    """`recovery-decision` (S2 §1, §6.2 step 4), in the contract's order: malformed -> no-report (no reconcile-report
+    """`recovery-decision` (S2 §1, §6.2 step 4), in the contract's order: malformed (`report_seq` / `stop_seq` may be
+    None: the wiring passes None when it finds no row to cite, so the two refusals below stay reachable; any other
+    non-int is malformed) -> no-report (no reconcile-report
     for the role) -> stale-report (`report_seq` not the latest) -> termination-unconfirmed (`stopped_seq` None or
     != `stop_seq`) -> invalid-decision (decision outside DECISIONS; restore without `restore_paths`; a restore path
     not classified in the report; `unresolved` not naming every A-4 path of the report exactly once, naming a
@@ -471,8 +478,8 @@ def validate_recovery_decision(rows: list[dict[str, Any]], *, job: str, binding:
     wiring resolves it; the frozen refusal list derives nothing from it, so it is accepted and not read."""
     del binding
     if not isinstance(content, dict) or not _nonempty_str(content.get("decision")) \
-            or content.get("role") != REPORT_ROLE or not _is_int(content.get("report_seq")) \
-            or not _is_int(content.get("stop_seq")) or not isinstance(content.get("restore_paths"), list) \
+            or content.get("role") != REPORT_ROLE or not _int_or_none(content, "report_seq") \
+            or not _int_or_none(content, "stop_seq") or not isinstance(content.get("restore_paths"), list) \
             or not all(isinstance(p, str) for p in content["restore_paths"]) \
             or not isinstance(content.get("unresolved"), list) \
             or not all(isinstance(u, dict) and set(u) == {"path", "disposition"} and isinstance(u["path"], str)

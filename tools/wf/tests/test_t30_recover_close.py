@@ -310,7 +310,14 @@ class RecoveryDecision(_Engine):
         self.refused("malformed", self._dec(role="reviewer"))
         self.refused("malformed", {k: v for k, v in self._dec().items() if k != "restore_paths"})
         self.refused("malformed", self._dec(unresolved=[{"path": "../x.txt"}]))
+        self.refused("malformed", self._dec(report_seq="4"))                          # non-None wrong type
+        self.refused("malformed", self._dec(stop_seq=3.0))
         self.refused("no-report", self._dec(), rows=self._rows()[:2])
+        # WF-001 F1: None means the wiring found no row to cite; the frozen refusals must be reachable
+        self.refused("no-report", self._dec(report_seq=None), rows=self._rows()[:2])
+        self.refused("stale-report", self._dec(report_seq=None))                       # a report exists
+        self.refused("termination-unconfirmed", self._dec(stop_seq=None))              # report ok, no stop cited
+        self.refused("termination-unconfirmed", self._dec(stop_seq=None), stopped_seq=None)
         self.refused("stale-report", self._dec(), rows=self._rows(two_reports=True))   # 4 is no longer latest
         self.refused("termination-unconfirmed", self._dec(), stopped_seq=None)
         self.refused("termination-unconfirmed", self._dec(stop_seq=2))
