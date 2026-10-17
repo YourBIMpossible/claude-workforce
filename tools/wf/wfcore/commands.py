@@ -39,6 +39,9 @@ def _ctx(conn: sqlite3.Connection, job: str) -> tuple[str | None, dict | None]:
     return c["sha256"], json.loads(c["content"])
 
 
+RECOVERY_TYPES = ("recovery-opened", "exception-acknowledged", "recovery-closed")
+
+
 def _guard(conn: sqlite3.Connection, job: str, *, etype: str, role: str, session: str, generation: int,
            msg_id: str, contract_sha: str | None) -> list[dict[str, Any]]:
     """B2 slice 1 (INTERFACE-CONTRACT 3-6, spec 3A step 2 and 5 rules 4-5): runs inside the write transaction
@@ -48,7 +51,7 @@ def _guard(conn: sqlite3.Connection, job: str, *, etype: str, role: str, session
     (3) unreconciled check (only `ack-reconcile` passes). The existing build_row checks remain mandatory and
     run afterwards. Returns the rows read so callers do not read them twice."""
     rows = dbm.rows(conn, job)
-    if etype != "recovery-opened":
+    if etype not in RECOVERY_TYPES:  # INTERFACE-CONTRACT-S2 section 6: only the recovery rows pass the gate
         opened = reconcile.recovery_open(rows)
         if opened is not None:
             raise WfRejected("recovery-open", f"recovery is open since seq {opened}; only `wf recover` and read-only "
@@ -329,8 +332,10 @@ def _recovery_state(rows: list[dict[str, Any]]) -> dict[str, Any]:
     if opened is None:
         return {"open": False}
     content = json.loads(next(r["content"] for r in rows if r["seq"] == opened))
+    pending = reconcile.pending_exceptions(rows)
+    listed = content.get("exceptions") or []
     return {"open": True, "opened_seq": opened, "reason": content.get("reason"),
-            "exceptions": len(content.get("exceptions") or [])}
+            "exceptions": len(listed), "acknowledged": len(listed) - len(pending), "pending": len(pending)}
 
 
 def export_cmd(db: str, job: str) -> dict[str, Any]:
@@ -475,8 +480,28 @@ def digest(db: str, job: str) -> dict[str, Any]:
              [_ref(job, s) for s in conflict_seqs])
     if recovery["open"]:
         need("recovery open", f"recovery opened at seq {recovery['opened_seq']} ({recovery['reason']}); ordinary "
-             "mutations refuse", "recover reconcile/close are outside this slice; owner decides the next step",
+             f"mutations refuse; {recovery['pending']} of {recovery['exceptions']} exceptions unacknowledged",
+             f"owner-cited `wf recover reconcile {job} --turn ...` then `wf recover close {job} --turn ...`",
              [_ref(job, recovery["opened_seq"])])
+    # INTERFACE-CONTRACT-S2 A-4 / section 5: an unresolvable path stays an inspection limitation after the ack
+    # until a recovery-decision names it with a permitted disposition.
+    bstate = reconcile.state(rows, "builder")
+    if bstate["report"] is not None:
+        unres = reconcile.unresolvable_paths(bstate["report"])
+        if unres:
+            covered: set[str] = set()
+            for r in rows:
+                if r["type"] == "recovery-decision":
+                    dc = json.loads(r["content"])
+                    if dc.get("report_seq") == bstate["latest_report_seq"]:
+                        covered |= {u.get("path") for u in dc.get("unresolved") or [] if isinstance(u, dict)}
+            missing = [u for u in unres if u not in covered]
+            if missing:
+                need("inspection limitation: unresolvable path(s)",
+                     "the latest reconcile report could not relate these paths to the boundary; their filesystem "
+                     "state is unknown and acknowledgement does not make it known: " + ", ".join(missing),
+                     f"inspect and record `wf recover decide {job} --decision ... --unresolved <path>=<disposition>`",
+                     [_ref(job, bstate["latest_report_seq"])])
     for role_name, b in explicit.items():
         rstate = reconcile.state(rows, role_name)
         if rstate["unreconciled"]:
@@ -515,7 +540,7 @@ def digest(db: str, job: str) -> dict[str, Any]:
     active = {"axes": axes,
               "latest_event_seq": {ax: max((latest[t] for t in ts if t in latest), default=None)
                                    for ax, ts in axis_types.items()},
-              "recovery": recovery}
+              "recovery": dict(recovery, audit=reconcile.recovery_audit(rows))}
     return {"job": job, "closed": closed, "contract_sha256": c["sha256"], "events": len(rows), "counts": counts,
             "axes": axes, "pending_markers": marks,
             "head": {"seq": head["seq"] if head else 0, "self": head["self"] if head else None,
@@ -947,6 +972,183 @@ def recover_begin(db: str, job: str, *, reason: str, turn: str, msg_id: str, rol
                              + "; ".join(problems[:5]), problems=problems)
         holder.update(exceptions=exceptions)
         return build_row(conn, job, head_seq, head_self, etype="recovery-opened", msg_id=msg_id, author_role=role,
+                         session_id=session, generation=generation, reply_to=None, grant_ref=None,
+                         content=content, contract_sha=csha, contract_content=contract)
+
+    res = txn.write_event(db, job, faults, oplog, build=build, session=session)
+    res.update(holder)
+    _recover_kill(faults, oplog, "recover-kill-after-open")
+    return res
+
+
+def _recover_kill(faults: Faults, oplog: OpLog, name: str, *, when: int | None = None, count: int | None = None) -> None:
+    """INTERFACE-CONTRACT-S2 section 4 fault points (T30 b): exit the process after the named transaction committed.
+    `recover-kill-mid-reconcile:<k>` fires once `count` acknowledgements have committed in this run."""
+    if not faults.has(name):
+        return
+    if when is not None and count is not None:
+        try:
+            k = int(faults.arg(name) or "0")
+        except ValueError:
+            k = 0
+        if count != k:
+            return
+    faults.mark(name)
+    oplog.add(f"fault_{name.replace('-', '_')}")
+    os._exit(3)
+
+
+def _recovery_turn(job: str, turn: str) -> str:
+    if not turn or not turn.strip():
+        raise WfRejected("no-provenance", "--turn (owner turn naming the job) is required")
+    if job not in turn:
+        raise WfRejected("no-provenance", f"the owner turn must name the job {job!r}")
+    return turn
+
+
+def recover_reconcile(db: str, job: str, *, turn: str, msg_id: str, role: str, session: str, generation: int,
+                      faults: Faults, oplog: OpLog) -> dict[str, Any]:
+    """`wf recover reconcile <job>` (spec 3B; INTERFACE-CONTRACT-S2 section 4). Coordinator only. Appends one
+    `exception-acknowledged` row per exception the open `recovery-opened` row lists and no earlier row acknowledges;
+    one write transaction per item, so a re-run after a kill appends only the missing ones (idempotent)."""
+    check_job_id(job)
+    if role != "coordinator":
+        raise WfRejected("role", f"recover reconcile may not be written by role {role}")
+    _recovery_turn(job, turn)
+    conn = dbm.connect(db, create=False)
+    try:
+        with dbm.read_snapshot(conn):
+            rows = dbm.rows(conn, job)
+    finally:
+        conn.close()
+    opened = reconcile.recovery_open(rows)
+    if opened is None:
+        raise WfRejected("no-recovery", "no recovery is open for this job")
+    pending = reconcile.pending_exceptions(rows)
+    already = sorted(reconcile.acknowledged(rows, opened))
+    done: list[str] = []
+    last: dict[str, Any] = {"seq": None}
+    _recover_kill(faults, oplog, "recover-kill-mid-reconcile", when=1, count=0)  # k = 0: die before any acknowledgement
+    for item in pending:
+        content = {"opened_seq": opened, "id": item["id"], "class": item["class"], "detail": item["detail"],
+                   "owner_turn": turn}
+        item_msg = f"{msg_id}-{item['id']}" if len(pending) > 1 else msg_id
+
+        def build(conn: sqlite3.Connection, head_seq: int, head_self: str, content=content, item_msg=item_msg) -> dict[str, Any]:
+            csha, contract = _ctx(conn, job)
+            if contract is None:
+                raise WfRefused("job has no contract")
+            rs = _guard(conn, job, etype="exception-acknowledged", role=role, session=session, generation=generation,
+                        msg_id=item_msg, contract_sha=csha)
+            reconcile.validate_exception_ack(rs, job=job, content=content)
+            return build_row(conn, job, head_seq, head_self, etype="exception-acknowledged", msg_id=item_msg,
+                             author_role=role, session_id=session, generation=generation, reply_to=None,
+                             grant_ref=None, content=content, contract_sha=csha, contract_content=contract)
+
+        last = txn.write_event(db, job, faults, oplog, build=build, session=session)
+        done.append(item["id"])
+        _recover_kill(faults, oplog, "recover-kill-mid-reconcile", when=1, count=len(done))
+    res = dict(last)
+    res.update(ok=True, opened_seq=opened, acknowledged=done, already=already, msg_id=msg_id)
+    return res
+
+
+def recover_close(db: str, job: str, *, turn: str, msg_id: str, role: str, session: str, generation: int,
+                  faults: Faults, oplog: OpLog) -> dict[str, Any]:
+    """`wf recover close <job>` (spec 3B; INTERFACE-CONTRACT-S2 section 4; T30 d). Coordinator only. One transaction:
+    open recovery, every listed exception acknowledged, whole chain valid -> `recovery-closed`; else nothing appended."""
+    check_job_id(job)
+    if role != "coordinator":
+        raise WfRejected("role", f"recover close may not be written by role {role}")
+    _recovery_turn(job, turn)
+    _recover_kill(faults, oplog, "recover-kill-before-close")
+    holder: dict[str, Any] = {}
+
+    def build(conn: sqlite3.Connection, head_seq: int, head_self: str) -> dict[str, Any]:
+        csha, contract = _ctx(conn, job)
+        if contract is None:
+            raise WfRefused("job has no contract")
+        rows = _guard(conn, job, etype="recovery-closed", role=role, session=session, generation=generation,
+                      msg_id=msg_id, contract_sha=csha)
+        opened = reconcile.recovery_open(rows)
+        if opened is None:
+            raise WfRejected("no-recovery", "no recovery is open for this job")
+        acked = sorted(reconcile.acknowledged(rows, opened))
+        content = {"opened_seq": opened, "acknowledged": acked, "chain_head": {"seq": head_seq, "self": head_self},
+                   "owner_turn": turn}
+        reconcile.validate_recover_close(rows, job=job, content=content)
+        problems = reconcile.chain_problems(conn, job)
+        if problems:
+            raise WfRejected("invalid-chain", "chain invalid; recovery not closed (nothing appended): "
+                             + "; ".join(problems[:5]), problems=problems)
+        holder.update(opened_seq=opened, acknowledged=acked)
+        return build_row(conn, job, head_seq, head_self, etype="recovery-closed", msg_id=msg_id, author_role=role,
+                         session_id=session, generation=generation, reply_to=None, grant_ref=None,
+                         content=content, contract_sha=csha, contract_content=contract)
+
+    res = txn.write_event(db, job, faults, oplog, build=build, session=session)
+    res.update(holder)
+    return res
+
+
+def _parse_unresolved(items: list[str] | None) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    for it in items or []:
+        path, sep, disp = it.rpartition("=")
+        if not sep or not path or not disp:
+            raise WfUsage(f"--unresolved expects PATH=DISPOSITION, got {it!r}")
+        out.append({"path": path, "disposition": disp})
+    return out
+
+
+def _stopped_seq(conn: sqlite3.Connection, job: str, rows: list[dict[str, Any]], role_name: str,
+                 bsess: str | None) -> int | None:
+    """seq of the stop-confirmed row for the role's current session (explicit binding or implicit holder)."""
+    table = bind.active_roles(conn, job)
+    if role_name in table:
+        return table[role_name].stopped_seq
+    if bsess is None:
+        return None
+    for r in reversed(rows):
+        if r["type"] == "stop-confirmed":
+            c = json.loads(r["content"])
+            if c.get("role") == role_name and c.get("session") == bsess:
+                return r["seq"]
+    return None
+
+
+def recover_decide(db: str, job: str, *, decision: str, restore_paths: list[str] | None, unresolved: list[str] | None,
+                   turn: str, note: str | None, msg_id: str, role: str, session: str, generation: int,
+                   faults: Faults, oplog: OpLog) -> dict[str, Any]:
+    """`wf recover decide <job>` (spec 6.2 step 4; INTERFACE-CONTRACT-S2 sections 1, 3, 5). Coordinator only; an
+    ordinary mutation (refused while a recovery is open). Records resume | restore | abandon for the builder role
+    against the latest reconcile report and the stop-confirmed row, naming every unresolvable path's disposition.
+    `wf` writes no file: restore is an owner procedure recorded here."""
+    check_job_id(job)
+    if role != "coordinator":
+        raise WfRejected("role", f"recover decide may not be written by role {role}")
+    _recovery_turn(job, turn)
+    unres = _parse_unresolved(unresolved)
+    holder: dict[str, Any] = {}
+
+    def build(conn: sqlite3.Connection, head_seq: int, head_self: str) -> dict[str, Any]:
+        csha, contract = _ctx(conn, job)
+        if contract is None:
+            raise WfRefused("job has no contract")
+        rows = _guard(conn, job, etype="recovery-decision", role=role, session=session, generation=generation,
+                      msg_id=msg_id, contract_sha=csha)
+        bsess, bgen = _binding_session(conn, job, "builder")
+        binding = (bsess, bgen) if bsess is not None and bgen is not None else None
+        stopped = _stopped_seq(conn, job, rows, "builder", bsess)
+        st = reconcile.state(rows, "builder")
+        content: dict[str, Any] = {"decision": decision, "role": "builder", "report_seq": st["latest_report_seq"],
+                                   "stop_seq": stopped, "restore_paths": list(restore_paths or []),
+                                   "unresolved": unres, "owner_turn": turn}
+        if note:
+            content["note"] = note
+        reconcile.validate_recovery_decision(rows, job=job, binding=binding, stopped_seq=stopped, content=content)
+        holder.update(decision=decision, report_seq=st["latest_report_seq"], stop_seq=stopped)
+        return build_row(conn, job, head_seq, head_self, etype="recovery-decision", msg_id=msg_id, author_role=role,
                          session_id=session, generation=generation, reply_to=None, grant_ref=None,
                          content=content, contract_sha=csha, contract_content=contract)
 
