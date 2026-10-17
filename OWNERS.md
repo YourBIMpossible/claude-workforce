@@ -31,8 +31,8 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/wfcore/bind.py | S2B |
 | tools/wf/tests/test_t32_bind.py | S2B |
 | tools/wf/tests/test_t33_replacement.py | S2B |
-| tools/wf/wfcore/reconcile.py | S2R |
-| tools/wf/tests/test_t06_reconcile.py | S2R |
+| tools/wf/wfcore/reconcile.py | S4L |
+| tools/wf/tests/test_t06_reconcile.py | S4L |
 | tools/wf/tests/test_t16a_recover_begin.py | S2R |
 | tools/wf/tests/test_t30_recover_close.py | S2R |
 | tools/wf/tests/test_t30_recovery_faults.py | S2C |
@@ -40,9 +40,17 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_t34_grant_lifecycle.py | S3G |
 | tools/wf/tests/test_grant_check_corpus.py | S3G |
 | tools/wf/tests/data/grant_check_corpus.json | S3G |
-| tools/wf/wfcore/observe.py | S3O |
-| tools/wf/tests/test_t14_observe.py | S3O |
+| tools/wf/wfcore/observe.py | S4L |
+| tools/wf/tests/test_t14_observe.py | S4L |
 | tools/wf/tests/test_t34_cli_matrix.py | S3M |
+| tools/wf/wfcore/gatecore.py | S4G |
+| tools/wf/tests/test_gate_decide.py | S4G |
+| tools/wf/tests/test_gate_corpus_replay.py | S4G |
+| tools/wf/wfcore/gatelog.py | S4L |
+| tools/wf/gate/wf_gate_hook.py | S4L |
+| tools/wf/tests/test_gatelog.py | S4L |
+| tools/wf/tests/test_gate_hook_deployed.py | S4L |
+| tools/wf/tests/test_t19_gate_faults.py | S4M |
 | ** | D |
 
 Lane A owns only the body of `accept_declarations` inside validate.py; other functions in that file are frozen
@@ -108,3 +116,14 @@ B2 slice 3 (grant lifecycle and invalidation, grant-check, cancel, observe, log-
 | S3O | Zen | worker-chosen, from current main | `tools/wf/wfcore/observe.py`, `tools/wf/tests/test_t14_observe.py` (new) |
 | S3M | MyBuddy | worker-chosen, from current main | `tools/wf/tests/test_t34_cli_matrix.py` (new) only |
 | S3W | White | `sprint/white-b2s3-wiring` | `tools/wf/wfcore/commands.py`, `tools/wf/wf.py`, `tools/wf/tests/test_b2s3_wiring.py` (new), OWNERS.md, MANIFEST.sha256 (lane D) |
+
+## Registration 2026-10-17 (owner grant "APPROVE AND EXECUTE — WORKFORCE B2 SLICE 4a")
+
+B2 slice 4a (the gate, build and fixture verification only; INTERFACE-CONTRACT-S4A.md frozen by White 2026-10-17, published in the WorkForce collab folder `contracts/b2s4a/`, mirrored to MyBuddy and on the GitHub dispatch issue). Rows `reconcile.py`, `observe.py`, `test_t06_reconcile.py`, `test_t14_observe.py` re-labelled S4L (same worker, Zen; keyword-parameter consumer edits only). Registration only; no validation disabled. No live hook, settings or profile write is authorised by this registration.
+
+| Lane | Worker | Branch | Scope |
+|---|---|---|---|
+| S4G | Plexy | worker-chosen, from current main | `tools/wf/wfcore/gatecore.py`, `tools/wf/tests/test_gate_decide.py`, `tools/wf/tests/test_gate_corpus_replay.py` (new) |
+| S4L | Zen | worker-chosen, from current main | `tools/wf/wfcore/gatelog.py`, `tools/wf/gate/wf_gate_hook.py`, `tools/wf/tests/test_gatelog.py`, `tools/wf/tests/test_gate_hook_deployed.py` (new); `tools/wf/wfcore/reconcile.py`, `tools/wf/wfcore/observe.py`, `tools/wf/tests/test_t06_reconcile.py`, `tools/wf/tests/test_t14_observe.py` (section 5/6 keyword parameters) |
+| S4M | MyBuddy | worker-chosen, from current main | `tools/wf/tests/test_t19_gate_faults.py` (new) only |
+| S4W | White | `sprint/white-b2s4a-wiring` | `tools/wf/wfcore/commands.py`, `tools/wf/wf.py`, `tools/wf/tests/test_b2s4a_wiring.py` (new), OWNERS.md, MANIFEST.sha256 (lane D) |
