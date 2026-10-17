@@ -442,7 +442,7 @@ class HookWithRealGatecore(HookBase):
         self.assertIn("wf gate probe: forced error", err)
         self.assertIsNone(out, out_text)
 
-    def test_gate_never_writes_the_ledger(self):
+    def test_deployed_hook_never_writes_the_ledger(self):
         conn = sqlite3.connect(self.db)
         try:
             before = conn.execute("SELECT count(*), max(seq) FROM events").fetchone()

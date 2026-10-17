@@ -249,7 +249,7 @@ class GateLog(Base):
 
 
 class GateLogImports(unittest.TestCase):
-    def test_imports_within_the_frozen_set(self):
+    def test_gatelog_imports_within_the_frozen_set(self):
         with open(gatelog.__file__, encoding="utf-8") as fh:
             tree = ast.parse(fh.read())
         local, top = set(), set()
