@@ -205,7 +205,7 @@ class B2S2(B2S1):
         # event by B2 is stale first (bind.check_actor precedes reconcile.check_actor in the guard)
         self.assert_rejected(self.intent(session="B2", note="first"), "stale")
         self.assert_rejected(self.run_wf("append", "j", "--type", "intent", "--content",
-                                         '{"path":"jobs/j/work/a.txt","note":"g2"}', "--generation", "2", session="B2"),
+                                         '{"path":"jobs/j/work/a.txt","sha_before":"","note":"g2"}', "--generation", "2", session="B2"),
                              "unreconciled")
         ids = json.dumps([e["id"] for e in rep2["exceptions"]])
         # the replaced session is stale once generation 2 is bound (5 rule 4); only the new one can acknowledge
@@ -214,12 +214,12 @@ class B2S2(B2S1):
         c, r = self.run_wf("ack-reconcile", "j", "--report", str(rep2["seq"]), "--exceptions", ids, "--generation", "2",
                            session="B2")
         self.assertEqual(c, 0, r)
-        c, r = self.run_wf("append", "j", "--type", "intent", "--content", '{"path":"jobs/j/work/a.txt","note":"g2"}',
+        c, r = self.run_wf("append", "j", "--type", "intent", "--content", '{"path":"jobs/j/work/a.txt","sha_before":"","note":"g2"}',
                            "--generation", "2", session="B2")
         self.assertEqual(c, 0, r)
         # generation below the binding -> stale; above -> unbound-session (5 rule 4 / contract 3)
         self.assert_rejected(self.intent(session="B2", note="gen1"), "stale")
-        self.assert_rejected(self.run_wf("append", "j", "--type", "intent", "--content", '{"path":"jobs/j/work/a.txt","note":"g3"}',
+        self.assert_rejected(self.run_wf("append", "j", "--type", "intent", "--content", '{"path":"jobs/j/work/a.txt","sha_before":"","note":"g3"}',
                                          "--generation", "3", session="B2"), "unbound-session")
         # a second replacement for the same stop is refused (the decision is consumed / the role is bound again)
         self.assert_rejected(self.bind("builder", "B3", "--bind-generation", "3"), "termination-unconfirmed")
