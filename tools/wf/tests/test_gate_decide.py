@@ -77,8 +77,8 @@ class _Gate(Base):
         self.assertEqual(res[0], 0, res[1])
         return res[1]
 
-    def bind(self, role: str, session: str, generation: int = 1) -> None:
-        self.ok(self.run_wf("bind", "j", "--bind-role", role, "--bind-session", session, "--bind-generation",
+    def bind(self, role: str, session: str, generation: int = 1, job: str = "j") -> None:
+        self.ok(self.run_wf("bind", job, "--bind-role", role, "--bind-session", session, "--bind-generation",
                             str(generation), role="coordinator", session="C1"))
 
     def explicit(self) -> None:
@@ -86,10 +86,26 @@ class _Gate(Base):
         self.new_job(); self.activate()
         self.bind("coordinator", "C1"); self.bind("builder", "B1")
 
-    def stop(self, session: str, generation: int = 1) -> None:
-        self.ok(self.run_wf("append", "j", "--type", "stop-confirmed", "--content", json.dumps(
+    def stop(self, session: str, generation: int = 1, job: str = "j") -> None:
+        self.ok(self.run_wf("append", job, "--type", "stop-confirmed", "--content", json.dumps(
             {"role": "builder", "session": session, "generation": generation, "how": "exit observed", "when": NOW,
              "owner_check": "no child process", "owner_turn": TURN}), role="coordinator", session="C1"))
+
+    def job_k(self) -> None:
+        """A second job k with its own contract (write scope jobs/k/work/**) and activated grant; coordinator C1."""
+        roles = dict(ROLES, builder=dict(ROLES["builder"], paths=["jobs/k/work/**"]))
+        contract = dict(CONTRACT, write_scope=["jobs/k/work/**"],
+                        acceptance_criteria=[{"id": "AC1", "check": "wf verify k --json", "expected": "clean true"}])
+        g = dict(GATE_GRANT, resources=["jobs/k/work/**"], exclusions=[], ars=dict(GATE_GRANT["ars"], roles=roles))
+        cpath, gpath = os.path.join(self.dir, "contract-k.json"), os.path.join(self.dir, "grant-k.json")
+        for path, obj in ((cpath, contract), (gpath, g)):
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(obj, fh)
+        self.ok(self.run_wf("job", "new", "k", "--contract", cpath, role="coordinator", session="C1"))
+        h = self.ok(self.run_wf("grant", "propose", "k", "--grant", gpath, role="coordinator", session="C1"))["block_hash"]
+        self.ok(self.run_wf("grant", "activate", "k", "--owner-hash", h[:8], "--quote", f"approve G1 {h[:8]}",
+                            "--turn", "owner turn", role="coordinator", session="C1"))
+        self.bind("coordinator", "C1", job="k")
 
     def ledger_rows(self) -> list[dict]:
         c = dbm.connect(self.db, create=False)
@@ -384,6 +400,83 @@ class BoundAndUnbound(_Gate):
         self.allow(self.p("README.md", session="U9"), "not-mediated")
         self.ok(self.run_wf("grant", "revoke", "j", "--reason", "r", "--turn", TURN, role="owner", session="O1"))
         self.deny(self.p(absolute=aiep, session="B1"), "authority-revoked")       # rule 4 first on the held job
+        self.allow(self.p(absolute=aiep, session="U9"), "outside-boundary")
+
+    def test_T13_held_session_into_another_jobs_scope(self):
+        """T13 variant, second job: B1's only binding (builder on j) is stopped, then replaced; a write into job k's
+        write scope (k current, builder K1) is `not-current-binding`, then `stale-session`, not rule 6
+        `unbound-session`; the held job and the target's job are both reported. Unbound U9 there stays
+        `unbound-session`; K1 is unaffected."""
+        self.explicit()
+        self.job_k()
+        self.bind("builder", "K1", job="k")
+        self.ok(self.run_wf("append", "j", "--type", "intent", "--content",
+                            '{"path":"jobs/j/work/a.txt","sha_before":"","note":"n"}'))
+        self.stop("B1")
+        r = self.deny(self.p("jobs/k/work/a.txt"), "not-current-binding")
+        self.assertEqual((r["jobs"], r["paths"]), (["j", "k"], ["jobs/k/work/a.txt"]))
+        self.ok(self.run_wf("reconcile", "j", role="coordinator", session="C1"))
+        self.ok(self.run_wf("recover", "decide", "j", "--decision", "resume", "--turn", TURN, role="coordinator",
+                            session="C1"))
+        self.bind("builder", "B2", generation=2)
+        for tool in ("Write", "Edit"):
+            with self.subTest(tool=tool):
+                r = self.deny(self.p("jobs/k/work/a.txt", tool=tool), "stale-session")
+                self.assertEqual((r["jobs"], r["paths"]), (["j", "k"], ["jobs/k/work/a.txt"]))
+        r = self.deny(self.p("jobs/k/work/a.txt", session="U9"), "unbound-session")
+        self.assertEqual(r["jobs"], ["k"])
+        self.allow(self.p("jobs/k/work/a.txt", session="K1"), "allowed")
+
+    def test_T13_stale_wins_over_stopped(self):
+        """T13 variant: B1 holds a replaced binding on j and a stop-confirmed binding on k and is bound to neither;
+        `stale-session` wins over `not-current-binding` for every target. While B1 is still bound on j, its stopped
+        binding on k does not apply (rule 5 decides)."""
+        self.explicit()
+        self.job_k()
+        self.bind("builder", "B1", job="k")
+        aiep = os.path.join(os.path.dirname(self.dir), "ai-engineering-platform", "pkg3", "x.py")
+        self.stop("B1", job="k")
+        self.allow(self.p("jobs/j/work/a.txt"), "allowed")                         # still bound on j
+        self.ok(self.run_wf("append", "j", "--type", "intent", "--content",
+                            '{"path":"jobs/j/work/a.txt","sha_before":"","note":"n"}'))
+        self.stop("B1")
+        r = self.deny(self.p("README.md"), "not-current-binding")                  # stopped on both
+        self.assertEqual(r["jobs"], ["j", "k"])
+        self.ok(self.run_wf("reconcile", "j", role="coordinator", session="C1"))
+        self.ok(self.run_wf("recover", "decide", "j", "--decision", "resume", "--turn", TURN, role="coordinator",
+                            session="C1"))
+        self.bind("builder", "B2", generation=2)
+        for rel, absolute in (("README.md", None), (None, aiep), ("jobs/j/work/a.txt", None),
+                              ("jobs/k/work/a.txt", None)):
+            with self.subTest(target=rel or "outside"):
+                r = self.deny(self.p(rel, absolute=absolute), "stale-session")    # stale on j, stopped on k
+                self.assertEqual(r["jobs"], ["j", "k"])
+
+    def test_T13_rule2_before_stale_on_a_held_job(self):
+        """T13 variant: the held job is touched, so rule 2 (chain tail) decides before rule 5: after j's chain tail
+        is tampered, replaced B1 is denied `chain-tail` (job j), not `stale-session`, for a target outside the
+        boundary and an in-root path in no job. Unbound U9 outside touches no job."""
+        self.explicit()
+        aiep = os.path.join(os.path.dirname(self.dir), "ai-engineering-platform", "pkg3", "x.py")
+        self.ok(self.run_wf("append", "j", "--type", "intent", "--content",
+                            '{"path":"jobs/j/work/a.txt","sha_before":"","note":"n"}'))
+        self.stop("B1")
+        self.ok(self.run_wf("reconcile", "j", role="coordinator", session="C1"))
+        self.ok(self.run_wf("recover", "decide", "j", "--decision", "resume", "--turn", TURN, role="coordinator",
+                            session="C1"))
+        self.bind("builder", "B2", generation=2)
+        self.deny(self.p(absolute=aiep), "stale-session")
+        c = sqlite3.connect(self.db)
+        try:
+            c.execute("DROP TRIGGER events_no_update")
+            c.execute("UPDATE events SET content = replace(content, 'approve G1', 'approve GX') WHERE job='j' AND seq=3")
+            c.commit()
+        finally:
+            c.close()
+        for rel, absolute in ((None, aiep), ("README.md", None)):
+            with self.subTest(target=rel or "outside"):
+                r = self.deny(self.p(rel, absolute=absolute), "chain-tail")
+                self.assertEqual(r["jobs"], ["j"])
         self.allow(self.p(absolute=aiep, session="U9"), "outside-boundary")
 
 
