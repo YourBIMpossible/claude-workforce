@@ -154,3 +154,11 @@ FIRST-RELEASE-SPEC.md T25 and the owner's 4b pre-approval package require Deny f
 | Lane | Worker | Branch | Scope |
 |---|---|---|---|
 | S4bW | White | `sprint/white-b2s4b-t25` | `tools/wf/wfcore/gatecore.py` (rule 8 + REASONS `out-of-scope`), `tools/wf/tests/test_gate_decide.py` (T25 test, REASONS test), `tools/wf/tests/test_gate_hook_deployed.py` (one deployed T25 case), OWNERS.md, MANIFEST.sha256 |
+
+## Registration 2026-10-18 (slice 4b T13 outside-write variant, prepared for the owner's decision, integrator White)
+
+Prepared, not adopted: applies only if the owner answers "deny" on 4B-PROCEDURE §10 item 9. A session with no current binding but a replaced (`stale-session`) or stop-confirmed (`not-current-binding`) binding on any job is denied every preventable target, including targets outside the boundary and in-root paths in no job (FIRST-RELEASE-SPEC T13, not boundary-limited); on the PR #53 head such writes are allowed `outside-boundary` / `not-mediated`. Integrator lane deviation as in the registration above.
+
+| Lane | Worker | Branch | Scope |
+|---|---|---|---|
+| S4bW | White | `sprint/white-b2s4b-t13-outside` | `tools/wf/wfcore/gatecore.py` (rule 5 identity check before rules 6/8), `tools/wf/tests/test_gate_decide.py` (one T13 test), OWNERS.md, MANIFEST.sha256 |

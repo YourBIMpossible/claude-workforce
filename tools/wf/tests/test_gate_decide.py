@@ -352,6 +352,40 @@ class BoundAndUnbound(_Gate):
         self.allow(self.p("jobs/j/work/a.txt", session="B2"), "allowed")
         self.allow(self.p(tool="Bash", session="B1"), "shell-not-preventable")   # not bound: rule 7
 
+    def test_T13_replaced_or_stopped_session_writes_nowhere(self):
+        """T13 ("attempts a hooked write after replacement -> Denied"), not boundary-limited: a stopped, then
+        replaced, builder B1 is denied for a target outside the boundary and for an in-root path in no job, not only
+        for its old job's paths; the job it held is reported. Bound B2 outside is T25 `out-of-scope`; unbound U9
+        stays `outside-boundary`, `not-mediated` in root."""
+        self.explicit()
+        self.ok(self.run_wf("append", "j", "--type", "intent", "--content",
+                            '{"path":"jobs/j/work/a.txt","sha_before":"","note":"n"}'))
+        aiep = os.path.join(os.path.dirname(self.dir), "ai-engineering-platform", "pkg3", "x.py")
+        self.stop("B1")
+        for tool in ("Write", "Edit", "NotebookEdit"):
+            with self.subTest(state="stopped", tool=tool):
+                r = self.deny(self.p(absolute=aiep, tool=tool), "not-current-binding")
+                self.assertEqual((r["jobs"], r["paths"]), (["j"], []))
+        r = self.deny(self.p("README.md"), "not-current-binding")
+        self.assertEqual((r["jobs"], r["paths"]), (["j"], ["README.md"]))
+        self.ok(self.run_wf("reconcile", "j", role="coordinator", session="C1"))
+        self.ok(self.run_wf("recover", "decide", "j", "--decision", "resume", "--turn", TURN, role="coordinator",
+                            session="C1"))
+        self.bind("builder", "B2", generation=2)
+        for tool in ("Write", "Edit", "NotebookEdit"):
+            with self.subTest(state="replaced", tool=tool):
+                r = self.deny(self.p(absolute=aiep, session="B1", tool=tool), "stale-session")
+                self.assertEqual((r["jobs"], r["paths"]), (["j"], []))
+        self.deny(self.p("README.md", session="B1"), "stale-session")
+        self.deny(self.p("jobs/j/work/a.txt", session="B1"), "stale-session")
+        self.allow(self.p(tool="Bash", session="B1"), "shell-not-preventable")   # shell: SHELL_LIMITATION
+        self.deny(self.p(absolute=aiep, session="B2"), "out-of-scope")             # T25
+        self.allow(self.p(absolute=aiep, session="U9"), "outside-boundary")
+        self.allow(self.p("README.md", session="U9"), "not-mediated")
+        self.ok(self.run_wf("grant", "revoke", "j", "--reason", "r", "--turn", TURN, role="owner", session="O1"))
+        self.deny(self.p(absolute=aiep, session="B1"), "authority-revoked")       # rule 4 first on the held job
+        self.allow(self.p(absolute=aiep, session="U9"), "outside-boundary")
+
 
 # ===================================================================================================== rule 7
 

@@ -12,8 +12,9 @@ Any exception inside `decide` becomes `deny` / `gate-error` (fail closed).
 Rules, first match decides (§2): 0 payload shape (and unresolvable target) -> 1 protected paths (preventable
 channel, everyone) -> 2 ledger health (unreadable, locked, identity, chain tail over the last 50 rows of every touched
 job; D-S4-4) -> 3 job resolution -> 4 per-job state for every touched job (recovery-open, cancelled, authority-<state>;
-`none`/`proposed` deny only for a job the session is bound to, D-S4-1) -> 5 preventable, bound session: current
-binding (stale-session / not-current-binding) and `grant.check(action="write")` -> 6 preventable, unbound session into a
+`none`/`proposed` deny only for a job the session is bound to, D-S4-1) -> 5 preventable: a session with no current
+binding but a replaced or stopped one (stale-session / not-current-binding, any target, T13), then for a bound
+session `grant.check(action="write")` -> 6 preventable, unbound session into a
 job's write scope or `jobs/<job>/` (unbound-session) -> 7 shell channel: allow `shell-not-preventable` with
 SHELL_LIMITATION; the command is never parsed, only its sha256 and length are kept (D-S4-2) -> 8 a target outside
 the boundary root: `deny` `out-of-scope` for a session bound to a job (T25 allow-list, AMENDMENT S4A-A4), else
@@ -31,7 +32,11 @@ Reading choices recorded for review (no signature change):
   the target (or all of its bound jobs when none does), and allows when `grant.check` allows for one of them.
 * `stale-session` = the session held an earlier binding of a role whose current binding is another session or a
   higher generation (T13, replaced); `not-current-binding` = the session is the current binding's session but that
-  binding is stop-confirmed. Neither session counts as bound for rules 4 and 7.
+  binding is stop-confirmed. Neither session counts as bound for rules 4 and 7. A session that is bound to no job
+  and holds such a binding on any job is denied every preventable target - its old job's paths, in-root paths in no
+  job and targets outside the boundary alike (T13 reads "attempts a hooked write", not boundary-limited); `stale-session`
+  wins when it holds both kinds. Those jobs are touched, so rules 2 and 4 apply to them first. A session bound to
+  some job is decided by rules 5/8 as before, whatever it holds elsewhere.
 * A drive mismatch, a `..` that leaves the root, a link / reparse-point component inside the root, or a pathpolicy
   problem (device name, stream syntax, trailing dot) is `unresolvable-path`.
 
@@ -362,7 +367,9 @@ def _decide(payload: dict, out: dict, *, root: str, db_path: str, now: str, gate
         by_path = sorted({j for j, (_, ctr) in ledger.items() for t in targets if _in_job(t, j, ctr)})
         status = {j: _session_on_job(conn, j, rows, session) for j, (rows, _) in ledger.items()}
         bound = sorted(j for j, (s, _) in status.items() if s == "bound")
-        touched = sorted(set(by_path) | (set(bound) if (channel == "shell" or targets or outside) else set()))
+        held = sorted(j for j, (s, _) in status.items() if s in ("stale", "stopped"))
+        touched = sorted(set(by_path) | (set(bound) if (channel == "shell" or targets or outside) else set())
+                         | (set(held) if channel == "preventable" and not bound else set()))
         out["jobs"] = touched
         # rule 2 (cont.): chain tail of every touched job (D-S4-4)
         try:
@@ -388,6 +395,11 @@ def _decide(payload: dict, out: dict, *, root: str, db_path: str, now: str, gate
         if channel == "shell":
             out.update(decision="allow", reason="shell-not-preventable")
             return out
+        # rule 5 (identity): a session whose every binding is replaced or stop-confirmed makes no hooked write,
+        # inside or outside the boundary (T13)
+        if held and not bound:
+            stale = any(status[j][0] == "stale" for j in held)
+            raise _Deny("stale-session" if stale else "not-current-binding", touched)
         if outside and not targets:
             if bound:
                 raise _Deny("out-of-scope", touched)  # rule 8, T25: a bound session stays inside its grant
@@ -395,13 +407,7 @@ def _decide(payload: dict, out: dict, *, root: str, db_path: str, now: str, gate
             return out
         for t in targets:
             owners = [j for j in by_path if _in_job(t, j, ledger[j][1])]
-            # rule 5: bound session (identity first, then grant.check on the session's job)
-            stale = [j for j in owners if status[j][0] == "stale"]
-            stopped = [j for j in owners if status[j][0] == "stopped"]
-            if stale and not bound:
-                raise _Deny("stale-session", touched)
-            if stopped and not bound:
-                raise _Deny("not-current-binding", touched)
+            # rule 5: bound session, grant.check on the session's job
             if bound:
                 cands = [j for j in bound if _in_job(t, j, ledger[j][1])] or bound
                 reasons = []
