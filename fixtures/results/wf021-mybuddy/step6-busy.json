@@ -1,0 +1,137 @@
+{
+ "campaign": "busy",
+ "root": "/home/zetard/workspace/claude-workforce/.claude/worktrees/wf021/fixtures/tmp/wf021-busy-20261018T143255Z-646d7a",
+ "nominal_bound_s": 5.0,
+ "trials": [
+  {
+   "trial": 1,
+   "exit": 1,
+   "code": "lock-timeout",
+   "bound_reported": 5.0,
+   "elapsed_reported": 5.00007937499322,
+   "last_error": "SQLITE_BUSY",
+   "process_wall_s": 5.0539,
+   "error": "connection setup: database busy for 5.0 s (SQLITE_BUSY)"
+  },
+  {
+   "trial": 2,
+   "exit": 1,
+   "code": "lock-timeout",
+   "bound_reported": 5.0,
+   "elapsed_reported": 5.000092642032541,
+   "last_error": "SQLITE_BUSY",
+   "process_wall_s": 5.077,
+   "error": "connection setup: database busy for 5.0 s (SQLITE_BUSY)"
+  },
+  {
+   "trial": 3,
+   "exit": 1,
+   "code": "lock-timeout",
+   "bound_reported": 5.0,
+   "elapsed_reported": 5.000235897023231,
+   "last_error": "SQLITE_BUSY",
+   "process_wall_s": 5.0663,
+   "error": "connection setup: database busy for 5.0 s (SQLITE_BUSY)"
+  },
+  {
+   "trial": 4,
+   "exit": 1,
+   "code": "lock-timeout",
+   "bound_reported": 5.0,
+   "elapsed_reported": 5.000074235955253,
+   "last_error": "SQLITE_BUSY",
+   "process_wall_s": 5.0502,
+   "error": "connection setup: database busy for 5.0 s (SQLITE_BUSY)"
+  },
+  {
+   "trial": 5,
+   "exit": 1,
+   "code": "lock-timeout",
+   "bound_reported": 5.0,
+   "elapsed_reported": 5.000162329990417,
+   "last_error": "SQLITE_BUSY",
+   "process_wall_s": 5.0557,
+   "error": "connection setup: database busy for 5.0 s (SQLITE_BUSY)"
+  },
+  {
+   "trial": 6,
+   "exit": 1,
+   "code": "lock-timeout",
+   "bound_reported": 5.0,
+   "elapsed_reported": 5.000250954006333,
+   "last_error": "SQLITE_BUSY",
+   "process_wall_s": 5.0533,
+   "error": "connection setup: database busy for 5.0 s (SQLITE_BUSY)"
+  },
+  {
+   "trial": 7,
+   "exit": 1,
+   "code": "lock-timeout",
+   "bound_reported": 5.0,
+   "elapsed_reported": 5.000190191960428,
+   "last_error": "SQLITE_BUSY",
+   "process_wall_s": 5.0466,
+   "error": "connection setup: database busy for 5.0 s (SQLITE_BUSY)"
+  },
+  {
+   "trial": 8,
+   "exit": 1,
+   "code": "lock-timeout",
+   "bound_reported": 5.0,
+   "elapsed_reported": 5.000189226004295,
+   "last_error": "SQLITE_BUSY",
+   "process_wall_s": 5.0448,
+   "error": "connection setup: database busy for 5.0 s (SQLITE_BUSY)"
+  },
+  {
+   "trial": 9,
+   "exit": 1,
+   "code": "lock-timeout",
+   "bound_reported": 5.0,
+   "elapsed_reported": 5.000074757030234,
+   "last_error": "SQLITE_BUSY",
+   "process_wall_s": 5.0537,
+   "error": "connection setup: database busy for 5.0 s (SQLITE_BUSY)"
+  },
+  {
+   "trial": 10,
+   "exit": 1,
+   "code": "lock-timeout",
+   "bound_reported": 5.0,
+   "elapsed_reported": 5.000085407984443,
+   "last_error": "SQLITE_BUSY",
+   "process_wall_s": 5.0605,
+   "error": "connection setup: database busy for 5.0 s (SQLITE_BUSY)"
+  }
+ ],
+ "process_wall_s": {
+  "min": 5.0448,
+  "median": 5.0538,
+  "max": 5.077
+ },
+ "elapsed_reported_s": {
+  "min": 5.000074235955253,
+  "median": 5.000127486011479,
+  "max": 5.000250954006333
+ },
+ "uncontended_status_wall_s": [
+  0.0353,
+  0.0454,
+  0.0385,
+  0.0413,
+  0.0366
+ ],
+ "started_utc": "2026-10-18T14:32:55Z",
+ "finished_utc": "2026-10-18T14:33:46Z",
+ "head": "8112637ffcae56a90a4c73b8cee21464f33fbcbe",
+ "python": "3.14.4",
+ "sqlite": "3.46.1",
+ "platform": "linux",
+ "argv": [
+  "busy",
+  "--trials",
+  "10",
+  "--out",
+  "/home/zetard/lane/WorkForce/from-mybuddy/WF-021/step6-busy.json"
+ ]
+}

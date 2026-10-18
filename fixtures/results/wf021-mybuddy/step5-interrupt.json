@@ -1,0 +1,1578 @@
+{
+ "campaign": "interrupt",
+ "root": "/home/zetard/workspace/claude-workforce/.claude/worktrees/wf021/fixtures/tmp/wf021-intr-20261018T143244Z-449c64",
+ "seed": 21,
+ "warmup_append_s": [
+  0.0806,
+  0.0822,
+  0.0612,
+  0.065,
+  0.0697,
+  0.069,
+  0.0817,
+  0.0581,
+  0.0758,
+  0.0618
+ ],
+ "typical_append_s": 0.0694,
+ "kills": [
+  {
+   "window": "in-txn",
+   "faults": "delay-precommit:600",
+   "kill_at_s": 0.0576,
+   "exited_before_kill": false,
+   "returncode": -9,
+   "msg_id": "k-fee4ebc0b0",
+   "outcome": "rolled back",
+   "markers_after_kill": [
+    {
+     "seq": 14,
+     "attempt_id": "a598bd261bfddaef96eec41ec29000db"
+    }
+   ],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [
+     {
+      "attempt_id": "a598bd261bfddaef96eec41ec29000db",
+      "conflict": false,
+      "path": "/home/zetard/workspace/claude-workforce/.claude/worktrees/wf021/fixtures/tmp/wf021-intr-20261018T143244Z-449c64/ledger/pending/j/14-a598bd261bfddaef96eec41ec29000db.json",
+      "rev": 1,
+      "self": "1acf884a4142482280934734c1a1169863e847302a8ef1c25dde7ff4def4f2dd",
+      "seq": 14,
+      "state": "committing"
+     }
+    ],
+    "export": []
+   },
+   "resolve": [
+    {
+     "seq": 14,
+     "exit": 0,
+     "outcome": "NOT-COMMITTED",
+     "code": null
+    }
+   ],
+   "outcome_after_resolve": "rolled back",
+   "verify_after_resolve": {
+    "exit": 0,
+    "clean": true,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": []
+   },
+   "n": 1
+  },
+  {
+   "window": "in-txn",
+   "faults": "delay-precommit:600",
+   "kill_at_s": 0.2051,
+   "exited_before_kill": false,
+   "returncode": -9,
+   "msg_id": "k-074213db80",
+   "outcome": "rolled back",
+   "markers_after_kill": [
+    {
+     "seq": 14,
+     "attempt_id": "c1e31d955a2d3176570306614a7b8052"
+    }
+   ],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [
+     {
+      "attempt_id": "c1e31d955a2d3176570306614a7b8052",
+      "conflict": false,
+      "path": "/home/zetard/workspace/claude-workforce/.claude/worktrees/wf021/fixtures/tmp/wf021-intr-20261018T143244Z-449c64/ledger/pending/j/14-c1e31d955a2d3176570306614a7b8052.json",
+      "rev": 1,
+      "self": "b59569aee2b39562758c7cef4373dee6de4497ad71905dde19cf2348fb95e641",
+      "seq": 14,
+      "state": "committing"
+     }
+    ],
+    "export": []
+   },
+   "resolve": [
+    {
+     "seq": 14,
+     "exit": 0,
+     "outcome": "NOT-COMMITTED",
+     "code": null
+    }
+   ],
+   "outcome_after_resolve": "rolled back",
+   "verify_after_resolve": {
+    "exit": 0,
+    "clean": true,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": []
+   },
+   "n": 2
+  },
+  {
+   "window": "in-txn",
+   "faults": "delay-precommit:600",
+   "kill_at_s": 0.3047,
+   "exited_before_kill": false,
+   "returncode": -9,
+   "msg_id": "k-321df3d9d4",
+   "outcome": "rolled back",
+   "markers_after_kill": [
+    {
+     "seq": 14,
+     "attempt_id": "b461ed56d8e91e873ebd15a8bd544e6a"
+    }
+   ],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [
+     {
+      "attempt_id": "b461ed56d8e91e873ebd15a8bd544e6a",
+      "conflict": false,
+      "path": "/home/zetard/workspace/claude-workforce/.claude/worktrees/wf021/fixtures/tmp/wf021-intr-20261018T143244Z-449c64/ledger/pending/j/14-b461ed56d8e91e873ebd15a8bd544e6a.json",
+      "rev": 1,
+      "self": "215c8b8384c105a54a7e59c20c54d16ded6704080b2ad32f400cfe3bfd8c1cd0",
+      "seq": 14,
+      "state": "committing"
+     }
+    ],
+    "export": []
+   },
+   "resolve": [
+    {
+     "seq": 14,
+     "exit": 0,
+     "outcome": "NOT-COMMITTED",
+     "code": null
+    }
+   ],
+   "outcome_after_resolve": "rolled back",
+   "verify_after_resolve": {
+    "exit": 0,
+    "clean": true,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": []
+   },
+   "n": 3
+  },
+  {
+   "window": "random",
+   "faults": null,
+   "kill_at_s": 0.008,
+   "exited_before_kill": false,
+   "returncode": -9,
+   "msg_id": "k-ab2b9f1cbd",
+   "outcome": "rolled back",
+   "markers_after_kill": [],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": true,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": []
+   },
+   "resolve": [],
+   "n": 4
+  },
+  {
+   "window": "in-txn",
+   "faults": "delay-precommit:600",
+   "kill_at_s": 0.5269,
+   "exited_before_kill": false,
+   "returncode": -9,
+   "msg_id": "k-75c798f680",
+   "outcome": "rolled back",
+   "markers_after_kill": [
+    {
+     "seq": 14,
+     "attempt_id": "3cdc53599345620188f4097c4668fd54"
+    }
+   ],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [
+     {
+      "attempt_id": "3cdc53599345620188f4097c4668fd54",
+      "conflict": false,
+      "path": "/home/zetard/workspace/claude-workforce/.claude/worktrees/wf021/fixtures/tmp/wf021-intr-20261018T143244Z-449c64/ledger/pending/j/14-3cdc53599345620188f4097c4668fd54.json",
+      "rev": 1,
+      "self": "1d26037ff1f7813e5edf7036b79558b12e4b97f113ab8aa3f6d45f05d6af186d",
+      "seq": 14,
+      "state": "committing"
+     }
+    ],
+    "export": []
+   },
+   "resolve": [
+    {
+     "seq": 14,
+     "exit": 0,
+     "outcome": "NOT-COMMITTED",
+     "code": null
+    }
+   ],
+   "outcome_after_resolve": "rolled back",
+   "verify_after_resolve": {
+    "exit": 0,
+    "clean": true,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": []
+   },
+   "n": 5
+  },
+  {
+   "window": "in-txn",
+   "faults": "delay-precommit:600",
+   "kill_at_s": 0.2249,
+   "exited_before_kill": false,
+   "returncode": -9,
+   "msg_id": "k-f1a134026f",
+   "outcome": "rolled back",
+   "markers_after_kill": [
+    {
+     "seq": 14,
+     "attempt_id": "1919f4893a0b4fc81d3523417f5b035d"
+    }
+   ],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [
+     {
+      "attempt_id": "1919f4893a0b4fc81d3523417f5b035d",
+      "conflict": false,
+      "path": "/home/zetard/workspace/claude-workforce/.claude/worktrees/wf021/fixtures/tmp/wf021-intr-20261018T143244Z-449c64/ledger/pending/j/14-1919f4893a0b4fc81d3523417f5b035d.json",
+      "rev": 1,
+      "self": "86bc17b371f8b21351393030a94a94336c46c49d1215f1add22d271f163afad2",
+      "seq": 14,
+      "state": "committing"
+     }
+    ],
+    "export": []
+   },
+   "resolve": [
+    {
+     "seq": 14,
+     "exit": 0,
+     "outcome": "NOT-COMMITTED",
+     "code": null
+    }
+   ],
+   "outcome_after_resolve": "rolled back",
+   "verify_after_resolve": {
+    "exit": 0,
+    "clean": true,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": []
+   },
+   "n": 6
+  },
+  {
+   "window": "post-commit",
+   "faults": "delay-postcommit:600",
+   "kill_at_s": 0.1372,
+   "exited_before_kill": false,
+   "returncode": -9,
+   "msg_id": "k-7967cbcf75",
+   "outcome": "committed",
+   "markers_after_kill": [
+    {
+     "seq": 14,
+     "attempt_id": "513976057dfcd9cd2e760124c896c6b4"
+    }
+   ],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [
+     {
+      "attempt_id": "513976057dfcd9cd2e760124c896c6b4",
+      "conflict": false,
+      "path": "/home/zetard/workspace/claude-workforce/.claude/worktrees/wf021/fixtures/tmp/wf021-intr-20261018T143244Z-449c64/ledger/pending/j/14-513976057dfcd9cd2e760124c896c6b4.json",
+      "rev": 1,
+      "self": "0e7e6d2ced73851797863482536ea76b14f2a48f4dee43b21e8db344dbdeb5ed",
+      "seq": 14,
+      "state": "committing"
+     }
+    ],
+    "export": [
+     "export events.jsonl is stale relative to the ledger"
+    ]
+   },
+   "resolve": [
+    {
+     "seq": 14,
+     "exit": 0,
+     "outcome": "COMMITTED",
+     "code": null
+    }
+   ],
+   "outcome_after_resolve": "committed",
+   "verify_after_resolve": {
+    "exit": 0,
+    "clean": true,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": []
+   },
+   "n": 7
+  },
+  {
+   "window": "random",
+   "faults": null,
+   "kill_at_s": 0.0567,
+   "exited_before_kill": false,
+   "returncode": -9,
+   "msg_id": "k-67c86048a5",
+   "outcome": "committed",
+   "markers_after_kill": [
+    {
+     "seq": 15,
+     "attempt_id": "38ee49433025d444e3a03496155a3372"
+    }
+   ],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [
+     {
+      "attempt_id": "38ee49433025d444e3a03496155a3372",
+      "conflict": false,
+      "path": "/home/zetard/workspace/claude-workforce/.claude/worktrees/wf021/fixtures/tmp/wf021-intr-20261018T143244Z-449c64/ledger/pending/j/15-38ee49433025d444e3a03496155a3372.json",
+      "rev": 1,
+      "self": "0469994b5cc61972018d56d843da278459e250346cdca76e152eb79cde2840cf",
+      "seq": 15,
+      "state": "committing"
+     }
+    ],
+    "export": [
+     "export events.jsonl is stale relative to the ledger"
+    ]
+   },
+   "resolve": [
+    {
+     "seq": 15,
+     "exit": 0,
+     "outcome": "COMMITTED",
+     "code": null
+    }
+   ],
+   "outcome_after_resolve": "committed",
+   "verify_after_resolve": {
+    "exit": 0,
+    "clean": true,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": []
+   },
+   "n": 8
+  },
+  {
+   "window": "random",
+   "faults": null,
+   "kill_at_s": 0.0087,
+   "exited_before_kill": false,
+   "returncode": -9,
+   "msg_id": "k-2bf6bdbd0b",
+   "outcome": "rolled back",
+   "markers_after_kill": [],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": true,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": []
+   },
+   "resolve": [],
+   "n": 9
+  },
+  {
+   "window": "random",
+   "faults": null,
+   "kill_at_s": 0.0644,
+   "exited_before_kill": true,
+   "returncode": 0,
+   "msg_id": "k-d9aa47445c",
+   "outcome": "committed",
+   "markers_after_kill": [],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": true,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": []
+   },
+   "resolve": [],
+   "n": 10
+  },
+  {
+   "window": "random",
+   "faults": null,
+   "kill_at_s": 0.0314,
+   "exited_before_kill": false,
+   "returncode": -9,
+   "msg_id": "k-f8f666cc1b",
+   "outcome": "rolled back",
+   "markers_after_kill": [],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": true,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": []
+   },
+   "resolve": [],
+   "n": 11
+  },
+  {
+   "window": "post-commit",
+   "faults": "delay-postcommit:600",
+   "kill_at_s": 0.3408,
+   "exited_before_kill": false,
+   "returncode": -9,
+   "msg_id": "k-fb7e10314e",
+   "outcome": "committed",
+   "markers_after_kill": [
+    {
+     "seq": 17,
+     "attempt_id": "22cfcbf47a15299e181caadcf85c6d65"
+    }
+   ],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [
+     {
+      "attempt_id": "22cfcbf47a15299e181caadcf85c6d65",
+      "conflict": false,
+      "path": "/home/zetard/workspace/claude-workforce/.claude/worktrees/wf021/fixtures/tmp/wf021-intr-20261018T143244Z-449c64/ledger/pending/j/17-22cfcbf47a15299e181caadcf85c6d65.json",
+      "rev": 1,
+      "self": "7461becbc18e84d02ecc8fc0243f1dbd19b9559ee1b7087535695841f8cb7acd",
+      "seq": 17,
+      "state": "committing"
+     }
+    ],
+    "export": [
+     "export events.jsonl is stale relative to the ledger"
+    ]
+   },
+   "resolve": [
+    {
+     "seq": 17,
+     "exit": 0,
+     "outcome": "COMMITTED",
+     "code": null
+    }
+   ],
+   "outcome_after_resolve": "committed",
+   "verify_after_resolve": {
+    "exit": 0,
+    "clean": true,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": []
+   },
+   "n": 12
+  },
+  {
+   "window": "post-commit",
+   "faults": "delay-postcommit:600",
+   "kill_at_s": 0.2263,
+   "exited_before_kill": false,
+   "returncode": -9,
+   "msg_id": "k-7f15381853",
+   "outcome": "committed",
+   "markers_after_kill": [
+    {
+     "seq": 18,
+     "attempt_id": "4a66e09d91494b81d37f547f2e3d0399"
+    }
+   ],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [
+     {
+      "attempt_id": "4a66e09d91494b81d37f547f2e3d0399",
+      "conflict": false,
+      "path": "/home/zetard/workspace/claude-workforce/.claude/worktrees/wf021/fixtures/tmp/wf021-intr-20261018T143244Z-449c64/ledger/pending/j/18-4a66e09d91494b81d37f547f2e3d0399.json",
+      "rev": 1,
+      "self": "5a7af77c9b6fc09c675f1e7057dcef0621511d9e3daf848cadb11098445aa83a",
+      "seq": 18,
+      "state": "committing"
+     }
+    ],
+    "export": [
+     "export events.jsonl is stale relative to the ledger"
+    ]
+   },
+   "resolve": [
+    {
+     "seq": 18,
+     "exit": 0,
+     "outcome": "COMMITTED",
+     "code": null
+    }
+   ],
+   "outcome_after_resolve": "committed",
+   "verify_after_resolve": {
+    "exit": 0,
+    "clean": true,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": []
+   },
+   "n": 13
+  },
+  {
+   "window": "in-txn",
+   "faults": "delay-precommit:600",
+   "kill_at_s": 0.283,
+   "exited_before_kill": false,
+   "returncode": -9,
+   "msg_id": "k-a8ca451e5c",
+   "outcome": "rolled back",
+   "markers_after_kill": [
+    {
+     "seq": 19,
+     "attempt_id": "354ca89bebd6d2e43a338d760a22e36e"
+    }
+   ],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [
+     {
+      "attempt_id": "354ca89bebd6d2e43a338d760a22e36e",
+      "conflict": false,
+      "path": "/home/zetard/workspace/claude-workforce/.claude/worktrees/wf021/fixtures/tmp/wf021-intr-20261018T143244Z-449c64/ledger/pending/j/19-354ca89bebd6d2e43a338d760a22e36e.json",
+      "rev": 1,
+      "self": "30e5537d0432b20147585b16ffe3d09412eae4a893a28659aac0115ca19cbf78",
+      "seq": 19,
+      "state": "committing"
+     }
+    ],
+    "export": []
+   },
+   "resolve": [
+    {
+     "seq": 19,
+     "exit": 0,
+     "outcome": "NOT-COMMITTED",
+     "code": null
+    }
+   ],
+   "outcome_after_resolve": "rolled back",
+   "verify_after_resolve": {
+    "exit": 0,
+    "clean": true,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": []
+   },
+   "n": 14
+  },
+  {
+   "window": "post-commit",
+   "faults": "delay-postcommit:600",
+   "kill_at_s": 0.159,
+   "exited_before_kill": false,
+   "returncode": -9,
+   "msg_id": "k-907488b080",
+   "outcome": "committed",
+   "markers_after_kill": [
+    {
+     "seq": 19,
+     "attempt_id": "907a755d1b518bdb83e51175343ade58"
+    }
+   ],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [
+     {
+      "attempt_id": "907a755d1b518bdb83e51175343ade58",
+      "conflict": false,
+      "path": "/home/zetard/workspace/claude-workforce/.claude/worktrees/wf021/fixtures/tmp/wf021-intr-20261018T143244Z-449c64/ledger/pending/j/19-907a755d1b518bdb83e51175343ade58.json",
+      "rev": 1,
+      "self": "7c8928b071d02370983155b20a149f71338a15fbe22f7f6a8758ca31e1ea16e9",
+      "seq": 19,
+      "state": "committing"
+     }
+    ],
+    "export": [
+     "export events.jsonl is stale relative to the ledger"
+    ]
+   },
+   "resolve": [
+    {
+     "seq": 19,
+     "exit": 0,
+     "outcome": "COMMITTED",
+     "code": null
+    }
+   ],
+   "outcome_after_resolve": "committed",
+   "verify_after_resolve": {
+    "exit": 0,
+    "clean": true,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": []
+   },
+   "n": 15
+  },
+  {
+   "window": "random",
+   "faults": null,
+   "kill_at_s": 0.0026,
+   "exited_before_kill": false,
+   "returncode": -9,
+   "msg_id": "k-ad47f8c4e5",
+   "outcome": "rolled back",
+   "markers_after_kill": [],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": true,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": []
+   },
+   "resolve": [],
+   "n": 16
+  },
+  {
+   "window": "random",
+   "faults": null,
+   "kill_at_s": 0.0601,
+   "exited_before_kill": false,
+   "returncode": -9,
+   "msg_id": "k-9cbeb66166",
+   "outcome": "committed",
+   "markers_after_kill": [],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": [
+     "export file differs from manifest: events.jsonl",
+     "export temp file preserved: head.json.606332-db52f9d0.tmp"
+    ]
+   },
+   "resolve": [],
+   "n": 17
+  },
+  {
+   "window": "in-txn",
+   "faults": "delay-precommit:600",
+   "kill_at_s": 0.158,
+   "exited_before_kill": false,
+   "returncode": -9,
+   "msg_id": "k-6fa61e158d",
+   "outcome": "rolled back",
+   "markers_after_kill": [
+    {
+     "seq": 21,
+     "attempt_id": "4af381a75efb6024523b384814543d11"
+    }
+   ],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [
+     {
+      "attempt_id": "4af381a75efb6024523b384814543d11",
+      "conflict": false,
+      "path": "/home/zetard/workspace/claude-workforce/.claude/worktrees/wf021/fixtures/tmp/wf021-intr-20261018T143244Z-449c64/ledger/pending/j/21-4af381a75efb6024523b384814543d11.json",
+      "rev": 1,
+      "self": "f85b6c21785cdedd67505a513f630ae5c9b2823c63c49fcab74a6708646c926e",
+      "seq": 21,
+      "state": "committing"
+     }
+    ],
+    "export": [
+     "export file differs from manifest: events.jsonl",
+     "export temp file preserved: head.json.606332-db52f9d0.tmp"
+    ]
+   },
+   "resolve": [
+    {
+     "seq": 21,
+     "exit": 0,
+     "outcome": "NOT-COMMITTED",
+     "code": null
+    }
+   ],
+   "outcome_after_resolve": "rolled back",
+   "verify_after_resolve": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": [
+     "export file differs from manifest: events.jsonl",
+     "export temp file preserved: head.json.606332-db52f9d0.tmp"
+    ]
+   },
+   "n": 18
+  },
+  {
+   "window": "post-commit",
+   "faults": "delay-postcommit:600",
+   "kill_at_s": 0.4505,
+   "exited_before_kill": false,
+   "returncode": -9,
+   "msg_id": "k-c8aea9c8cf",
+   "outcome": "committed",
+   "markers_after_kill": [
+    {
+     "seq": 21,
+     "attempt_id": "76344a6f11e26580945b564c9c2e3402"
+    }
+   ],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [
+     {
+      "attempt_id": "76344a6f11e26580945b564c9c2e3402",
+      "conflict": false,
+      "path": "/home/zetard/workspace/claude-workforce/.claude/worktrees/wf021/fixtures/tmp/wf021-intr-20261018T143244Z-449c64/ledger/pending/j/21-76344a6f11e26580945b564c9c2e3402.json",
+      "rev": 1,
+      "self": "693f07cc7aa949f58f03c3e3e310e222cf9a3b4fff27e93818a86d3030b015f5",
+      "seq": 21,
+      "state": "committing"
+     }
+    ],
+    "export": [
+     "export file differs from manifest: events.jsonl",
+     "export events.jsonl is stale relative to the ledger",
+     "export temp file preserved: head.json.606332-db52f9d0.tmp"
+    ]
+   },
+   "resolve": [
+    {
+     "seq": 21,
+     "exit": 0,
+     "outcome": "COMMITTED",
+     "code": null
+    }
+   ],
+   "outcome_after_resolve": "committed",
+   "verify_after_resolve": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": [
+     "export temp file preserved: head.json.606332-db52f9d0.tmp"
+    ]
+   },
+   "n": 19
+  },
+  {
+   "window": "post-commit",
+   "faults": "delay-postcommit:600",
+   "kill_at_s": 0.1541,
+   "exited_before_kill": false,
+   "returncode": -9,
+   "msg_id": "k-57764df1f7",
+   "outcome": "committed",
+   "markers_after_kill": [
+    {
+     "seq": 22,
+     "attempt_id": "9565e1a936348deb0213b2141b40af2e"
+    }
+   ],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [
+     {
+      "attempt_id": "9565e1a936348deb0213b2141b40af2e",
+      "conflict": false,
+      "path": "/home/zetard/workspace/claude-workforce/.claude/worktrees/wf021/fixtures/tmp/wf021-intr-20261018T143244Z-449c64/ledger/pending/j/22-9565e1a936348deb0213b2141b40af2e.json",
+      "rev": 1,
+      "self": "cde4d0a5d42e8daa6a8e45a4928e5ea7285f419e5a853bc25a1dcf29ca477e62",
+      "seq": 22,
+      "state": "committing"
+     }
+    ],
+    "export": [
+     "export events.jsonl is stale relative to the ledger",
+     "export temp file preserved: head.json.606332-db52f9d0.tmp"
+    ]
+   },
+   "resolve": [
+    {
+     "seq": 22,
+     "exit": 0,
+     "outcome": "COMMITTED",
+     "code": null
+    }
+   ],
+   "outcome_after_resolve": "committed",
+   "verify_after_resolve": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": [
+     "export temp file preserved: head.json.606332-db52f9d0.tmp"
+    ]
+   },
+   "n": 20
+  },
+  {
+   "window": "in-txn",
+   "faults": "delay-precommit:600",
+   "kill_at_s": 0.5251,
+   "exited_before_kill": false,
+   "returncode": -9,
+   "msg_id": "k-92a95ca088",
+   "outcome": "rolled back",
+   "markers_after_kill": [
+    {
+     "seq": 23,
+     "attempt_id": "d07d7d1416b78d6d401f6a75edcf30b8"
+    }
+   ],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [
+     {
+      "attempt_id": "d07d7d1416b78d6d401f6a75edcf30b8",
+      "conflict": false,
+      "path": "/home/zetard/workspace/claude-workforce/.claude/worktrees/wf021/fixtures/tmp/wf021-intr-20261018T143244Z-449c64/ledger/pending/j/23-d07d7d1416b78d6d401f6a75edcf30b8.json",
+      "rev": 1,
+      "self": "fb0e85db626a5c1ec6394a6c140910751cfd0242858ce89fafc5566133120d85",
+      "seq": 23,
+      "state": "committing"
+     }
+    ],
+    "export": [
+     "export temp file preserved: head.json.606332-db52f9d0.tmp"
+    ]
+   },
+   "resolve": [
+    {
+     "seq": 23,
+     "exit": 0,
+     "outcome": "NOT-COMMITTED",
+     "code": null
+    }
+   ],
+   "outcome_after_resolve": "rolled back",
+   "verify_after_resolve": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": [
+     "export temp file preserved: head.json.606332-db52f9d0.tmp"
+    ]
+   },
+   "n": 21
+  },
+  {
+   "window": "post-commit",
+   "faults": "delay-postcommit:600",
+   "kill_at_s": 0.4967,
+   "exited_before_kill": false,
+   "returncode": -9,
+   "msg_id": "k-1c8d6fd547",
+   "outcome": "committed",
+   "markers_after_kill": [
+    {
+     "seq": 23,
+     "attempt_id": "5b50a8bd93f64471b06b18e93685c6c8"
+    }
+   ],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [
+     {
+      "attempt_id": "5b50a8bd93f64471b06b18e93685c6c8",
+      "conflict": false,
+      "path": "/home/zetard/workspace/claude-workforce/.claude/worktrees/wf021/fixtures/tmp/wf021-intr-20261018T143244Z-449c64/ledger/pending/j/23-5b50a8bd93f64471b06b18e93685c6c8.json",
+      "rev": 1,
+      "self": "a75c3e78af56863a64907adae08ef38cada9116990e356810ae96c93e568ab50",
+      "seq": 23,
+      "state": "committing"
+     }
+    ],
+    "export": [
+     "export events.jsonl is stale relative to the ledger",
+     "export temp file preserved: head.json.606332-db52f9d0.tmp"
+    ]
+   },
+   "resolve": [
+    {
+     "seq": 23,
+     "exit": 0,
+     "outcome": "COMMITTED",
+     "code": null
+    }
+   ],
+   "outcome_after_resolve": "committed",
+   "verify_after_resolve": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": [
+     "export temp file preserved: head.json.606332-db52f9d0.tmp"
+    ]
+   },
+   "n": 22
+  },
+  {
+   "window": "random",
+   "faults": null,
+   "kill_at_s": 0.0523,
+   "exited_before_kill": false,
+   "returncode": -9,
+   "msg_id": "k-0aff969e27",
+   "outcome": "committed",
+   "markers_after_kill": [],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": [
+     "export events.jsonl is stale relative to the ledger",
+     "export temp file preserved: events.jsonl.606440-24ccb4c5.tmp",
+     "export temp file preserved: head.json.606332-db52f9d0.tmp"
+    ]
+   },
+   "resolve": [],
+   "n": 23
+  },
+  {
+   "window": "in-txn",
+   "faults": "delay-precommit:600",
+   "kill_at_s": 0.4219,
+   "exited_before_kill": false,
+   "returncode": -9,
+   "msg_id": "k-e26dd711bf",
+   "outcome": "rolled back",
+   "markers_after_kill": [
+    {
+     "seq": 25,
+     "attempt_id": "4330e789e440157de07d4d18d5cb5b31"
+    }
+   ],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [
+     {
+      "attempt_id": "4330e789e440157de07d4d18d5cb5b31",
+      "conflict": false,
+      "path": "/home/zetard/workspace/claude-workforce/.claude/worktrees/wf021/fixtures/tmp/wf021-intr-20261018T143244Z-449c64/ledger/pending/j/25-4330e789e440157de07d4d18d5cb5b31.json",
+      "rev": 1,
+      "self": "f3260c9aba360fa95583a3195c0c1044e185d00927a6e1b8a7236f2f670711dc",
+      "seq": 25,
+      "state": "committing"
+     }
+    ],
+    "export": [
+     "export events.jsonl is stale relative to the ledger",
+     "export temp file preserved: events.jsonl.606440-24ccb4c5.tmp",
+     "export temp file preserved: head.json.606332-db52f9d0.tmp"
+    ]
+   },
+   "resolve": [
+    {
+     "seq": 25,
+     "exit": 0,
+     "outcome": "NOT-COMMITTED",
+     "code": null
+    }
+   ],
+   "outcome_after_resolve": "rolled back",
+   "verify_after_resolve": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": [
+     "export events.jsonl is stale relative to the ledger",
+     "export temp file preserved: events.jsonl.606440-24ccb4c5.tmp",
+     "export temp file preserved: head.json.606332-db52f9d0.tmp"
+    ]
+   },
+   "n": 24
+  },
+  {
+   "window": "random",
+   "faults": null,
+   "kill_at_s": 0.0403,
+   "exited_before_kill": false,
+   "returncode": -9,
+   "msg_id": "k-f418396286",
+   "outcome": "rolled back",
+   "markers_after_kill": [
+    {
+     "seq": 25,
+     "attempt_id": "48bc225e7ab0e5daf1e605265c119ae3"
+    }
+   ],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [
+     {
+      "attempt_id": "48bc225e7ab0e5daf1e605265c119ae3",
+      "conflict": false,
+      "path": "/home/zetard/workspace/claude-workforce/.claude/worktrees/wf021/fixtures/tmp/wf021-intr-20261018T143244Z-449c64/ledger/pending/j/25-48bc225e7ab0e5daf1e605265c119ae3.json",
+      "rev": 1,
+      "self": "267b723bd782e57cb979782df191c53acffc83b5dad5c79da68c72ca6ce89cd9",
+      "seq": 25,
+      "state": "committing"
+     }
+    ],
+    "export": [
+     "export events.jsonl is stale relative to the ledger",
+     "export temp file preserved: events.jsonl.606440-24ccb4c5.tmp",
+     "export temp file preserved: head.json.606332-db52f9d0.tmp"
+    ]
+   },
+   "resolve": [
+    {
+     "seq": 25,
+     "exit": 0,
+     "outcome": "NOT-COMMITTED",
+     "code": null
+    }
+   ],
+   "outcome_after_resolve": "rolled back",
+   "verify_after_resolve": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": [
+     "export events.jsonl is stale relative to the ledger",
+     "export temp file preserved: events.jsonl.606440-24ccb4c5.tmp",
+     "export temp file preserved: head.json.606332-db52f9d0.tmp"
+    ]
+   },
+   "n": 25
+  },
+  {
+   "window": "post-commit",
+   "faults": "delay-postcommit:600",
+   "kill_at_s": 0.4198,
+   "exited_before_kill": false,
+   "returncode": -9,
+   "msg_id": "k-317a456edd",
+   "outcome": "committed",
+   "markers_after_kill": [
+    {
+     "seq": 25,
+     "attempt_id": "3f1f0736d37df02d07fe16c474b4437f"
+    }
+   ],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [
+     {
+      "attempt_id": "3f1f0736d37df02d07fe16c474b4437f",
+      "conflict": false,
+      "path": "/home/zetard/workspace/claude-workforce/.claude/worktrees/wf021/fixtures/tmp/wf021-intr-20261018T143244Z-449c64/ledger/pending/j/25-3f1f0736d37df02d07fe16c474b4437f.json",
+      "rev": 1,
+      "self": "e49f870febf1d17890e105bbb3fe915fba6f618f15f72df5fccf08b410a95195",
+      "seq": 25,
+      "state": "committing"
+     }
+    ],
+    "export": [
+     "export events.jsonl is stale relative to the ledger",
+     "export temp file preserved: events.jsonl.606440-24ccb4c5.tmp",
+     "export temp file preserved: head.json.606332-db52f9d0.tmp"
+    ]
+   },
+   "resolve": [
+    {
+     "seq": 25,
+     "exit": 0,
+     "outcome": "COMMITTED",
+     "code": null
+    }
+   ],
+   "outcome_after_resolve": "committed",
+   "verify_after_resolve": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": [
+     "export temp file preserved: events.jsonl.606440-24ccb4c5.tmp",
+     "export temp file preserved: head.json.606332-db52f9d0.tmp"
+    ]
+   },
+   "n": 26
+  },
+  {
+   "window": "post-commit",
+   "faults": "delay-postcommit:600",
+   "kill_at_s": 0.137,
+   "exited_before_kill": false,
+   "returncode": -9,
+   "msg_id": "k-4ba6bb1f3b",
+   "outcome": "committed",
+   "markers_after_kill": [
+    {
+     "seq": 26,
+     "attempt_id": "a1426894f680aae729e521ee5294d74b"
+    }
+   ],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [
+     {
+      "attempt_id": "a1426894f680aae729e521ee5294d74b",
+      "conflict": false,
+      "path": "/home/zetard/workspace/claude-workforce/.claude/worktrees/wf021/fixtures/tmp/wf021-intr-20261018T143244Z-449c64/ledger/pending/j/26-a1426894f680aae729e521ee5294d74b.json",
+      "rev": 1,
+      "self": "c16c02ee68d16166f2fd1ea9b6c36e759e9cb5b7c03cc5210168c9b249a6cfb7",
+      "seq": 26,
+      "state": "committing"
+     }
+    ],
+    "export": [
+     "export events.jsonl is stale relative to the ledger",
+     "export temp file preserved: events.jsonl.606440-24ccb4c5.tmp",
+     "export temp file preserved: head.json.606332-db52f9d0.tmp"
+    ]
+   },
+   "resolve": [
+    {
+     "seq": 26,
+     "exit": 0,
+     "outcome": "COMMITTED",
+     "code": null
+    }
+   ],
+   "outcome_after_resolve": "committed",
+   "verify_after_resolve": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": [
+     "export temp file preserved: events.jsonl.606440-24ccb4c5.tmp",
+     "export temp file preserved: head.json.606332-db52f9d0.tmp"
+    ]
+   },
+   "n": 27
+  },
+  {
+   "window": "post-commit",
+   "faults": "delay-postcommit:600",
+   "kill_at_s": 0.2931,
+   "exited_before_kill": false,
+   "returncode": -9,
+   "msg_id": "k-05c95ec6bc",
+   "outcome": "committed",
+   "markers_after_kill": [
+    {
+     "seq": 27,
+     "attempt_id": "75d1e0ec577e32905b71634a9d76cc9c"
+    }
+   ],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [
+     {
+      "attempt_id": "75d1e0ec577e32905b71634a9d76cc9c",
+      "conflict": false,
+      "path": "/home/zetard/workspace/claude-workforce/.claude/worktrees/wf021/fixtures/tmp/wf021-intr-20261018T143244Z-449c64/ledger/pending/j/27-75d1e0ec577e32905b71634a9d76cc9c.json",
+      "rev": 1,
+      "self": "9c2500c433999e2305c947795d7ae3d6a64ab7e3eda24efd576d3770b72e9357",
+      "seq": 27,
+      "state": "committing"
+     }
+    ],
+    "export": [
+     "export events.jsonl is stale relative to the ledger",
+     "export temp file preserved: events.jsonl.606440-24ccb4c5.tmp",
+     "export temp file preserved: head.json.606332-db52f9d0.tmp"
+    ]
+   },
+   "resolve": [
+    {
+     "seq": 27,
+     "exit": 0,
+     "outcome": "COMMITTED",
+     "code": null
+    }
+   ],
+   "outcome_after_resolve": "committed",
+   "verify_after_resolve": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": [
+     "export temp file preserved: events.jsonl.606440-24ccb4c5.tmp",
+     "export temp file preserved: head.json.606332-db52f9d0.tmp"
+    ]
+   },
+   "n": 28
+  },
+  {
+   "window": "in-txn",
+   "faults": "delay-precommit:600",
+   "kill_at_s": 0.4645,
+   "exited_before_kill": false,
+   "returncode": -9,
+   "msg_id": "k-431c966d8e",
+   "outcome": "rolled back",
+   "markers_after_kill": [
+    {
+     "seq": 28,
+     "attempt_id": "14135471ee186c3bdd56d86d7d36777e"
+    }
+   ],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [
+     {
+      "attempt_id": "14135471ee186c3bdd56d86d7d36777e",
+      "conflict": false,
+      "path": "/home/zetard/workspace/claude-workforce/.claude/worktrees/wf021/fixtures/tmp/wf021-intr-20261018T143244Z-449c64/ledger/pending/j/28-14135471ee186c3bdd56d86d7d36777e.json",
+      "rev": 1,
+      "self": "6370361dc018123790b5e561f3c51bfd5e83e3d875b20a2086278c2026a621f0",
+      "seq": 28,
+      "state": "committing"
+     }
+    ],
+    "export": [
+     "export temp file preserved: events.jsonl.606440-24ccb4c5.tmp",
+     "export temp file preserved: head.json.606332-db52f9d0.tmp"
+    ]
+   },
+   "resolve": [
+    {
+     "seq": 28,
+     "exit": 0,
+     "outcome": "NOT-COMMITTED",
+     "code": null
+    }
+   ],
+   "outcome_after_resolve": "rolled back",
+   "verify_after_resolve": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": [
+     "export temp file preserved: events.jsonl.606440-24ccb4c5.tmp",
+     "export temp file preserved: head.json.606332-db52f9d0.tmp"
+    ]
+   },
+   "n": 29
+  },
+  {
+   "window": "random",
+   "faults": null,
+   "kill_at_s": 0.0139,
+   "exited_before_kill": false,
+   "returncode": -9,
+   "msg_id": "k-b92a9f60b0",
+   "outcome": "rolled back",
+   "markers_after_kill": [],
+   "verify_after_kill": {
+    "exit": 0,
+    "clean": false,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": [
+     "export temp file preserved: events.jsonl.606440-24ccb4c5.tmp",
+     "export temp file preserved: head.json.606332-db52f9d0.tmp"
+    ]
+   },
+   "resolve": [],
+   "n": 30
+  }
+ ],
+ "final_verify": {
+  "exit": 0,
+  "clean": false,
+  "chain_problems": [],
+  "ledger_problems": {
+   "integrity": [],
+   "schema": []
+  },
+  "pending_markers": [],
+  "export": [
+   "export temp file preserved: events.jsonl.606440-24ccb4c5.tmp",
+   "export temp file preserved: head.json.606332-db52f9d0.tmp"
+  ]
+ },
+ "final_rows": 27,
+ "final_seq_consecutive": true,
+ "started_utc": "2026-10-18T14:32:44Z",
+ "finished_utc": "2026-10-18T14:32:55Z",
+ "head": "701438a0cde39bc26329bcca1d9621dc843357ae",
+ "python": "3.14.4",
+ "sqlite": "3.46.1",
+ "platform": "linux",
+ "argv": [
+  "interrupt",
+  "--kills",
+  "30",
+  "--seed",
+  "21",
+  "--out",
+  "/home/zetard/lane/WorkForce/from-mybuddy/WF-021/step5-interrupt.json"
+ ]
+}
