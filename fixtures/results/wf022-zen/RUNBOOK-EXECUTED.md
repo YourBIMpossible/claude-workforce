@@ -91,3 +91,99 @@ Every command runs as `python -I -B tools\wf\wf.py --db <root>\ledger\wf.db --ro
 - Wall times were not recorded for these four calls.
 
 Lesson for a pilot: a contract mistake found at `accept` cannot be repaired in place (the contract row is immutable). The owner abandons, closes and starts a new job, with a new contract and a new grant approval (OT1/OT2 again).
+
+## Step 4: interruption (kill during an append) and recovery
+
+**Setup.** A second job, `wf022-int`, on a fresh scope made by `make_scope.py`. The root is `<repo>\fixtures\tmp\wf022-int`, because the test-only fault seam is honoured only there. The contract and grant have the same shape as attempt 4 (`run_interruption.py`).
+
+**Interruption.** I1 was repaired normally. For I2:
+- the builder wrote the intent (seq 8) and edited `scope/README.md` on disk;
+- the receipt append then ran with `WF_TEST_FAULTS=delay-precommit:8000`, which holds the append for 8 s after the pending-write marker is written and before COMMIT;
+- `taskkill /F /T` killed it after 2.5 s.
+
+The seam makes "kill during an append" deterministic. A real kill can land anywhere: before the marker, inside COMMIT, or after it.
+
+**Recovery.** Each command was decided from the previous output and run one logged call at a time with `wfcall.py`. `finish_interruption.py` then completed the job.
+
+Every call follows (`<root>` = the boundary root). Owner turns are SIMULATED, as in step 3.
+
+| # | Phase | Role / session | Command | Exit | Result | Seconds | Owner turn |
+|---|---|---|---|---|---|---|---|
+| 1 | create | coordinator / C-wf022 | `job new wf022-int --contract <root>\build\contract.json` | 0 | ok=True, outcome=COMMITTED, seq=1 | 0.343 | **OWNER TURN**: contract (OT1) |
+| 2 | grant | coordinator / C-wf022 | `grant propose wf022-int --grant <root>\build\grant.json` | 0 | ok=True, outcome=COMMITTED, seq=2, block_hash=75a2cd896db5... | 0.32 |  |
+| 3 | grant | coordinator / C-wf022 | `grant activate wf022-int --owner-hash 75a2cd89 --quote approve G-docfix 75a2cd89 --turn "<owner turn text>"` | 0 | ok=True, outcome=COMMITTED, seq=3, block_hash=75a2cd896db5... | 0.334 | **OWNER TURN**: grant block hash + quote (OT2) |
+| 4 | bind | coordinator / C-wf022 | `bind wf022-int --bind-role coordinator --bind-session C-wf022 --bind-generation 1 --path scope/**` | 0 | ok=True, outcome=COMMITTED, seq=4 | 0.32 |  |
+| 5 | bind | coordinator / C-wf022 | `bind wf022-int --bind-role builder --bind-session B-wf022 --bind-generation 1 --tool Write --tool Edit --path scope/**` | 0 | ok=True, outcome=COMMITTED, seq=5 | 0.289 |  |
+| 6 | repair | builder / B-wf022 | `append wf022-int --type intent --content {"path": "scope/README.md", "sha_before": "ca27a9cc6db49f1...}` | 0 | ok=True, outcome=COMMITTED, seq=6 | 0.314 |  |
+| 7 | repair | builder / B-wf022 | `append wf022-int --type receipt --content {"path": "scope/README.md", "sha_before": "ca27a9cc6db49f1...}` | 0 | ok=True, outcome=COMMITTED, seq=7 | 0.309 |  |
+| 8 | repair | builder / B-wf022 | `append wf022-int --type intent --content {"path": "scope/README.md", "sha_before": "ec94812d0b213db...}` | 0 | ok=True, outcome=COMMITTED, seq=8 | 0.295 |  |
+| 9 | kill | builder / B-wf022 | `append wf022-int --type receipt --content {"path": "scope/README.md", "sha_before": "ec94812d0b213db...}` | 1 | stdout=, taskkill_rc=0, taskkill=SUCCESS: The process with PID 64236 (child process of PID 63848) has been terminated. | 3.027 |  |
+| 10 | recover-1 | coordinator / C-wf022 | `status wf022-int` | 0 | ok=True, pending_markers=[1 marker: seq 9, attempt 31f895d8…, state committing], axes: execution active + uncertain-write | 0.274 |  |
+| 11 | recover-1 | builder / B-wf022 | `append wf022-int --type intent --content {"path":"scope/PROTOCOL.md","sha_before":"x","note":"probe"}` | 1 | ok=False, code=uncertain-write-pending, seq=9, error=uncertain-write pending: wf022-int/9/31f895d8e36bba719b48cc70c831b292 | 0.235 |  |
+| 12 | recover-1 | coordinator / C-wf022 | `verify wf022-int` | 0 | ok=True, clean=False | 0.213 |  |
+| 13 | recover-2 | coordinator / C-wf022 | `resolve wf022-int 9 --attempt 31f895d8e36bba719b48cc70c831b292` | 0 | ok=True, outcome=NOT-COMMITTED, seq=9 | 0.213 | **OWNER TURN**: owner-present: decide the uncertain write (spec 3B / README 4.4a) |
+| 14 | recover-2 | coordinator / C-wf022 | `status wf022-int` | 0 | ok=True, pending_markers=[], axes={'acceptance': 'pending', 'authority': 'in-force', 'execution': 'active', 'review': 'none'} | 0.221 |  |
+| 15 | recover-2 | coordinator / C-wf022 | `verify wf022-int` | 0 | ok=True, clean=True | 0.225 |  |
+| 16 | recover-3 | coordinator / C-wf022 | `recover begin wf022-int --reason builder append killed mid-write (receipt for I2 not committed) --turn "<owner turn text>"` | 0 | ok=True, outcome=COMMITTED, seq=9, exceptions=[] | 0.282 | **OWNER TURN**: recover begin needs an owner turn naming the job (spec 3B) |
+| 17 | recover-3 | coordinator / C-wf022 | `status wf022-int` | 0 | ok=True, pending_markers=[], axes={'acceptance': 'pending', 'authority': 'in-force', 'execution': 'recovering', 'review': 'none'} | 0.223 |  |
+| 18 | recover-4 | coordinator / C-wf022 | `reconcile wf022-int` | 1 | ok=False, code=rejected, error=rejected(recovery-open): recovery is open since seq 9; only `wf recover` and read-only com | 0.191 |  |
+| 19 | recover-5 | coordinator / C-wf022 | `recover reconcile wf022-int --turn "<owner turn text>"` | 0 | ok=True, seq=None | 0.193 | **OWNER TURN**: owner turn naming the job |
+| 20 | recover-5 | coordinator / C-wf022 | `recover close wf022-int --turn "<owner turn text>"` | 0 | ok=True, outcome=COMMITTED, seq=10 | 0.287 | **OWNER TURN**: owner turn naming the job |
+| 21 | recover-5 | coordinator / C-wf022 | `status wf022-int` | 0 | ok=True, pending_markers=[], axes={'acceptance': 'pending', 'authority': 'in-force', 'execution': 'active', 'review': 'none'} | 0.243 |  |
+| 22 | recover-6 | coordinator / C-wf022 | `reconcile wf022-int` | 0 | ok=True, outcome=COMMITTED, seq=11, exceptions=[{'class': 'attempt-without-completion', 'id': 'X1', 'path': 'scope/README.md'}] | 0.281 |  |
+| 23 | recover-7 | builder / B-wf022 | `append wf022-int --type intent --content {"path":"scope/README.md","sha_before":"x","note":"before ...}` | 1 | ok=False, code=rejected, error=rejected(unreconciled): role builder has an unacknowledged reconcile report at seq 11; onl | 0.267 |  |
+| 24 | recover-7 | builder / B-wf022 | `ack-reconcile wf022-int --report 11 --exceptions ["X1"] --note X1: the I2 edit is on disk (scope/README.md sha 7a73bdaa... = pristine); receipt was lost in the killed append` | 0 | ok=True, outcome=COMMITTED, seq=12 | 0.266 |  |
+| 25 | recover-7 | builder / B-wf022 | `append wf022-int --type receipt --content {"path":"scope/README.md","sha_before":"ec94812d0b213db076...}` | 2 | ok=False, code=usage, error=not a file and not JSON: '{"path":"scope/README.md","sha_before":"ec94812d0b213db076a6456f | 0.217 |  |
+| 26 | recover-7 | coordinator / C-wf022 | `status wf022-int` | 0 | ok=True, pending_markers=[], axes={'acceptance': 'pending', 'authority': 'in-force', 'execution': 'active', 'review': 'none'} | 0.216 |  |
+| 27 | recover-8 | builder / B-wf022 | `append wf022-int --type receipt --content {"path": "scope/README.md", "sha_before": "ec94812d0b213db...}` | 0 | ok=True, outcome=COMMITTED, seq=13 | 0.274 |  |
+| 28 | finish | builder / B-wf022 | `append wf022-int --type intent --content {"path": "scope/PROTOCOL.md", "sha_before": "589ce65564f5f...}` | 0 | ok=True, outcome=COMMITTED, seq=14 | 0.25 |  |
+| 29 | finish | builder / B-wf022 | `append wf022-int --type receipt --content {"path": "scope/PROTOCOL.md", "sha_before": "589ce65564f5f...}` | 0 | ok=True, outcome=COMMITTED, seq=15 | 0.264 |  |
+| 30 | finish | builder / B-wf022 | `append wf022-int --type intent --content {"path": "scope/RESTORE-RUNBOOK.md", "sha_before": "e4b168...}` | 0 | ok=True, outcome=COMMITTED, seq=16 | 0.291 |  |
+| 31 | finish | builder / B-wf022 | `append wf022-int --type receipt --content {"path": "scope/RESTORE-RUNBOOK.md", "sha_before": "e4b168...}` | 0 | ok=True, outcome=COMMITTED, seq=17 | 0.249 |  |
+| 32 | finish | builder / B-wf022 | `append wf022-int --type intent --content {"path": "scope/PROTOCOL.md", "sha_before": "57628fad2422d...}` | 0 | ok=True, outcome=COMMITTED, seq=18 | 0.288 |  |
+| 33 | finish | builder / B-wf022 | `append wf022-int --type receipt --content {"path": "scope/PROTOCOL.md", "sha_before": "57628fad2422d...}` | 0 | ok=True, outcome=COMMITTED, seq=19 | 0.262 |  |
+| 34 | finish | builder / B-wf022 | `append wf022-int --type delivered --content {"claims": [{"claim": "I1-I5 restored after an interrupted...}` | 0 | ok=True, outcome=COMMITTED, seq=20 | 0.311 |  |
+| 35 | finish | coordinator / C-wf022 | `bind wf022-int --bind-role reviewer --bind-session R-wf022 --bind-generation 1 --tool Read --path scope/** --path pristine/**` | 0 | ok=True, outcome=COMMITTED, seq=21 | 0.248 |  |
+| 36 | finish | reviewer / R-wf022 | `accept wf022-int --results <root>\build\results.json` | 0 | ok=True, outcome=COMMITTED, decision=accepted, seq=22 | 0.324 |  |
+| 37 | finish | coordinator / C-wf022 | `verify wf022-int` | 0 | ok=True, clean=True | 0.238 |  |
+| 38 | finish | coordinator / C-wf022 | `close wf022-int --intervention owner-present recovery after a killed append: resolve, recover begin/reconcile/close (rehearsal, SIMULATED)` | 0 | ok=True, outcome=COMMITTED, seq=23 | 0.307 | **OWNER TURN**: intervention declaration: the recovery was an owner-present intervention (T21); minutes unknown |
+| 39 | finish | coordinator / C-wf022 | `export wf022-int` | 0 | ok=True, code=ok | 0.251 |  |
+| 40 | finish | coordinator / C-wf022 | `verify wf022-int` | 0 | ok=True, clean=True | 0.234 |  |
+| 41 | finish | coordinator / C-wf022 | `digest wf022-int` | 0 | ok=True | 0.22 | **OWNER TURN**: the owner reads the digest |
+
+**What the record showed after the kill:**
+- The ledger head stayed at seq 8. No partial event was written.
+- A pending-write marker was left at `ledger/pending/wf022-int/9-31f895d8….json`, in state `committing`.
+- `status` reported `execution: active+uncertain-write`.
+- Every further append was refused with `uncertain-write-pending` (row 11), and `verify` returned `clean: false`.
+- The I2 edit was on disk (`scope/README.md` = pristine `7a73bdaa…`) but had no receipt.
+- `resolve wf022-int 9 --attempt …` decided the write was NOT-COMMITTED: the marker was cleared and `verify` came back clean. Seq 9 had never been committed, so the next event (`recovery-opened`) took seq 9. The chain has no gap.
+- `recover begin` opened the recovery (seq 9) with an **empty** exception list.
+- While the recovery was open, ordinary `reconcile` was refused with `rejected(recovery-open)` (row 18).
+- `recover reconcile` had nothing to acknowledge (`seq: null`), and `recover close` closed the recovery (seq 10).
+- The ordinary `reconcile` that followed found `X1 attempt-without-completion scope/README.md` (seq 11): the intent at seq 8 had no receipt.
+- The builder was refused with `rejected(unreconciled)` until it ran `ack-reconcile --report 11 --exceptions ["X1"]` (seq 12).
+- The builder then re-recorded the I2 receipt against the file as inspected (seq 13).
+- Row 25 is my own malformed `--content` (a truncated sha, so neither a file nor JSON). It was refused with `usage` and wrote nothing.
+
+**What needed a human decision.** In a pilot, these points need the owner present:
+1. **Whether the killed write happened** (`resolve`, row 13). The marker alone cannot say. The owner, or the coordinator under an owner turn, picks the attempt. `resolve` reads the database and reports the truth (here NOT-COMMITTED); it does not guess.
+2. **Opening, reconciling and closing the recovery** (rows 16, 19, 20). Each `wf recover` command needs an owner turn that names the job (spec §3B).
+3. **Acknowledging X1** (row 24). Someone has to look at the file and say what the lost receipt would have said. Here the edit was on disk and matched pristine, so the receipt was re-recorded. Had the edit been absent, the right move would have been a new intent → edit → receipt instead.
+4. **The intervention declaration at close** (row 38). This job is closed with an owner-present intervention, not "none", and the minutes are `unknown`.
+
+No step needed a product-code change or a force option, and none exists.
+
+**End state:**
+- `accept` returned `decision: accepted` (seq 22) and `close` committed (seq 23).
+- `export` succeeded, and `verify` was clean after it.
+- The digest showed `closed: true` and head `self 2f46b843…3d64`.
+- `check-acceptance.ps1` returned AC1–AC6 True.
+- `scope/` is byte-identical to `pristine/` (7d10f027…, 7a73bdaa…, 66b3e5c2…).
+
+**Finding from this step, WF022-F7, NEEDS OWNER.** `recover begin` recorded an empty exception list and `recover reconcile` had nothing to acknowledge. Yet the ordinary `reconcile` run straight after `recover close` reported `attempt-without-completion` for the intent whose receipt was lost.
+- Spec §3B line 140 counts "events whose follow-up non-transactional action (an export, a receipt file) did not happen" as recoverable exceptions that the recovery lists.
+- Two readings fit:
+  - (a) the recovery's list covers only ledger/export-level exceptions, and role-level attempt gaps belong to the ordinary reconcile. Then the result is correct, but the README should say so.
+  - (b) the recovery should have listed X1.
+- The owner picks the reading. Nothing was changed.
