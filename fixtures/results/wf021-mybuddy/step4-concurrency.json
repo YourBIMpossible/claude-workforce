@@ -1,0 +1,131 @@
+{
+ "campaign": "concurrency",
+ "runs": [
+  {
+   "rep": 1,
+   "root": "/home/zetard/workspace/claude-workforce/.claude/worktrees/wf021/fixtures/tmp/wf021-conc1-20261018T141739Z-80a782",
+   "writers": 8,
+   "seconds": 300.0,
+   "wall_s": 300.6,
+   "attempts": 7257,
+   "committed": 7256,
+   "rejections": 1,
+   "rejection_pct": 0.014,
+   "rejections_by_code": {
+    "lock-timeout": 1
+   },
+   "lost": 0,
+   "duplicated": 0,
+   "unreported_rows": 0,
+   "unreported_ids": [],
+   "rows_added": 7256,
+   "seq_consecutive": true,
+   "committed_seq_matches_row": true,
+   "verify": {
+    "exit": 0,
+    "clean": true,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": []
+   },
+   "dt_median_s": 0.2272,
+   "failed_samples": [
+    {
+     "w": 3,
+     "msg_id": "w3-845-8ba8acdb",
+     "exit": 1,
+     "outcome": null,
+     "code": "lock-timeout",
+     "seq": null,
+     "dt": 5.0376,
+     "error": "reservation not obtained within 4.999849688028917 s (last SQLITE_BUSY)"
+    }
+   ]
+  },
+  {
+   "rep": 2,
+   "root": "/home/zetard/workspace/claude-workforce/.claude/worktrees/wf021/fixtures/tmp/wf021-conc2-20261018T142240Z-12cf3f",
+   "writers": 8,
+   "seconds": 300.0,
+   "wall_s": 300.5,
+   "attempts": 6754,
+   "committed": 6754,
+   "rejections": 0,
+   "rejection_pct": 0.0,
+   "rejections_by_code": {},
+   "lost": 0,
+   "duplicated": 0,
+   "unreported_rows": 0,
+   "unreported_ids": [],
+   "rows_added": 6754,
+   "seq_consecutive": true,
+   "committed_seq_matches_row": true,
+   "verify": {
+    "exit": 0,
+    "clean": true,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": []
+   },
+   "dt_median_s": 0.2553,
+   "failed_samples": []
+  },
+  {
+   "rep": 3,
+   "root": "/home/zetard/workspace/claude-workforce/.claude/worktrees/wf021/fixtures/tmp/wf021-conc3-20261018T142742Z-2e80da",
+   "writers": 8,
+   "seconds": 300.0,
+   "wall_s": 300.6,
+   "attempts": 6895,
+   "committed": 6895,
+   "rejections": 0,
+   "rejection_pct": 0.0,
+   "rejections_by_code": {},
+   "lost": 0,
+   "duplicated": 0,
+   "unreported_rows": 0,
+   "unreported_ids": [],
+   "rows_added": 6895,
+   "seq_consecutive": true,
+   "committed_seq_matches_row": true,
+   "verify": {
+    "exit": 0,
+    "clean": true,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": []
+   },
+   "dt_median_s": 0.2502,
+   "failed_samples": []
+  }
+ ],
+ "started_utc": "2026-10-18T14:17:39Z",
+ "finished_utc": "2026-10-18T14:32:44Z",
+ "head": "701438a0cde39bc26329bcca1d9621dc843357ae",
+ "python": "3.14.4",
+ "sqlite": "3.46.1",
+ "platform": "linux",
+ "argv": [
+  "concurrency",
+  "--writers",
+  "8",
+  "--seconds",
+  "300",
+  "--reps",
+  "3",
+  "--out",
+  "/home/zetard/lane/WorkForce/from-mybuddy/WF-021/step4-concurrency.json"
+ ]
+}
