@@ -131,17 +131,22 @@ class PayloadAndChannels(_Gate):
         self.assertEqual((r["channel"], r["session"], r["tool_name"], r["jobs"], r["paths"]),
                          ("preventable", "B1", "Write", ["j"], ["jobs/j/work/a.txt"]))
 
-    def test_T25_outside_boundary_is_not_a_workforce_path(self):
-        """T25: a target outside the boundary root (e.g. a sibling AIEP checkout) is allow `outside-boundary` for
-        bound and unbound sessions alike. Claim limit: the gate says nothing about that work."""
+    def test_T25_bound_session_outside_boundary_is_out_of_scope(self):
+        """T25 (FIRST-RELEASE-SPEC allow-list, AMENDMENT S4A-A4): a session bound to a job is denied `out-of-scope` for a
+        target outside the boundary root (e.g. a sibling AIEP checkout); its grant names boundary paths only. An
+        unbound session's target outside the boundary is allow `outside-boundary`: not a Workforce path, no claim."""
         self.explicit()
         aiep = os.path.join(os.path.dirname(self.dir), "ai-engineering-platform", "pkg3", "x.py")
-        for session in ("B1", "U9", "C1"):
-            with self.subTest(session=session):
-                r = self.allow(self.p(absolute=aiep, session=session), "outside-boundary")
-                self.assertEqual((r["jobs"], r["paths"]), ([], []))
+        for session in ("B1", "C1"):
+            for tool in ("Write", "Edit", "NotebookEdit"):
+                with self.subTest(session=session, tool=tool):
+                    r = self.deny(self.p(absolute=aiep, session=session, tool=tool), "out-of-scope")
+                    self.assertEqual((r["jobs"], r["paths"]), (["j"], []))
+        r = self.allow(self.p(absolute=aiep, session="U9"), "outside-boundary")
+        self.assertEqual((r["jobs"], r["paths"]), ([], []))
         self.ok(self.run_wf("grant", "revoke", "j", "--reason", "r", "--turn", TURN, role="owner", session="O1"))
-        self.allow(self.p(absolute=aiep, session="B1"), "outside-boundary")   # touches no job
+        self.deny(self.p(absolute=aiep, session="B1"), "authority-revoked")   # rule 4 now reaches outside targets
+        self.allow(self.p(absolute=aiep, session="U9"), "outside-boundary")
 
     def test_in_root_path_in_no_job_by_unbound_session(self):
         self.explicit()
@@ -447,7 +452,7 @@ class PathsAndFailClosed(_Gate):
                        "authority-none", "authority-proposed", "authority-expired", "authority-revoked",
                        "authority-voided", "authority-malformed", "stale-session", "not-current-binding",
                        "path-not-granted", "path-excluded", "unbound-session", "shell-not-preventable",
-                       "outside-boundary", "not-mediated", "gate-error", "allowed"):
+                       "out-of-scope", "outside-boundary", "not-mediated", "gate-error", "allowed"):
             self.assertIn(reason, gatecore.REASONS)
         self.assertEqual(len(set(gatecore.REASONS)), len(gatecore.REASONS))
 

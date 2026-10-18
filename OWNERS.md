@@ -146,3 +146,11 @@ B2 slice 5 (backup, restored-copy verification, T30 a-race/f/h, T36 re-check, T3
 ## Registration 2026-10-17 (slice 4a AMENDMENT S4A-A2, same worker Plexy)
 
 `tools/wf/wfcore/grant.py` and `tools/wf/tests/test_t34_grant_lifecycle.py` re-labelled S3G → S4G for the AMENDMENT S4A-A2 role-path fix (grant.check compares the target with the role's ARS paths/actions and the binding's declared paths). `tools/wf/tests/data/grant_check_corpus.json` stays S3G and must not change. Registration only.
+
+## Registration 2026-10-17 (slice 4b T25 correction, AMENDMENT S4A-A4, integrator White)
+
+FIRST-RELEASE-SPEC.md T25 and the owner's 4b pre-approval package require Deny for a bound session's hooked write outside the boundary; INTERFACE-CONTRACT-S4A §2 rule 8 / §7 T25 had specified allow `outside-boundary` for every session. AMENDMENT S4A-A4 restores the spec: a bound session's target outside the boundary is deny `out-of-scope`; an unbound session's stays allow `outside-boundary`. The S4G and S4L paths below are acted on by the integrator for this correction only (lane deviation recorded here; Plexy's S4G lane and Zen's S4L lane are otherwise unchanged).
+
+| Lane | Worker | Branch | Scope |
+|---|---|---|---|
+| S4bW | White | `sprint/white-b2s4b-t25` | `tools/wf/wfcore/gatecore.py` (rule 8 + REASONS `out-of-scope`), `tools/wf/tests/test_gate_decide.py` (T25 test, REASONS test), `tools/wf/tests/test_gate_hook_deployed.py` (one deployed T25 case), OWNERS.md, MANIFEST.sha256 |
