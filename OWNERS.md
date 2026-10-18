@@ -162,3 +162,12 @@ Adopted: the owner answered "deny" on 4B-PROCEDURE §10 item 9 (2026-10-18, D-02
 | Lane | Worker | Branch | Scope |
 |---|---|---|---|
 | S4bW | White | `sprint/white-b2s4b-t13-outside` | `tools/wf/wfcore/gatecore.py` (rule 5 identity check before rules 6/8), `tools/wf/tests/test_gate_decide.py` (four T13 tests), OWNERS.md, MANIFEST.sha256 |
+
+## Registration 2026-10-18 (slice 4b gate hook stdout, AMENDMENT S4A-A6, worker MyBuddy, integrator White)
+
+Build-7 Q1b showed Claude Code rejecting the hook's allow stdout (`"decision": "allow"`, "Hook JSON output validation failed"). AMENDMENT S4A-A6 fixes the stdout contract: allow writes exactly `{"reason": r}`, deny writes exactly `{"decision": "block", "reason": r}`; exit 0 allows, exit 2 denies; never `approve`/`allow`, `hookSpecificOutput` or `permissionDecision` on stdout. The decision record moves to the last stderr line (`wf gate: record <json>`). Decisions, reasons and gatecore are unchanged. The S4L paths below are edited by MyBuddy under WF-014 (lane deviation recorded here; Zen's S4L lane is otherwise unchanged); the S4M path is MyBuddy's own lane. Verified by White on Windows: the named test fails on 12a22f5 and passes on ad9dbc8.
+
+| Lane | Worker | Branch | Scope |
+|---|---|---|---|
+| S4M | MyBuddy | `sprint/mybuddy-wf014-gate-stdout` (PR #55, head ad9dbc8) | `tools/wf/gate/wf_gate_hook.py` (`_emit`), `tools/wf/tests/test_gate_hook_deployed.py` (A6 conformance on every run + named test), `tools/wf/tests/test_t19_gate_faults.py` (record read from stderr) |
+| S4bW | White | main | OWNERS.md, MANIFEST.sha256 |
