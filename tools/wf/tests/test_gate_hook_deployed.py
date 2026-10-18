@@ -19,6 +19,12 @@ Three layers:
   protected-path deny, outside-boundary allow (unbound), T25 out-of-scope deny (bound, S4A-A4), shell allow with
   SHELL_LIMITATION, audit-unavailable, probes. Skipped with a named reason until gatecore is present on the tree.
 Exit codes are asserted for decisions (0 allow, 2 deny) and not for the forced-error probe (S4A-A1).
+
+Hook output (AMENDMENT S4A-A6): every finished run is checked against Claude Code's hook-output schema - stdout is
+empty (forced-error probe only) or exactly one JSON line, `{"reason": r}` with exit 0 or `{"decision": "block",
+"reason": r}` with exit 2; never a top-level `decision` of "approve"/"allow", never `hookSpecificOutput`, no other
+key. The wf record (`decision`, `reason`, `channel`, `logged`, plus `limitation` / `probe_fault`) is read from the last
+stderr line `wf gate: record <json>`; `channel`/`logged`/`limitation`/`probe_fault` assertions read that record.
 """
 from __future__ import annotations
 
@@ -43,6 +49,8 @@ SHELL_LIMITATION = ("shell commands are recorded as invocations only; their file
                     "prevented or comprehensively detected; changes inside the monitored boundary are detected later "
                     "by wf reconcile/accept only")
 WIN = sys.platform == "win32"
+RECORD_PREFIX = "wf gate: record "
+ALLOW_KEYS, DENY_KEYS = {"reason"}, {"decision", "reason"}
 
 TEST_CORE = '''"""TEST DOUBLE written by test_gate_hook_deployed.py into a fixture wfcore copy under the test temp root.
 Never shipped; not lane S4G's gatecore. Just enough decision shape to drive the hook's record/failure flow."""
@@ -144,7 +152,10 @@ class HookBase(Base):
                 "cwd": cwd or self.root, "permission_mode": "auto", "hook_event_name": "PreToolUse",
                 "tool_name": tool, "tool_input": ti, "tool_use_id": "toolu_fixture"}
 
-    def run_hook(self, payload: dict | str | None = None, timeout: float = 60.0) -> tuple[int, dict | None, str, str]:
+    def run_hook(self, payload: dict | str | None = None,
+                 timeout: float = 60.0) -> tuple[int, dict | None, str, str, dict | None]:
+        """(exit code, stdout JSON object or None, stdout text, stderr text, wf record from stderr or None). Every
+        finished run is checked against Claude Code's hook-output schema (S4A-A6) before it is returned."""
         cwd = tempfile.mkdtemp(prefix="elsewhere-", dir=self.dir)  # a different cwd
         env = {"PATH": os.environ.get("PATH", "")}
         if WIN:
@@ -155,18 +166,48 @@ class HookBase(Base):
         out_text, err_text = p.stdout.decode("utf-8", "replace"), p.stderr.decode("utf-8", "replace")
         lines = [ln for ln in out_text.splitlines() if ln.strip()]
         out = json.loads(lines[0]) if len(lines) == 1 else None
-        return p.returncode, out, out_text, err_text
+        err_lines = [ln for ln in err_text.splitlines() if ln.strip()]
+        record = (json.loads(err_lines[-1][len(RECORD_PREFIX):])
+                  if err_lines and err_lines[-1].startswith(RECORD_PREFIX) else None)
+        self.assert_conforms(p.returncode, out_text, err_text)
+        return p.returncode, out, out_text, err_text, record
+
+    def assert_conforms(self, code: int, out_text: str, err_text: str = "") -> None:
+        """Claude Code's PreToolUse hook-output schema as frozen by S4A-A6 items 2-3. Empty stdout is allowed (the
+        forced-error probe writes nothing); anything else is exactly one JSON object line with the exact key set."""
+        ctx = (code, out_text, err_text)
+        lines = [ln for ln in out_text.splitlines() if ln.strip()]
+        if not lines:
+            return
+        self.assertEqual(len(lines), 1, ctx)
+        obj = json.loads(lines[0])
+        self.assertIsInstance(obj, dict, ctx)
+        self.assertNotIn("hookSpecificOutput", obj, ctx)
+        self.assertNotIn(obj.get("decision"), ("approve", "allow"), ctx)
+        self.assertIsInstance(obj.get("reason"), str, ctx)
+        if code == 0:
+            self.assertEqual(set(obj), ALLOW_KEYS, ctx)
+        else:
+            self.assertEqual(code, 2, ctx)
+            self.assertEqual(set(obj), DENY_KEYS, ctx)
+            self.assertEqual(obj["decision"], "block", ctx)
 
     def assert_decision(self, res, decision: str, reason: str, *, logged: bool | None = None) -> dict:
-        code, out, out_text, err = res
+        """Exit code, exact stdout, the stderr record's decision/reason/logged, and on deny the first stderr line.
+        Returns the record."""
+        code, out, out_text, err, record = res
         self.assertIsNotNone(out, f"expected one JSON line on stdout; got {out_text!r}; stderr {err!r}")
-        self.assertEqual((out["decision"], out["reason"]), (decision, reason), (out, err))
-        self.assertEqual(code, 0 if decision == "allow" else 2, (out, err))
+        expected_out = {"reason": reason} if decision == "allow" else {"decision": "block", "reason": reason}
+        self.assertEqual(out, expected_out, (out_text, err))
+        self.assertEqual(code, 0 if decision == "allow" else 2, (out_text, err))
+        self.assertIsNotNone(record, f"expected a last stderr line starting {RECORD_PREFIX!r}; stderr {err!r}")
+        self.assertEqual((record["decision"], record["reason"]), (decision, reason), (record, err))
         if decision == "deny":
-            self.assertIn(f"deny {reason}", err)
+            first = [ln for ln in err.splitlines() if ln.strip()][0]
+            self.assertTrue(first.startswith(f"wf gate: deny {reason}"), (first, err))
         if logged is not None:
-            self.assertEqual(out["logged"], logged, (out, err))
-        return out
+            self.assertEqual(record["logged"], logged, (record, err))
+        return record
 
     def runtime_tree(self) -> list[str]:
         top = os.path.join(self.root, "runtime")
@@ -288,15 +329,17 @@ class HookFlowTestCore(HookBase):
         self.assert_decision(res, "deny", "protected-path", logged=True)
         self.assertEqual([r["reason"] for r in gatelog.attempts(self.root)], ["protected-path"])
 
-    def test_shell_limitation_on_stdout_and_stderr_and_no_command_text_stored(self):
+    def test_shell_limitation_in_record_and_stderr_and_no_command_text_stored(self):
+        """S4A-A6: the limitation travels in the stderr record and its own stderr line; stdout is `{"reason"}`
+        only (renamed from ..._on_stdout_and_stderr_...: the stdout half no longer holds by contract)."""
         self.deploy()
         command = "echo secret-looking-text > jobs/j/work/a.txt"
         res = self.run_hook(self.payload("Bash", command=command))
         out = self.assert_decision(res, "allow", "shell-not-preventable", logged=True)
         self.assertEqual(out["channel"], "shell")
         self.assertEqual(out["limitation"], SHELL_LIMITATION)
-        self.assertIn(SHELL_LIMITATION, res[2])
-        self.assertIn(SHELL_LIMITATION, res[3])
+        self.assertNotIn(SHELL_LIMITATION, res[2])
+        self.assertIn(f"wf gate: {SHELL_LIMITATION}", res[3])
         row = gatelog.attempts(self.root)[0]
         self.assertEqual((row["command_sha256"], row["command_length"]),
                          (hashlib.sha256(command.encode("utf-8")).hexdigest(), len(command)))
@@ -364,6 +407,38 @@ class HookFlowTestCore(HookBase):
         out = self.assert_decision(self.run_hook(self.payload("Read")), "allow", "not-mediated", logged=True)
         self.assertEqual(out["channel"], "other")
 
+    def test_stdout_conforms_to_claude_code_hook_schema(self):
+        """AMENDMENT S4A-A6 (build-7 Q1b: Claude Code rejected `"decision": "allow"`). For an allow on each channel,
+        a deny from the decision core, an audit-unavailable deny and a pre-core gate-config deny: stdout is exactly
+        `{"reason": r}` (exit 0) or `{"decision": "block", "reason": r}` (exit 2); never "approve"/"allow", never
+        `hookSpecificOutput` / `permissionDecision`; the wf record is the last stderr line."""
+        cases = []
+        self.deploy()
+        cases.append(("allow preventable", self.run_hook(self.payload("Write")), 0, "test-core-allow"))
+        cases.append(("allow shell", self.run_hook(self.payload("Bash")), 0, "shell-not-preventable"))
+        cases.append(("allow other", self.run_hook(self.payload("Read")), 0, "not-mediated"))
+        cases.append(("deny core", self.run_hook(self.payload("Write", path=os.path.join(self.root, "ledger", "l.db"))),
+                      2, "protected-path"))
+        cases.append(("deny malformed", self.run_hook("not json"), 2, "malformed-payload"))
+        gate_db = os.path.join(self.root, "runtime", "gate", "gate.db")
+        os.replace(gate_db, gate_db + ".kept")                      # the allows above created it; keep, don't delete
+        self.make_gate_db_unwritable()
+        cases.append(("deny audit-unavailable", self.run_hook(self.payload("Write")), 2, "audit-unavailable"))
+        os.remove(os.path.join(self.hooks, "wf_gate.json"))
+        cases.append(("deny gate-config", self.run_hook(), 2, "gate-config"))
+        for name, (code, out, out_text, err, record), want_code, reason in cases:
+            with self.subTest(case=name):
+                self.assertEqual(code, want_code, (out_text, err))
+                self.assertEqual(len([ln for ln in out_text.splitlines() if ln.strip()]), 1, out_text)
+                self.assertNotIn("hookSpecificOutput", out_text)
+                self.assertNotIn("permissionDecision", out_text)
+                self.assertNotIn('"approve"', out_text)
+                self.assertNotIn('"allow"', out_text)
+                self.assertEqual(out, {"reason": reason} if want_code == 0 else {"decision": "block", "reason": reason})
+                self.assertIsNotNone(record, err)
+                self.assertEqual(record["reason"], reason)
+                self.assertEqual(record["decision"], "allow" if want_code == 0 else "deny")
+
     # ---- S4A-A1 probes inside probe_root
     def test_probe_timeout_fires_inside_probe_root(self):
         self.deploy(probe_fault="timeout", probe_root=self.root, probe_sleep_s=30)
@@ -377,9 +452,11 @@ class HookFlowTestCore(HookBase):
 
     def test_probe_error_fires_inside_probe_root(self):
         self.deploy(probe_fault="error", probe_root=self.root)
-        code, out, out_text, err = self.run_hook(self.payload("Write"))
+        code, out, out_text, err, record = self.run_hook(self.payload("Write"))
         self.assertIn("wf gate probe: forced error", err)
         self.assertIsNone(out, out_text)                          # no decision line; exit code not asserted
+        self.assertEqual(out_text.strip(), "")                    # S4A-A6: nothing on stdout, so nothing to misread
+        self.assertIsNone(record, err)
         self.assertEqual(gatelog.verify(self.root)["rows"], 0)
 
     def test_probe_target_outside_probe_root_is_gate_config(self):
@@ -439,8 +516,8 @@ class HookWithRealGatecore(HookBase):
         res = self.run_hook(self.payload("Bash"))
         out = self.assert_decision(res, "allow", "shell-not-preventable", logged=True)
         self.assertEqual(out["limitation"], SHELL_LIMITATION)
-        self.assertIn(SHELL_LIMITATION, res[2])
-        self.assertIn(SHELL_LIMITATION, res[3])
+        self.assertNotIn(SHELL_LIMITATION, res[2])                # S4A-A6: stdout is {"reason"} only
+        self.assertIn(f"wf gate: {SHELL_LIMITATION}", res[3])
 
     def test_audit_unavailable_on_preventable_allow(self):
         self.deploy()
@@ -454,9 +531,11 @@ class HookWithRealGatecore(HookBase):
         with self.assertRaises(subprocess.TimeoutExpired):
             self.run_hook(self.payload("Write", path=os.path.join(self.root, "ledger", "l.db")), timeout=3.0)
         self.deploy(probe_fault="error", probe_root=self.root)
-        code, out, out_text, err = self.run_hook(self.payload("Write", path=os.path.join(self.root, "ledger", "l.db")))
+        code, out, out_text, err, record = self.run_hook(self.payload("Write", path=os.path.join(self.root, "ledger",
+                                                                                                "l.db")))
         self.assertIn("wf gate probe: forced error", err)
         self.assertIsNone(out, out_text)
+        self.assertIsNone(record, err)
 
     def test_deployed_hook_never_writes_the_ledger(self):
         conn = sqlite3.connect(self.db)

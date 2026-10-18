@@ -151,6 +151,9 @@ class T19GateFaults(Base):
         return hashlib.sha256(text.encode()).hexdigest()
 
     def run_hook(self, payload: dict | None = None, timeout: float = 60.0) -> tuple[int, dict, str]:
+        """(exit code, wf record, stderr). AMENDMENT S4A-A6: the decision is the exit code (0 allow, 2 deny); stdout
+        is `{"reason": r}` or `{"decision": "block", "reason": r}`; the record (decision, reason, channel, logged,
+        ...) is the last stderr line `wf gate: record <json>`. The stdout reason must equal the record's."""
         cwd = tempfile.mkdtemp(prefix="elsewhere-", dir=self.dir)     # a different cwd, inside the test root
         env = {"PATH": os.environ.get("PATH", "")}
         if WIN:
@@ -158,17 +161,24 @@ class T19GateFaults(Base):
         p = subprocess.run([sys.executable, "-I", self.hook], input=json.dumps(payload or self.payload()),
                            capture_output=True, text=True, timeout=timeout, cwd=cwd, env=env)
         try:
-            out = json.loads(p.stdout.strip().splitlines()[-1]) if p.stdout.strip() else {}
+            answer = json.loads(p.stdout.strip().splitlines()[-1]) if p.stdout.strip() else {}
         except ValueError:
-            out = {"raw": p.stdout}
-        self.evidence.setdefault("hook", []).append({"exit": p.returncode, "out": out, "stderr": p.stderr[-400:]})
-        return p.returncode, out, p.stderr
+            answer = {"raw": p.stdout}
+        err_lines = [ln for ln in p.stderr.splitlines() if ln.strip()]
+        prefix = "wf gate: record "
+        record = json.loads(err_lines[-1][len(prefix):]) if err_lines and err_lines[-1].startswith(prefix) else {}
+        self.evidence.setdefault("hook", []).append({"exit": p.returncode, "stdout": answer, "record": record,
+                                                     "stderr": p.stderr[-400:]})
+        if answer and record:
+            self.assertEqual(answer.get("reason"), record.get("reason"), (answer, record))
+        return p.returncode, record, p.stderr
 
     def assert_hook_denies(self, reason: str, payload: dict | None = None) -> tuple[dict, str]:
         code, out, err = self.run_hook(payload)
         self.assertEqual(code, 2, (out, err))
         self.assertEqual((out.get("decision"), out.get("reason")), ("deny", reason), (out, err))
-        self.assertIn(reason, err, "the deny reason is also on stderr (PreToolUse block text)")
+        self.assertTrue(err.splitlines()[0].startswith(f"wf gate: deny {reason}"),
+                        "the first stderr line is the deny reason (PreToolUse block text)")
         return out, err
 
     def assert_hook_allows(self, payload: dict | None = None) -> dict:

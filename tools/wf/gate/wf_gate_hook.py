@@ -8,12 +8,19 @@ as `python -I <hooks dir>\\wf_gate_hook.py`: it does not depend on PYTHONPATH, t
    `gate-integrity`; a modified hook or library never decides);
 3. apply the guarded probe switch when `probe_fault` is configured (S4A-A1; otherwise exactly as section 4);
 4. put `wf_dir` first on sys.path and import `wfcore.gatecore` and `wfcore.gatelog`;
-5. read the payload from stdin, decide, record (section 3 write-failure rule), and print one JSON line
-   `{"decision", "reason", "channel", "logged"}` (plus `limitation` for the shell channel, `probe_fault` when a
-   probe is active). Exit 0 = allow, 2 = deny (the reason is also written to stderr).
+5. read the payload from stdin, decide, record (section 3 write-failure rule), and answer in Claude Code's
+   hook-output schema (AMENDMENT S4A-A6): stdout is exactly one JSON line, `{"reason": "<wf reason>"}` on allow or
+   `{"decision": "block", "reason": "<wf reason>"}` on deny. Exit 0 = allow, 2 = deny; the exit code comes from the
+   internal decision, never from stdout. stdout never carries `"approve"`, `"allow"`, `hookSpecificOutput` /
+   `permissionDecision` or any other key: the gate only declines to object, so Claude Code's own permission prompt
+   still applies. The wf record `{"decision", "reason", "channel", "logged"}` (plus `limitation` for the shell
+   channel, `probe_fault` when a probe is active) is the last stderr line, `wf gate: record <json>`; on deny the
+   first stderr line is `wf gate: deny <reason>`.
 
 Denials before the decision core runs (`gate-config`, `gate-integrity`) are not written to the gate log: the
-library that writes it is either unknown or unverified at that point. They print `"logged": false`.
+library that writes it is either unknown or unverified at that point. Their record carries `"logged": false`.
+The S4A-A1 forced-error probe raises on purpose and so writes no stdout line and no record (its outcome belongs to
+Claude Code's `onFailure`).
 
 This file never registers itself, edits settings, or writes anywhere except through `wfcore.gatelog`.
 """
@@ -151,13 +158,17 @@ def _probe_targets(cfg: dict, payload: Any, gatecore: Any) -> None:
             raise _Deny("gate-config", "probe_fault: a target path is not inside probe_root")
 
 
-def _emit(stdout: TextIO, stderr: TextIO, out: dict, stderr_lines: list[str]) -> int:
-    stdout.write(json.dumps(out, sort_keys=True) + "\n")
+def _emit(stdout: TextIO, stderr: TextIO, record: dict, stderr_lines: list[str]) -> int:
+    """AMENDMENT S4A-A6: stdout in Claude Code's hook-output schema, the wf record as the last stderr line, and the
+    exit code from the internal decision. Only "block" is ever written as a top-level `decision`."""
+    allow = record["decision"] == "allow"
+    answer = {"reason": record["reason"]} if allow else {"decision": "block", "reason": record["reason"]}
+    stdout.write(json.dumps(answer, sort_keys=True) + "\n")
     stdout.flush()
-    for line in stderr_lines:
+    for line in [*stderr_lines, "wf gate: record " + json.dumps(record, sort_keys=True)]:
         stderr.write(line.encode("ascii", "backslashreplace").decode("ascii") + "\n")
     stderr.flush()
-    return EXIT_ALLOW if out["decision"] == "allow" else EXIT_DENY
+    return EXIT_ALLOW if allow else EXIT_DENY
 
 
 def _now() -> str:
