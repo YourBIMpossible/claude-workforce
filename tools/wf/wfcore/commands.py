@@ -517,9 +517,10 @@ def _recovery_state(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 def export_cmd(db: str, job: str) -> dict[str, Any]:
     """`wf export <job>`: ledger-read-only, export-writing. Refuses an unknown job exactly as `status` does
-    (before any directory is created), then regenerates jobs\\<job>\\export via export.refresh (bounded read
-    snapshot, temp file + os.replace, writes only under paths.export_dir) and re-checks it with export.check.
-    Never opens a write transaction, never appends a row, never touches markers or head."""
+    (before any directory is created), then regenerates jobs\\<job>\\export via export.refresh (under the write
+    lock: BEGIN IMMEDIATE across its snapshot and its file writes, then ROLLBACK, FIX2 #45 (b); temp file +
+    os.replace, writes only under paths.export_dir) and re-checks it with export.check. Never commits a ledger
+    write, never appends a row, never touches markers or head."""
     conn = dbm.connect(db, create=False)
     try:
         with dbm.read_snapshot(conn):
