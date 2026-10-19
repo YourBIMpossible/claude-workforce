@@ -5,6 +5,8 @@
        cleared only by proof, its row present with the marker's `self`, as a well-formed one is.
   #18  the resolve ROLLBACKs after a vanished marker (ALREADY-CLEARED) and after a failed conflict re-record are guarded
        as FIX1 E5 is: a failure is recorded as `rollback_error`, the decided outcome stands, never exit 4.
+  #21  (wf.py, AMENDMENT FIX2-A9) an auto-resolve that raises something other than WfError after a commit-uncertain
+       outcome is recorded beside it (`auto_resolve`: ERROR, "<type>: <message>"); the uncertain result stands.
   #46  `write_event`'s generic handler guards its own marker delete and closes the connection in `finally`: a failing
        delete is exit 1 `refused` `marker-unwritable`, never exit 4.
   #47  the DUPLICATE-IGNORED handler guards its ROLLBACK and closes in `finally`, so the write lock is never left held.
@@ -204,6 +206,23 @@ class F2ResolveRollback(Ledger):
         self.assertTrue(os.path.exists(ref.path), "an unrecorded conflict marker is kept")
         self.assertTrue(self.lock_free(), "resolve's finally closed the connection")
         self.assertIsNone(self.row_at(ref.seq), "the closed connection rolled the re-insert back")
+
+
+# ------------------------------------------------------------------------------------------------ #21 (S7d)
+
+class F2AutoResolve(Ledger):
+    def test_auto_resolve_error_keeps_uncertain_result(self):
+        """A non-BUSY COMMIT error gives commit-uncertain (no injected fault, so wf.py auto-resolves); the auto-resolve
+        then raises a non-WfError."""
+        with _failing("COMMIT"), \
+                mock.patch.object(wf.commands, "resolve", side_effect=RuntimeError("injected auto-resolve failure")):
+            code, r = self.main("append", "j", "--type", "intent", "--content",
+                                json.dumps({"path": "jobs/j/work/a.txt", "sha_before": "", "note": "n"}),
+                                role="builder", session="B1")
+        self.assertEqual((code, r.get("code")), (1, "commit-uncertain"), r)
+        self.assertEqual(r.get("auto_resolve"), {"outcome": "ERROR", "error": "RuntimeError: injected auto-resolve failure"}, r)
+        self.assertTrue(r.get("attempt_id"), r)
+        self.assertTrue(r.get("action", "").startswith("wf resolve j "), r)
 
 
 # ------------------------------------------------------------------------------------------------ #46 (W57-F1)
