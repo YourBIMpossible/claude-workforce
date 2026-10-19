@@ -75,6 +75,26 @@ def check_job_id(job: str) -> None:
         raise WfRejected("malformed", f"job id {job!r} must match {_ID.pattern}")
 
 
+_DEVICE = re.compile(r"^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$", re.IGNORECASE)
+
+
+def check_new_job_id(job: str, existing: list[str]) -> None:
+    """PACKAGE-FIX1 I1, at `job new` only: a job id names directories (`jobs/<id>/`, `ledger/pending/<id>/`), so it is
+    refused when a filesystem would merge it with another name or a device, on every platform (fail closed, as spec
+    section 4.4 names scope paths): a trailing dot or space, `..` anywhere, a Windows device name with or without an
+    extension, or an existing id that differs only by case."""
+    check_job_id(job)
+    if job.endswith((".", " ")):
+        raise WfRejected("malformed", f"job id {job!r} must not end in a dot or a space")
+    if ".." in job:
+        raise WfRejected("malformed", f"job id {job!r} must not contain '..'")
+    if _DEVICE.match(job):
+        raise WfRejected("malformed", f"job id {job!r} is a Windows device name")
+    for other in existing:
+        if other != job and other.casefold() == job.casefold():
+            raise WfRejected("malformed", f"job id {job!r} equals existing job {other!r} case-insensitively")
+
+
 def validate_contract(c: Any) -> None:
     if not isinstance(c, dict):
         raise WfRejected("malformed", "contract must be a JSON object")

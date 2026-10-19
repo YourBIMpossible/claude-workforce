@@ -160,7 +160,8 @@ def _append(db: str, job: str, faults: Faults, oplog: OpLog, *, etype: str, cont
             # PACKAGE-FIX1 E6: the dedicated refusal, checked inside the reservation before build_row's
             # contract-first rule (which would otherwise answer "contract event must be the first event")
             raise WfRefused(f"job {job} already exists")
-        if etype == "contract":
+        if etype == "contract":  # I1: case-insensitive clash with an existing id, decided inside the reservation
+            validate.check_new_job_id(job, dbm.jobs(conn))
             csha = sha256_obj(content["contract"])
             ccontent = content["contract"]
         rows = _guard(conn, job, etype=etype, role=role, session=session, generation=generation, msg_id=msg_id,
@@ -182,9 +183,33 @@ def _append(db: str, job: str, faults: Faults, oplog: OpLog, *, etype: str, cont
 
 # ---------------------------------------------------------------- job
 
+def _scope_overlaps(read_scope: list, write_scope: list) -> list[str]:
+    """I4: pairs `<read> ~ <write>` whose static prefixes (the glob up to its first wildcard, cut at a path
+    component) nest, so one scope can name files of the other. A warning only: `job new` never refuses on it."""
+    def prefix(g: str) -> list[str]:
+        parts = []
+        for c in g.replace("\\", "/").split("/"):
+            if any(ch in c for ch in "*?["):
+                break
+            if c:
+                parts.append(os.path.normcase(c))
+        return parts
+
+    out = []
+    for r in read_scope:
+        for w in write_scope:
+            if not (isinstance(r, str) and isinstance(w, str)):
+                continue
+            pr, pw = prefix(r), prefix(w)
+            n = min(len(pr), len(pw))
+            if pr[:n] == pw[:n]:
+                out.append(f"{r} ~ {w}")
+    return out
+
+
 def job_new(db: str, job: str, contract_src: str, msg_id: str, role: str, session: str, generation: int,
             faults: Faults, oplog: OpLog) -> dict[str, Any]:
-    check_job_id(job)
+    validate.check_new_job_id(job, [])  # I1 name rules first; the case clash is re-checked under the reservation
     contract = _load_json(contract_src)
     validate_contract(contract)
     csha = sha256_obj(contract)
@@ -210,6 +235,9 @@ def job_new(db: str, job: str, contract_src: str, msg_id: str, role: str, sessio
                   allow_no_contract=True)
     res["contract_sha256"] = csha
     res["baseline_entries"] = len(base.get("entries", {}))
+    overlaps = _scope_overlaps(contract.get("read_scope", []), contract.get("write_scope", []))
+    if overlaps:
+        res["warnings"] = ["read_scope overlaps write_scope: " + ", ".join(overlaps)]
     return res
 
 

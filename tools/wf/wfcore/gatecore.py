@@ -80,7 +80,10 @@ REASONS: tuple[str, ...] = (
     "recovery-open", "cancelled", "authority-none", "authority-proposed", "authority-expired", "authority-revoked",
     "authority-voided", "authority-malformed",
     "stale-session", "not-current-binding", *_GRANT_CHECK_REASONS,
-    "unbound-session", "shell-not-preventable", "out-of-scope", "outside-boundary", "not-mediated", "gate-error")
+    "unbound-session", "shell-not-preventable", "out-of-scope", "outside-boundary", "not-mediated", "gate-error",
+    # PACKAGE-FIX1 I6: reasons only the hook emits (config and integrity checks, audit write failure); listed here so
+    # REASONS is the one complete vocabulary of gate reasons
+    "gate-config", "gate-integrity", "audit-unavailable")
 
 _PATH_KEY = {"Write": "file_path", "Edit": "file_path", "NotebookEdit": "notebook_path"}
 _DRIVE = re.compile(r"^[A-Za-z]:")
@@ -126,6 +129,10 @@ def _collapse(parts: list[str]) -> tuple[list[str], bool, bool]:
 
 
 def _absolute(raw: str, cwd: str) -> str:
+    # AMENDMENT FIX1-A2 I7: a Windows drive-less rooted path (one leading `\` or `/`, not `\\` or `//`) is rooted at
+    # the cwd's drive, not joined to the cwd; _to_root_relative then decides inside or outside as usual.
+    if _DRIVE.match(cwd) and raw[:1] in ("\\", "/") and not raw.startswith(("\\\\", "//")):
+        return cwd[:2] + raw.replace("/", "\\")
     if _split_abs(raw) is not None:
         return raw
     sep = "\\" if (_DRIVE.match(cwd) or "\\" in cwd) else "/"

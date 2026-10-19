@@ -1,15 +1,19 @@
 # wf — Workforce ledger CLI (FB1.4 R1 record-and-verify slice)
 
 `wf` records a job's events in a hash-chained SQLite ledger and verifies them. It **records and verifies**; it does
-not gate tools, enforce identity, sandbox anything, or replay/recover jobs. Python 3 stdlib only; always run with
+not gate tools by itself (the gate hook is separate), enforce identity, sandbox anything, or replay jobs; recovery is
+the owner-driven `wf recover` procedure below. Python 3 stdlib only; always run with
 `python -I`.
 
 ```
 python -I F:\Claude-Workforce\tools\wf\wf.py [--db PATH] [--role R --session S] [--generation N] [--msg-id ID] [--json] [--oplog] <command>
 ```
 
-`--db` defaults to `ledger\ledger.db`. `--role`/`--session` may come from `WF_ROLE`/`WF_SESSION`. Exit codes: `0` ok,
-`1` error/refused/rejected, `2` usage, ambiguous resolve, or fault seam refused.
+`--db` is required: give `--db PATH` or set `WF_DB` (`--db` wins when both are given). There is no default ledger;
+without either, every command answers `rejected(usage): --db required` with exit 2 (FIX1 I3: a forgotten `--db` must not
+write the real ledger). `--role`/`--session` may come from `WF_ROLE`/`WF_SESSION`. Exit codes: `0` ok, `1`
+error/refused/rejected, `2` usage, ambiguous resolve, or fault seam refused, `3` a fixture fault-seam kill, `4`
+`internal-error` (an unexpected exception, reported as one result instead of a traceback).
 
 ## Commands
 
@@ -21,13 +25,35 @@ python -I F:\Claude-Workforce\tools\wf\wf.py [--db PATH] [--role R --session S] 
 | `grant activate <job> --owner-hash H [--quote Q] [--turn T]` | coordinator | Records the grant as `activated` if `H` (≥ 8 hex chars, prefix match) equals the block hash. |
 | `append <job> --type intent\|receipt\|blocker\|handoff\|delivered --content FILE\|JSON` | builder (handoff/blocker: any listed in `validate.ROLE_FOR_TYPE`) | Appends one event. |
 | `status <job>` | — | Head, contract pin, axes (execution, acceptance, review, authority), pending markers. Read-only. |
-| `digest <job>` | — | Owner surface (spec T26), read-only; ledger fields, `head` and `db_size_bytes` come from one read snapshot, pending markers from the marker files read after it: `head` (seq, self, `db_size_bytes`) to copy into an owner turn as the retained checkpoint; `done`; `active` (axes, latest event seq per axis); `needs_owner` (decision queue, each item with `recommendation` and `evidence`); `grants` (each activated grant's verbatim quote, source turn, block hash, proposed and activation seq, current state); `ars`; `bindings`; `evidence` (paths cited by receipts, delivered claims or an `evidence` field, with seq; listed, never opened); plus counts, contract pin, axes and pending markers. No raw event content is relayed. **Limits:** R1 has no `wf bind`, so `bindings` is the table observed from event headers (`source` says so); role, session and generation are caller-supplied text and the digest does not verify identity. |
+| `digest <job>` | — | Owner surface (spec T26), read-only; ledger fields, `head` and `db_size_bytes` come from one read snapshot, pending markers from the marker files read after it: `head` (seq, self, `db_size_bytes`) to copy into an owner turn as the retained checkpoint; `done`; `active` (axes, latest event seq per axis); `needs_owner` (decision queue, each item with `recommendation` and `evidence`); `grants` (each activated grant's verbatim quote, source turn, block hash, proposed and activation seq, current state); `ars`; `bindings`; `evidence` (paths cited by receipts, delivered claims or an `evidence` field, with seq; listed, never opened); plus counts, contract pin, axes and pending markers. No raw event content is relayed. **Limits:** `bindings` is the `wf bind` table when the job has explicit bindings, otherwise the table observed from event headers (`source` says which); role, session and generation are caller-supplied text and the digest does not verify identity. |
 | `verify [job]` | — | Schema/constraints, `integrity_check`, chain (prev/self/content hashes, canonical JSON, contract pin), export consistency, pending markers. `clean: true` only when all are empty. Read-only. |
 | `export <job>` | — | Regenerates `jobs\<job>\export\` (events.jsonl, head.json, contract.json, manifest.txt) from a bounded read snapshot and re-checks it. Ledger-read-only, export-writing: no event, no write transaction, no marker; writes only under the export directory. Unknown job → `refused`; a refresh failure or remaining export problem → exit 1, code `export-error`. |
 | `checkpoint <job>` | — | Writes `jobs\<job>\export\checkpoint.json` = (job, seq, self, contract pin). Keep it elsewhere; a later `verify` plus comparison detects a rewrite of anything up to that seq. |
 | `accept <job> --results FILE` | reviewer | Records `accept` with decision `accepted` only when every contract criterion is present with `pass: true`, no changed path is outside scope (P4) or excluded (P5), and no unknown criterion is named; otherwise `rejected`. Refused (no event) if the session wrote any builder event (`same-session`) or nothing was delivered. |
 | `close <job> --intervention TEXT` | coordinator | Refused unless verify is clean, no marker is pending, and acceptance is `accepted` **or** the job is abandoned (the abandoned-close rule). Writes `close`; the job then rejects further events. |
 | `resolve <job> <seq> [--attempt ID] [--disposition TEXT]` | — | Decides an uncertain write (below). |
+| `bind <job> --bind-role R --bind-session S [--bind-generation N] [--tool T]... [--path GLOB]...` | coordinator | Records a role assignment checked against the activated grant's ARS (spec 2B); the bound session answers with `append --type ack-assignment`. |
+| `reconcile <job> [--target-role builder]` | coordinator | Compares in-scope files with the baseline, receipts and intents and appends a `reconcile-report`; the role acknowledges it with `ack-reconcile <job> --report SEQ --exceptions JSON`. |
+| `recover begin\|reconcile\|close <job> --turn T` | coordinator (owner turn naming the job) | Opens a recovery (the chain is verified first), acknowledges each recoverable exception it lists, and closes it once all are acknowledged and the chain verifies. Every ordinary mutation refuses while a recovery is open. |
+| `recover decide <job> --decision resume\|restore\|abandon --turn T` | coordinator | Records the builder-role decision after a confirmed stop (spec 6.2 step 4). |
+
+**Recovery and reconcile are different paths.** `wf recover` handles chain and export exceptions (spec §3B): a broken
+or stale export, an open recovery, the recoverable exceptions `recover begin` lists. `wf reconcile` handles the work
+itself (spec §6 / R12): intents without receipts, receipts that do not match the files, attempts without completion.
+**Replacing a session** (the replacement path): the coordinator records `append --type stop-confirmed` for the old
+session, runs `wf reconcile`, records `wf recover decide --decision resume|restore|abandon`, then binds the new
+session with `wf bind ... --bind-generation N+1` (within the grant's ARS replacement rule). The old session's bindings
+are then replaced or stopped and the gate denies its writes (T13).
+
+**Job ids at `job new`** (FIX1 I1). A job id names directories (`jobs\<job>\`, `ledger\pending\<job>\`), so besides the
+`[A-Za-z0-9][A-Za-z0-9._-]{0,63}` grammar, `job new` refuses `rejected(malformed)` an id that ends in a dot or a space,
+contains `..`, is a Windows device name (`CON`, `PRN`, `AUX`, `NUL`, `COM1`-`COM9`, `LPT1`-`LPT9`, any case, with or
+without an extension), or equals an existing id case-insensitively. This holds on every platform. A second `job new`
+with the exact existing id answers `job <job> already exists`.
+
+**Scope overlap warning** (FIX1 I4). When a contract's `read_scope` and `write_scope` can name the same files (one
+glob's literal prefix lies inside the other's), `job new` still records the job and adds
+`"warnings": ["read_scope overlaps write_scope: <read> ~ <write>, ..."]` to its result.
 
 Event rules (`validate.build_row`): role allowed for the type; contract first; contract pin added to every event;
 `msg_id` replay with identical content → `DUPLICATE-IGNORED` (exit 0, no row), with different content → rejected;
@@ -137,8 +163,6 @@ Auto-resolve is skipped for injected COMMIT errors so fixtures can resolve expli
 - A claimant conflict blocks a role on typed values; it is a recorded fact, not an authenticated one. The conflict
   record is guaranteed only when at least one durable write (row or marker) succeeds in the attempt; the double
   failure `conflict-unrecorded` is reported and leaves the holder unblocked (A4 §13a, accepted).
-- Out of scope in this slice: tool gating, replay, recovery, bind/handoff enforcement, unblocking a conflicted role,
-  multi-machine use.
 
 ## Tests
 
