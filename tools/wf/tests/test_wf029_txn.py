@@ -108,8 +108,10 @@ class Fixture(Base):
 # ----------------------------------------------------------------------------------------- write_event COMMIT
 
 class CommitFailures(Fixture):
-    def test_non_busy_commit_error_is_commit_uncertain_and_auto_resolved(self):
-        """txn.py:170 (REMAINING-GAPS row 35): a non-BUSY error at COMMIT -> commit-uncertain; wf runs one resolve."""
+    def test_non_busy_commit_error_uncertain_auto_resolved(self):
+        """txn.py:170 (REMAINING-GAPS row 35): a non-BUSY error at COMMIT -> commit-uncertain; wf runs one resolve.
+        Renamed from `test_non_busy_commit_error_is_commit_uncertain_and_auto_resolved`
+        (WF-065: test-name length and Windows path length; see FIX2 #40)."""
         self.assertEqual(self.intent()[0], 0)
         with mock.patch.object(txn.dbm, "connect", side_effect=failing_connect({"COMMIT": io_error()})):
             c, r = self.intent(note="io")
@@ -118,8 +120,10 @@ class CommitFailures(Fixture):
         self.assertEqual(r["auto_resolve"]["outcome"], "NOT-COMMITTED", r)
         self.assertEqual(markers.list_markers(self.db, "j"), [])
 
-    def test_auto_resolve_that_itself_fails_is_reported_as_error(self):
-        """wf.py:260-261 (row 58): the automatic resolve raising a WfError is reported `auto_resolve.outcome: ERROR`."""
+    def test_failing_auto_resolve_is_reported_as_error(self):
+        """wf.py:260-261 (row 58): the automatic resolve raising a WfError is reported `auto_resolve.outcome: ERROR`.
+        Renamed from `test_auto_resolve_that_itself_fails_is_reported_as_error`
+        (WF-065: test-name length and Windows path length; see FIX2 #40)."""
         self.assertEqual(self.intent()[0], 0)
         with mock.patch.object(txn.dbm, "connect", side_effect=failing_connect({"COMMIT": io_error()})), \
                 mock.patch.object(wf.commands, "resolve", side_effect=WfRefused("injected resolve failure")):
@@ -139,8 +143,10 @@ class CommitFailures(Fixture):
         c, r = self.intent(note="still open")
         self.assertEqual((c, r["outcome"]), (0, "COMMITTED"), r)
 
-    def test_reservation_not_obtained_while_another_writer_holds_it(self):
-        """db.py:202 (row 33): BEGIN IMMEDIATE busy past T_ACQ_BOUND (5 s) -> lock-timeout 'reservation not obtained'."""
+    def test_reservation_not_obtained_while_another_holds(self):
+        """db.py:202 (row 33): BEGIN IMMEDIATE busy past T_ACQ_BOUND (5 s) -> lock-timeout 'reservation not obtained'.
+        Renamed from `test_reservation_not_obtained_while_another_writer_holds_it`
+        (WF-065: test-name length and Windows path length; see FIX2 #40)."""
         holder = sqlite3.connect(self.db, isolation_level=None)
         holder.execute("BEGIN IMMEDIATE")
         try:
@@ -159,8 +165,10 @@ class ConflictCommitFailures(Fixture):
         super().setUp()
         self.assertEqual(self.intent()[0], 0)
 
-    def test_conflict_without_marker_and_non_busy_commit_error_is_unrecorded(self):
-        """txn.py:169 (row 34): marker-unwritable (fault seam) + non-BUSY COMMIT error -> conflict-unrecorded."""
+    def test_conflict_no_marker_non_busy_commit_unrecorded(self):
+        """txn.py:169 (row 34): marker-unwritable (fault seam) + non-BUSY COMMIT error -> conflict-unrecorded.
+        Renamed from `test_conflict_without_marker_and_non_busy_commit_error_is_unrecorded`
+        (WF-065: test-name length and Windows path length; see FIX2 #40)."""
         before = self.head()[0]
         with mock.patch.dict(os.environ, {"WF_TEST_FAULTS": "marker-unwritable"}), \
                 mock.patch.object(txn.dbm, "connect", side_effect=failing_connect({"COMMIT": io_error()})):
@@ -170,8 +178,10 @@ class ConflictCommitFailures(Fixture):
         self.assertIn("is NOT recorded", r["error"])
         self.assertEqual(self.head()[0], before)
 
-    def test_conflict_without_marker_and_busy_commit_is_unrecorded(self):
-        """txn.py:178 (row 36): marker-unwritable + COMMIT busy past T_HELD_BOUND -> conflict-unrecorded."""
+    def test_conflict_no_marker_busy_commit_unrecorded(self):
+        """txn.py:178 (row 36): marker-unwritable + COMMIT busy past T_HELD_BOUND -> conflict-unrecorded.
+        Renamed from `test_conflict_without_marker_and_busy_commit_is_unrecorded`
+        (WF-065: test-name length and Windows path length; see FIX2 #40)."""
         before = self.head()[0]
         with mock.patch.dict(os.environ, {"WF_TEST_FAULTS": "marker-unwritable"}), self.held_reader():
             c, r = self.conflict()
@@ -179,8 +189,10 @@ class ConflictCommitFailures(Fixture):
         self.assertIn("COMMIT busy past", r["error"])
         self.assertEqual(self.head()[0], before)
 
-    def test_conflict_pending_marker_rewrite_failure_is_logged_and_the_committing_marker_stands(self):
-        """txn.py:186 (row 38): busy COMMIT, the conflict-pending rewrite fails -> commit-timeout, op logged."""
+    def test_conflict_rewrite_failure_logged_marker_stands(self):
+        """txn.py:186 (row 38): busy COMMIT, the conflict-pending rewrite fails -> commit-timeout, op logged.
+        Renamed from `test_conflict_pending_marker_rewrite_failure_is_logged_and_the_committing_marker_stands`
+        (WF-065: test-name length and Windows path length; see FIX2 #40)."""
         real = markers.write_atomic
 
         def flaky(ref, data):
@@ -198,8 +210,10 @@ class ConflictCommitFailures(Fixture):
         (ref,) = markers.list_markers(self.db, "j")
         self.assertEqual(markers.read(ref)["state"], "committing")
 
-    def test_conflict_give_up_rollback_failure_is_commit_uncertain(self):
-        """txn.py:192 (row 37): busy COMMIT, then ROLLBACK raises -> commit-uncertain, conflict-pending marker kept."""
+    def test_give_up_rollback_failure_is_commit_uncertain(self):
+        """txn.py:192 (row 37): busy COMMIT, then ROLLBACK raises -> commit-uncertain, conflict-pending marker kept.
+        Renamed from `test_conflict_give_up_rollback_failure_is_commit_uncertain`
+        (WF-065: test-name length and Windows path length; see FIX2 #40)."""
         with mock.patch.object(txn.dbm, "connect", side_effect=failing_connect({"ROLLBACK": io_error()})), \
                 self.held_reader():
             c, r = self.conflict()
@@ -222,8 +236,10 @@ class ResolveFailures(Fixture):
     def resolve(self, seq: int):
         return self.coord("resolve", "j", str(seq))
 
-    def test_connection_setup_busy_is_reservation_not_obtained(self):
-        """txn.py:387 (row 40)."""
+    def test_connection_busy_is_reservation_not_obtained(self):
+        """txn.py:387 (row 40).
+        Renamed from `test_connection_setup_busy_is_reservation_not_obtained`
+        (WF-065: test-name length and Windows path length; see FIX2 #40)."""
         ref = self.next_marker()
         with mock.patch.object(txn.dbm, "connect", side_effect=WfLockTimeout("injected connect busy")):
             c, r = self.resolve(ref.seq)
@@ -231,8 +247,10 @@ class ResolveFailures(Fixture):
         self.assertIn("connection setup stayed busy", r["note"])
         self.assertTrue(os.path.exists(ref.path))
 
-    def test_reservation_held_by_another_writer_is_reservation_not_obtained(self):
-        """txn.py:395 (row 41): a real BEGIN IMMEDIATE holder for T_ACQ_BOUND (5 s)."""
+    def test_reservation_held_by_another_is_not_obtained(self):
+        """txn.py:395 (row 41): a real BEGIN IMMEDIATE holder for T_ACQ_BOUND (5 s).
+        Renamed from `test_reservation_held_by_another_writer_is_reservation_not_obtained`
+        (WF-065: test-name length and Windows path length; see FIX2 #40)."""
         ref = self.next_marker()
         holder = sqlite3.connect(self.db, isolation_level=None)
         holder.execute("BEGIN IMMEDIATE")
@@ -247,8 +265,10 @@ class ResolveFailures(Fixture):
         self.assertIn("reservation not obtained within", r["detail"])
         self.assertTrue(os.path.exists(ref.path))
 
-    def test_marker_vanishing_between_m0_and_m1_is_already_cleared(self):
-        """txn.py:402 (row 42)."""
+    def test_marker_vanishing_m0_to_m1_is_already_cleared(self):
+        """txn.py:402 (row 42).
+        Renamed from `test_marker_vanishing_between_m0_and_m1_is_already_cleared`
+        (WF-065: test-name length and Windows path length; see FIX2 #40)."""
         ref = self.next_marker()
         m = markers.read(ref)
         with mock.patch.object(markers, "read_checked", side_effect=[m, None]):
@@ -313,8 +333,10 @@ class ResolveConflictMarker(Fixture):
         self.assertEqual(r.get("conflict_outcome"), "conflict-pending", r)
         (self.ref,) = markers.list_markers(self.db, "j")
 
-    def test_conflict_marker_whose_self_does_not_match_its_fields(self):
-        """txn.py:447 (row 46)."""
+    def test_conflict_marker_self_not_matching_fields(self):
+        """txn.py:447 (row 46).
+        Renamed from `test_conflict_marker_whose_self_does_not_match_its_fields`
+        (WF-065: test-name length and Windows path length; see FIX2 #40)."""
         m = markers.read(self.ref)
         m["self"] = "0" * 64
         markers.write_atomic(self.ref, m)
@@ -337,9 +359,11 @@ class ResolveConflictMarker(Fixture):
 # ----------------------------------------------------------------------------------------- fault seam
 
 class FaultSeamArgument(Fixture):
-    def test_non_integer_delay_argument_is_an_internal_error(self):
+    def test_non_integer_delay_is_an_internal_error(self):
         """faults.py:41 (row 76; the WF-020 inventory cited the 2dedc94 line 34): `delay-precommit:abc` raises ValueError from int(); test seam only (fixtures-tmp
-        ledgers). Since FIX1 E1 the CLI reports it as `internal-error`, exit 4, instead of a traceback."""
+        ledgers). Since FIX1 E1 the CLI reports it as `internal-error`, exit 4, instead of a traceback.
+        Renamed from `test_non_integer_delay_argument_is_an_internal_error`
+        (WF-065: test-name length and Windows path length; see FIX2 #40)."""
         with mock.patch.dict(os.environ, {"WF_TEST_FAULTS": "delay-precommit:abc"}):
             with self.assertRaises(ValueError):
                 self.intent(note="bad seam arg")

@@ -19,8 +19,10 @@ class DecideFailClosed(_Gate):
         self.explicit()
         self.write = self.p("jobs/j/work/a.txt")
 
-    def test_target_paths_reporting_a_malformed_payload_denies(self):
-        """gatecore.py:344 (row 77): rule 0 passed, then target_paths answers malformed-payload."""
+    def test_target_paths_malformed_payload_denies(self):
+        """gatecore.py:344 (row 77): rule 0 passed, then target_paths answers malformed-payload.
+        Renamed from `test_target_paths_reporting_a_malformed_payload_denies`
+        (WF-065: test-name length and Windows path length; see FIX2 #40)."""
         with mock.patch.object(gatecore, "target_paths", return_value=([], "malformed-payload")):
             self.deny(self.write, "malformed-payload")
 
@@ -29,8 +31,10 @@ class DecideFailClosed(_Gate):
         with mock.patch.object(gatecore.sqlite3, "connect", side_effect=sqlite3.OperationalError("unable to open")):
             self.deny(self.write, "ledger-unreadable")
 
-    def test_identity_check_that_cannot_stat_the_ledger_denies(self):
-        """gatecore.py:357 (row 79): expected_identity given, ledger_identity raises OSError -> ledger-unreadable."""
+    def test_identity_check_unable_to_stat_ledger_denies(self):
+        """gatecore.py:357 (row 79): expected_identity given, ledger_identity raises OSError -> ledger-unreadable.
+        Renamed from `test_identity_check_that_cannot_stat_the_ledger_denies`
+        (WF-065: test-name length and Windows path length; see FIX2 #40)."""
         with mock.patch.object(gatecore, "ledger_identity", side_effect=OSError("injected stat failure")):
             self.deny(self.write, "ledger-unreadable", expected_identity={"dev": 1, "ino": 1, "size": 0})
 

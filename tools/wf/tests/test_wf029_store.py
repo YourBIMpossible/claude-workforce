@@ -55,20 +55,26 @@ class BackupFailures(Fixture):
     def dest(self) -> str:
         return os.path.join(self.dir, "b.db")
 
-    def test_destination_created_between_check_and_open_is_dest_exists(self):
-        """backup.py:112 (row 51)."""
+    def test_dest_created_before_open_is_dest_exists(self):
+        """backup.py:112 (row 51).
+        Renamed from `test_destination_created_between_check_and_open_is_dest_exists`
+        (WF-065: test-name length and Windows path length; see FIX2 #40)."""
         with mock.patch.object(backup.os, "open", side_effect=FileExistsError("raced")):
             c, r = self.coord("backup", "j", "--to", self.dest())
         self.assertEqual((c, r["code"], r["error"]), (1, "refused", "dest-exists"), r)
 
-    def test_parent_removed_between_check_and_open_is_dest_parent_missing(self):
-        """backup.py:114 (row 52)."""
+    def test_parent_removed_before_open_is_parent_missing(self):
+        """backup.py:114 (row 52).
+        Renamed from `test_parent_removed_between_check_and_open_is_dest_parent_missing`
+        (WF-065: test-name length and Windows path length; see FIX2 #40)."""
         with mock.patch.object(backup.os, "open", side_effect=FileNotFoundError("raced")):
             c, r = self.coord("backup", "j", "--to", self.dest())
         self.assertEqual((c, r["code"], r["error"]), (1, "refused", "dest-parent-missing"), r)
 
-    def test_engine_backup_failure_is_reported_and_the_partial_file_left(self):
-        """backup.py:121 (row 53)."""
+    def test_engine_backup_failure_reported_partial_left(self):
+        """backup.py:121 (row 53).
+        Renamed from `test_engine_backup_failure_is_reported_and_the_partial_file_left`
+        (WF-065: test-name length and Windows path length; see FIX2 #40)."""
         real = backup._open_ro
         made = []
 
@@ -101,8 +107,10 @@ class BackupFailures(Fixture):
         code, res = self._main_backup()
         self.assertEqual((code, res["code"]), (1, "lock-timeout"), res)
 
-    def test_busy_copy_check_observed_today_is_an_internal_error(self):
-        """The observation behind W29-F1, pinned: exit 4, `internal-error`, the raw engine error named."""
+    def test_busy_copy_check_today_is_an_internal_error(self):
+        """The observation behind W29-F1, pinned: exit 4, `internal-error`, the raw engine error named.
+        Renamed from `test_busy_copy_check_observed_today_is_an_internal_error`
+        (WF-065: test-name length and Windows path length; see FIX2 #40)."""
         code, res = self._main_backup()
         self.assertEqual((code, res["code"]), (4, "internal-error"), res)
         self.assertEqual(res["error"], "OperationalError: database is locked")
@@ -147,8 +155,10 @@ class ExportChecks(Fixture):
         self.assertEqual(c, 0, r)
         return r["jobs"]["j"]["export"]
 
-    def test_staging_file_of_a_dead_process_is_reported_preserved(self):
-        """export.py:128-129 (row 60): a `<file>.<pid>-<hex8>.tmp` whose writer pid is gone."""
+    def test_dead_process_staging_file_reported_preserved(self):
+        """export.py:128-129 (row 60): a `<file>.<pid>-<hex8>.tmp` whose writer pid is gone.
+        Renamed from `test_staging_file_of_a_dead_process_is_reported_preserved`
+        (WF-065: test-name length and Windows path length; see FIX2 #40)."""
         dead = 4194303 if sys.platform == "win32" else 2 ** 22 + 1
         name = f"events.jsonl.{dead}-0123abcd.tmp"
         with open(os.path.join(paths.export_dir(self.db, "j"), name), "w") as fh:
@@ -205,9 +215,11 @@ class MarkerRows(Fixture):
         self.assertEqual((c, r["code"]), (1, "uncertain-write-pending"), r)
         self.assertIn("(marker malformed)", r["error"])
 
-    def test_persistent_sharing_violation_on_replace_is_marker_unwritable(self):
+    def test_sharing_violation_on_replace_is_unwritable(self):
         """markers.py:57 (row 72): os.replace keeps raising PermissionError past SHARE_RETRY_S -> re-raised; the write
-        refuses `marker-unwritable` and nothing is appended."""
+        refuses `marker-unwritable` and nothing is appended.
+        Renamed from `test_persistent_sharing_violation_on_replace_is_marker_unwritable`
+        (WF-065: test-name length and Windows path length; see FIX2 #40)."""
         conn = dbm.connect(self.db, create=False)
         try:
             before = dbm.head(conn, "j")[0]
@@ -224,8 +236,10 @@ class MarkerRows(Fixture):
         finally:
             conn.close()
 
-    def test_persistent_sharing_violation_on_read_is_reported_marker_corrupt(self):
-        """markers.py:81 (row 73): read() re-raises PermissionError after SHARE_RETRY_S; describe reports it."""
+    def test_sharing_violation_on_read_is_corrupt(self):
+        """markers.py:81 (row 73): read() re-raises PermissionError after SHARE_RETRY_S; describe reports it.
+        Renamed from `test_persistent_sharing_violation_on_read_is_reported_marker_corrupt`
+        (WF-065: test-name length and Windows path length; see FIX2 #40)."""
         markers.write_atomic(self.ref, {"attempt_id": self.ref.attempt_id, "seq": 7, "state": "committing"})
         real_open = builtins.open
         target = os.path.normcase(self.ref.path)
@@ -240,10 +254,12 @@ class MarkerRows(Fixture):
         self.assertEqual(entry["state"], "marker-corrupt")
         self.assertIn("PermissionError", entry["problem"])
 
-    def test_marker_vanished_between_list_and_read_is_unreadable(self):
+    def test_marker_vanished_list_to_read_is_unreadable(self):
         """markers.py:211 (row 74): listed, then gone before read -> state `unreadable`. The marker has a real state, so
         only the injected read -> None produces `unreadable` (review W29-R1: the earlier version had no state and
-        passed with or without the injection)."""
+        passed with or without the injection).
+        Renamed from `test_marker_vanished_between_list_and_read_is_unreadable`
+        (WF-065: test-name length and Windows path length; see FIX2 #40)."""
         markers.write_atomic(self.ref, {"attempt_id": self.ref.attempt_id, "seq": 7, "state": "committing", "rev": 1})
         (before,) = markers.describe(self.db, "j")
         self.assertEqual(before["state"], "committing")

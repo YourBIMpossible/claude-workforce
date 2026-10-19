@@ -224,8 +224,10 @@ class SecondWriterProbe(Fixture):
         self.assertIn("second-writer probe failed for another reason (disk I/O error)", r["error"])
         self._nothing_appended(before)
 
-    def test_probe_that_obtains_the_reservation_is_reported_as_broken(self):
-        """commands.py:1173 (row 20)."""
+    def test_probe_that_obtains_reservation_is_broken(self):
+        """commands.py:1173 (row 20).
+        Renamed from `test_probe_that_obtains_the_reservation_is_reported_as_broken`
+        (WF-065: test-name length and Windows path length; see FIX2 #40)."""
         before = self._head()
         c, r = self._begin(lambda: _Probe(None))
         self.assertEqual((c, r["code"], r["second_writer"]), (1, "refused", "acquired"), r)
