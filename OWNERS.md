@@ -52,7 +52,9 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_gatelog.py | S4L |
 | tools/wf/tests/test_gate_hook_deployed.py | S4L |
 | tools/wf/tests/test_t19_gate_faults.py | S4M |
-| tools/wf/wfcore/backup.py | S5B |
+| tools/wf/wfcore/backup.py | F2CP |
+| tools/wf/wfcore/commands.py | F2CP |
+| tools/wf/tests/test_fix2_backup.py | F2CP |
 | tools/wf/tests/test_t37_backup.py | S5B |
 | tools/wf/tests/test_t30_race_secondwriter_identity.py | S5R |
 | tools/wf/tests/test_t37_t36_matrix.py | S5M |
@@ -245,3 +247,13 @@ Decided by the Foreman under the owner's delegation; merged by the Foreman on th
 ## Integrator edit 2026-10-19 (AMENDMENT FIX2-A6: W20 pins superseded by FIX2 #2; coordinator Zen "Workforce Dev", lane D)
 
 The cumulative suite at `d0200e0` (main `52253dc` with batches T and B) errored in two lane-W20 characterization tests that pinned the pre-FIX2 behaviour FIX2 #2 changes: `test_wf020_adversarial.ContentEncodings.test_duplicate_keys_last_one_wins_silently` and `.test_large_event_body_from_a_file_is_committed`. Under A6 the integrator flips them to assert the new behaviour, renamed `test_duplicate_keys_are_refused` and `test_large_event_body_from_a_file_is_bounded` (`rejected(malformed)`, no row written, the ledger verifies; a large but legal body under the bound is still committed, per review WF-104 M1 and AMENDMENT FIX2-A8). This is the only edit to a W20 path; it is reviewed in WF-104 with the other integration commits.
+
+## Registration 2026-10-19 (package FIX2 batch C, AMENDMENT FIX2-A3; decided by the Foreman under the owner's delegation; coordinator Zen "Workforce Dev" while White is out)
+
+Package text: WorkForce collab `contracts/b2fix2/` (PACKAGE-FIX2.md with AMENDMENT-FIX2-A3.md, frozen with SHA256SUMS). Base: main `4321f16` plus this registration commit.
+
+| Lane | Worker | Branch | Scope |
+|---|---|---|---|
+| F2CP | Plexy | `fix2/plexy-c-backup` | the F2CP rows above (FIX2 #3, #22+#31, #23, #26+#32, #28, #50); relabelled from S5B (backup.py) and D (commands.py, for #50 at about :1224 only) for this batch only |
+
+Rows go back to their previous owners when batch C is integrated.

@@ -1248,19 +1248,32 @@ def backup_cmd(db: str, job: str | None, *, all_jobs: bool, dest: str, writer_st
         raise WfUsage("give exactly one of <job> or --all")
     if not dest or not dest.strip():
         raise WfUsage("--to <path> is required")
+    # FIX2 #3 (AMENDMENT FIX2-A5): FIX1 I1's rule for names a filesystem merges with another name or a device, for the
+    # destination's file name, on every platform and before any filesystem access; the device rule is validate's own.
+    # It lives here because backup.py may not import validate (INTERFACE-CONTRACT-S5 section 5). A destination ending
+    # in a path separator names a directory and has no file name to check (WF-105 M1), so it is refused first.
+    if dest.endswith(tuple(sep for sep in (os.sep, os.altsep) if sep)):
+        raise WfRefused("dest-is-a-directory-path", dest=dest)
+    dest_name = os.path.basename(dest)
+    if dest_name.endswith((".", " ")):
+        raise WfRefused("dest-trailing-dot-or-space", dest=dest, name=dest_name)
+    if validate._DEVICE.match(dest_name):
+        raise WfRefused("dest-device-name", dest=dest, name=dest_name)
     backup = _backup_module()
     if job:
         check_job_id(job)
         if not os.path.isfile(db):
             raise WfRefused(f"ledger not found: {db}")
-        conn = sqlite3.connect(f"{_file_uri(db)}?mode=ro", uri=True, timeout=0, isolation_level=None)
-        try:
+        conn = None
+        try:  # FIX2 #50: opened inside the try, so a ledger the engine cannot open (a UNC --db) is refused, not exit 4
+            conn = sqlite3.connect(f"{_file_uri(db)}?mode=ro", uri=True, timeout=0, isolation_level=None)
             with dbm.read_snapshot(conn):
                 known = job in dbm.jobs(conn)
         except sqlite3.Error as exc:
-            raise WfRefused(f"ledger not readable ({type(exc).__name__}: {exc})") from exc
+            raise WfRefused(f"ledger not readable ({type(exc).__name__}: {exc}); the read-only open failed") from exc
         finally:
-            conn.close()
+            if conn is not None:
+                conn.close()
         if not known:
             raise WfRefused(f"job {job} is not in the ledger; nothing written", job=job)
     res = backup.backup(db, dest, writer_stopped=writer_stopped)
