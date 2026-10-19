@@ -31,6 +31,8 @@ POSIX = os.name == "posix"
 SKIP_LINUX = "case-sensitive filesystem / byte file name semantics pinned on Linux only"
 SKIP_WINDOWS = "case-insensitive NTFS semantics pinned on Windows only"
 SKIP_POSIX = "POSIX file modes; Windows backup files are unchanged"
+SKIP_POSIX_NAMES = "POSIX surrogate-escaped byte names"
+SKIP_NTFS_NAMES = "NTFS UTF-16 names with lone surrogates exist on Windows only"
 
 
 def _write(path: str, text: str = "x") -> None:
@@ -292,17 +294,75 @@ class P4NonUtf8EveryMessage(Base):
         self.assertIn("jobs/j/work/\\xfb/a.txt", res["error"])
 
 
-class P4ShownNameStrings(unittest.TestCase):
-    """String level (any platform): the escaped form of a walked name."""
+class P4ShownNameRules(unittest.TestCase):
+    """Review R3: the display form of a walked name is chosen explicitly per platform, never by os.fsencode's error
+    handler. POSIX: an undecodable byte (surrogate-escaped as U+DC80..U+DCFF) shows as `\\xNN`. Windows: NTFS names are
+    UTF-16, so every lone surrogate shows as `\\udNNN`. Any other lone surrogate shows as `\\udNNN` everywhere."""
 
-    def test_r2_shown_name_escapes_bytes_and_lone_surrogates(self):
-        self.assertEqual(changeset._shown("jobs/j/a.txt"), "jobs/j/a.txt")
-        self.assertEqual(changeset._shown("jobs/j/café.txt"), "jobs/j/café.txt")
-        self.assertEqual(changeset._shown("jobs/j/\udcff.txt"), "jobs/j/\\xff.txt")      # POSIX byte name
-        shown = changeset._shown("jobs/j/\ud800.txt")                                    # lone UTF-16 surrogate
-        shown.encode("utf-8")
-        self.assertNotIn("\ud800", shown)
-        self.assertIn("jobs/j/", shown)
+    def test_r3_escape_rules_for_both_platforms(self):
+        """String level, runs everywhere: the pure rule with the platform given explicitly (no os.name mock)."""
+        esc = changeset._escape_name
+        for windows in (False, True):
+            with self.subTest(windows=windows):
+                self.assertEqual(esc("jobs/j/a.txt", windows=windows), "jobs/j/a.txt")
+                self.assertEqual(esc("jobs/j/caf\u00e9.txt", windows=windows), "jobs/j/caf\u00e9.txt")
+                self.assertEqual(esc("jobs/j/\ud800.txt", windows=windows), "jobs/j/\\ud800.txt")
+        self.assertEqual(esc("jobs/j/\udcff.txt", windows=False), "jobs/j/\\xff.txt")
+        self.assertEqual(esc("jobs/j/\udcff.txt", windows=True), "jobs/j/\\udcff.txt")
+        self.assertEqual(esc("a\udced\udca0\udc80b", windows=False), "a\\xed\\xa0\\x80b")
+        self.assertEqual(esc("a\ud83d\ude00b", windows=True), "a\\ud83d\\ude00b")   # a split pair stays visible
+
+    def test_r3_shown_is_total_and_always_encodable(self):
+        for name in ("plain", "\udc80", "\ud800", "\udfff", "x\udcff\ud800y", "\U0001f600"):
+            with self.subTest(name=ascii(name)):
+                changeset._shown(name).encode("utf-8")
+
+    @unittest.skipUnless(POSIX, SKIP_POSIX_NAMES)
+    def test_r3_shown_on_posix_escapes_bytes_as_x(self):
+        self.assertEqual(changeset._shown("jobs/j/\udcff.txt"), "jobs/j/\\xff.txt")
+        self.assertEqual(changeset._shown("jobs/j/\ud800.txt"), "jobs/j/\\ud800.txt")
+
+    @unittest.skipUnless(WINDOWS, SKIP_NTFS_NAMES)
+    def test_r3_shown_on_windows_escapes_lone_surrogates_as_u(self):
+        self.assertEqual(changeset._shown("jobs/j/\udcff.txt"), "jobs/j/\\udcff.txt")
+        self.assertEqual(changeset._shown("jobs/j/\ud800.txt"), "jobs/j/\\ud800.txt")
+        self.assertEqual(changeset._shown("jobs/j/caf\u00e9.txt"), "jobs/j/caf\u00e9.txt")
+
+
+_NOT_UNICODE = "file name is not valid Unicode (undecodable bytes or a lone surrogate) inside the boundary: "
+
+
+@unittest.skipUnless(LINUX, SKIP_LINUX)
+class P4MessageTextOnLinux(Base):
+    def test_r3_problem_text_names_the_rule_and_the_escaped_bytes(self):
+        os.makedirs(os.path.join(self.dir, "ledger"))
+        work = os.path.join(self.dir, "jobs", "j", "work")
+        os.makedirs(work)
+        os.close(os.open(os.path.join(os.fsencode(work), b"\xff.txt"), os.O_WRONLY | os.O_CREAT | os.O_EXCL))
+        b = changeset.baseline(self.dir, dict(CONTRACT))
+        self.assertEqual(b["problems"], [_NOT_UNICODE + "jobs/j/work/\\xff.txt"])
+
+
+@unittest.skipUnless(WINDOWS, SKIP_NTFS_NAMES)
+class P4LoneSurrogateOnNtfs(Base):
+    """Review R3, real NTFS files (Zen's probe): names holding a lone UTF-16 surrogate in a recorded scope."""
+
+    def test_r3_ntfs_lone_surrogate_names_are_refused_with_u_escapes_and_the_baseline_hashes(self):
+        from wfcore import canon  # noqa: PLC0415
+        os.makedirs(os.path.join(self.dir, "ledger"))
+        work = os.path.join(self.dir, "jobs", "j", "work")
+        os.makedirs(work)
+        for name in ("a\udc80b.txt", "a\ud800b.txt"):
+            with open(os.path.join(work, name), "x", encoding="utf-8") as fh:
+                fh.write("x")
+        b = changeset.baseline(self.dir, dict(CONTRACT))
+        self.assertEqual(b["entries"], {})
+        self.assertEqual(sorted(b["problems"]), sorted([_NOT_UNICODE + "jobs/j/work/a\\udc80b.txt",
+                                                        _NOT_UNICODE + "jobs/j/work/a\\ud800b.txt"]))
+        canon.sha256_text(canon.canonical(b))           # raised UnicodeEncodeError at base 6d73687
+        code, res = self.run_wf("job", "new", "j", "--contract", self.cpath, role="coordinator", session="C1")
+        self.assertEqual((code, res.get("code")), (1, "refused"), res)
+        self.assertIn("a\\udc80b.txt", res["error"])
 
 
 # ---------------------------------------------------------------------------------------------------------- P5

@@ -25,11 +25,12 @@ is not recorded. Matching uses pathpolicy's resolution and glob rules.
 A baseline captured before A-2 holds no write-scope entries: `compare` then reports every present write-scope file
 as `added` - correct and honest; a fixture that needs the new form regenerates the baseline.
 An unreadable file is a `problem` (fail closed), never skipped. Paths are repo-relative forward-slash strings.
-A file name that is not valid UTF-8 (POSIX byte names; `os.walk` yields it surrogate-escaped) in a recorded scope is
-a `problem` naming the escaped bytes (`\\xff`), never an entry (FIX1 P4, WF-021 F6: the surrogate key made the
-canonical hash raise UnicodeEncodeError, a traceback instead of a refusal). Every text the walk records (problem or
-limitation: skipped link, unresolvable, unreadable) names such a path in that escaped form (`_shown`, review R2), so
-no recorded text holds a surrogate.
+A file name that is not valid Unicode in a recorded scope (POSIX: undecodable bytes, which `os.walk` surrogate-
+escapes; Windows: an NTFS name holding a lone UTF-16 surrogate) is a `problem` ("file name is not valid Unicode
+(undecodable bytes or a lone surrogate) inside the boundary: <name>"), never an entry (FIX1 P4, WF-021 F6: the
+surrogate key made the canonical hash raise UnicodeEncodeError, a traceback instead of a refusal). Every text the walk
+records (problem or limitation: skipped link, unresolvable, unreadable) shows such a name escaped by `_shown` (review
+R2/R3): undecodable bytes as `\\xNN` on POSIX, lone surrogates as `\\udNNN` on Windows, so no text holds a surrogate.
 
 `compare`: the same walk now against `baseline["entries"]`: added = now and not in baseline, deleted = baseline and
 not now, modified = in both with a different sha256 or size (presence-only entries are never "modified"). A
@@ -86,23 +87,30 @@ def _is_link(path: str) -> bool:
     return bool(attrs & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))
 
 
-def _non_utf8(rel: str) -> str | None:
-    """None for a name that encodes as UTF-8; else the name with its undecodable bytes shown as `\\xNN`."""
-    try:
-        rel.encode("utf-8")
-    except UnicodeEncodeError:
-        try:
-            return os.fsencode(rel).decode("utf-8", "backslashreplace")
-        except UnicodeEncodeError:   # a lone surrogate that is no escaped byte: `\\udNNN`
-            return rel.encode("utf-8", "backslashreplace").decode("utf-8")
-    return None
+def _escape_name(rel: str, *, windows: bool) -> str:
+    """`rel` with every lone surrogate escaped, by an explicit per-platform rule (review R3; never by os.fsencode's
+    error handler, which is surrogateescape on POSIX but surrogatepass on Windows). POSIX: a surrogate U+DC80..U+DCFF
+    is an undecodable byte that `os.walk` surrogate-escaped, shown as `\\xNN`. Windows: NTFS names are UTF-16, so
+    every lone surrogate is shown as `\\udNNN`. Any other lone surrogate is shown as `\\udNNN` on both. Total: never
+    raises, and the result always encodes as UTF-8."""
+    out: list[str] = []
+    for ch in rel:
+        code = ord(ch)
+        if 0xD800 <= code <= 0xDFFF:
+            out.append(f"\\x{code - 0xDC00:02x}" if not windows and 0xDC80 <= code <= 0xDCFF else f"\\u{code:04x}")
+        else:
+            out.append(ch)
+    return "".join(out)
 
 
 def _shown(rel: str) -> str:
-    """The form of a walked name used in every recorded text: the name itself, or its escaped form when it is not
-    valid UTF-8 (review R2: a raw surrogate in a limitation made canon.canonical raise in `job new`)."""
-    escaped = _non_utf8(rel)
-    return rel if escaped is None else escaped
+    """The form of a walked name used in every recorded text: the name itself, or `_escape_name` for this platform
+    when it holds a lone surrogate (review R2: a raw surrogate in a limitation made canon.canonical raise)."""
+    try:
+        rel.encode("utf-8")
+    except UnicodeEncodeError:
+        return _escape_name(rel, windows=os.name == "nt")
+    return rel
 
 
 def _static_prefix(glob: str) -> str:
@@ -168,7 +176,8 @@ def walk_entries(root: str, contract: dict) -> tuple[dict[str, dict], list[str],
         if not is_presence and not pathpolicy._match(r.cmp, hashed):
             return
         if shown != rel:
-            problems.append(f"file name is not valid UTF-8 inside the boundary: {shown}")
+            problems.append(f"file name is not valid Unicode (undecodable bytes or a lone surrogate) inside the "
+                            f"boundary: {shown}")
             return
         if is_presence:
             entries[rel] = {"present": True}  # never opened
