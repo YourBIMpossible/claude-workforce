@@ -9,6 +9,7 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 |---|---|
 | tools/wf/wfcore/validate.py | A |
 | tools/wf/tests/test_fix2_validation.py | F2BP |
+| tools/wf/wfcore/commands.py | F2SP |
 | tools/wf/tests/test_t24_accept_declarations.py | A |
 | tools/wf/wfcore/pathpolicy.py | B |
 | tools/wf/tests/test_t35_path_policy.py | B |
@@ -44,8 +45,9 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/wfcore/observe.py | S4L |
 | tools/wf/tests/test_t14_observe.py | S4L |
 | tools/wf/tests/test_t34_cli_matrix.py | S3M |
-| tools/wf/wfcore/gatecore.py | S4G |
-| tools/wf/tests/test_gate_decide.py | S4G |
+| tools/wf/wfcore/gatecore.py | F2SP |
+| tools/wf/tests/test_gate_decide.py | F2SP |
+| tools/wf/tests/test_fix2_gate.py | F2SP |
 | tools/wf/tests/test_gate_corpus_replay.py | S4G |
 | tools/wf/wfcore/gatelog.py | S4L |
 | tools/wf/gate/wf_gate_hook.py | S4L |
@@ -245,3 +247,13 @@ Decided by the Foreman under the owner's delegation; merged by the Foreman on th
 ## Integrator edit 2026-10-19 (AMENDMENT FIX2-A6: W20 pins superseded by FIX2 #2; coordinator Zen "Workforce Dev", lane D)
 
 The cumulative suite at `d0200e0` (main `52253dc` with batches T and B) errored in two lane-W20 characterization tests that pinned the pre-FIX2 behaviour FIX2 #2 changes: `test_wf020_adversarial.ContentEncodings.test_duplicate_keys_last_one_wins_silently` and `.test_large_event_body_from_a_file_is_committed`. Under A6 the integrator flips them to assert the new behaviour, renamed `test_duplicate_keys_are_refused` and `test_large_event_body_from_a_file_is_refused` (`rejected(malformed)`, no row written, the ledger verifies). This is the only edit to a W20 path; it is reviewed in WF-104 with the other integration commits.
+
+## Registration 2026-10-19 (package FIX2 batch S, AMENDMENT FIX2-A7; decided by the Foreman under the owner's delegation; coordinator Zen "Workforce Dev" while White is out)
+
+Package text: WorkForce collab `contracts/b2fix2/` (PACKAGE-FIX2.md with AMENDMENT-FIX2-A7.md) and `contracts/b2s4a/AMENDMENTS.md` S4A-A6 (frozen with SHA256SUMS). Base: `fix2/integration` `7d76863` (main `52253dc` plus FIX2 batches T and B) plus this registration commit.
+
+| Lane | Worker | Branch | Scope |
+|---|---|---|---|
+| F2SP | Plexy | `fix2/plexy-s-gate` | the F2SP rows above (FIX2 #4, #5, #56; test_gate_decide.py :40/:559 to `self.scratch`); relabelled from S4G (gatecore.py, test_gate_decide.py) and D (commands.py, for #5's `gate_print_install` only) for this batch only |
+
+Rows go back to their previous owners when batch S is integrated.
