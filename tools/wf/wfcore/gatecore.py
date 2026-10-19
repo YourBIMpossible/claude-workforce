@@ -129,9 +129,10 @@ def _collapse(parts: list[str]) -> tuple[list[str], bool, bool]:
 
 
 def _absolute(raw: str, cwd: str) -> str:
-    # AMENDMENT FIX1-A2 I7: a Windows drive-less rooted path (one leading `\` or `/`, not `\\` or `//`) is rooted at
-    # the cwd's drive, not joined to the cwd; _to_root_relative then decides inside or outside as usual.
-    if _DRIVE.match(cwd) and raw[:1] in ("\\", "/") and not raw.startswith(("\\\\", "//")):
+    # AMENDMENT FIX1-A2 I7: a Windows drive-less rooted path (exactly one leading `\` or `/`) is rooted at the cwd's
+    # drive, not joined to the cwd; _to_root_relative then decides inside or outside as usual. Windows reads ANY two
+    # leading separators (`\\`, `//`, `/\`, `\/`) as UNC, so those keep their earlier answer (review WF-027 R1).
+    if _DRIVE.match(cwd) and raw[:1] in ("\\", "/") and raw[1:2] not in ("\\", "/"):
         return cwd[:2] + raw.replace("/", "\\")
     if _split_abs(raw) is not None:
         return raw

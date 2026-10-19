@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import os
 import re
 import sqlite3
 import time
@@ -140,10 +141,19 @@ def _req(content: dict, key: str, typ: type | tuple[type, ...], nonempty: bool =
     return v
 
 
+#: Review WF-027 S5: fold case only where the platform folds it (Windows), as FIX1 P1 does in pathpolicy
+#: (`CASE_FOLDING`/`fold` there, lane FXM). The same rule, kept here so lane FXL needs no FXM file; tests patch it.
+CASE_FOLDING = os.path.normcase("A") == "a"
+
+
+def _fold(s: str) -> str:
+    return s.lower() if CASE_FOLDING else s
+
+
 def _path_in_scope(path: str, scope: list[str]) -> bool:
-    p = path.replace("/", "\\").lower()
+    p = _fold(path.replace("/", "\\"))
     for g in scope:
-        gg = g.replace("/", "\\").lower()
+        gg = _fold(g.replace("/", "\\"))
         if fnmatch.fnmatchcase(p, gg) or p == gg or p.startswith(gg.rstrip("*\\") + "\\"):
             return True
     return False

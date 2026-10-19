@@ -6,7 +6,7 @@ the owner-driven `wf recover` procedure below. Python 3 stdlib only; always run 
 `python -I`.
 
 ```
-python -I F:\Claude-Workforce\tools\wf\wf.py [--db PATH] [--role R --session S] [--generation N] [--msg-id ID] [--json] [--oplog] <command>
+python -I F:\Claude-Workforce\tools\wf\wf.py --db PATH [--role R --session S] [--generation N] [--msg-id ID] [--json] [--oplog] <command>
 ```
 
 `--db` is required: give `--db PATH` or set `WF_DB` (`--db` wins when both are given). There is no default ledger;
@@ -160,6 +160,8 @@ Auto-resolve is skipped for injected COMMIT errors so fixtures can resolve expli
 - `ledger\pending\<job>` is shared by every ledger in the same directory (`ledger.db` and `demo.db`): two ledgers
   with the same job id there would see each other's markers (fail-closed, but confusing). Keep job ids distinct.
 - Connection setup and `BEGIN IMMEDIATE` share one `T_ACQ_BOUND` window (connect wait is counted).
+- Case folding follows `os.path.normcase`: Windows folds case; POSIX hosts, including case-insensitive volumes such as
+  default macOS APFS, compare case-sensitively. R1 supports Windows and Linux.
 - A claimant conflict blocks a role on typed values; it is a recorded fact, not an authenticated one. The conflict
   record is guaranteed only when at least one durable write (row or marker) succeeds in the attempt; the double
   failure `conflict-unrecorded` is reported and leaves the holder unblocked (A4 §13a, accepted).
