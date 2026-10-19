@@ -7,9 +7,7 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 
 | Path | Owner |
 |---|---|
-| tools/wf/wfcore/validate.py | F2BP |
-| tools/wf/wfcore/commands.py | F2BP |
-| tools/wf/wf.py | F2BP |
+| tools/wf/wfcore/validate.py | A |
 | tools/wf/tests/test_fix2_validation.py | F2BP |
 | tools/wf/tests/test_t24_accept_declarations.py | A |
 | tools/wf/wfcore/pathpolicy.py | B |
@@ -59,7 +57,7 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_t30_race_secondwriter_identity.py | S5R |
 | tools/wf/tests/test_t37_t36_matrix.py | S5M |
 | tools/wf/tests/test_fix1_errors.py | FXL |
-| tools/wf/tests/test_fix1_ids.py | F2BP |
+| tools/wf/tests/test_fix1_ids.py | FXL |
 | tools/wf/tests/test_fix1_paths.py | FXM |
 | tools/wf/tests/test_fix2_scratch_names.py | F2TL |
 | tools/wf/tests/test_wf020_*.py | W20 |
@@ -227,3 +225,7 @@ Package text: WorkForce collab `contracts/b2fix2/` (PACKAGE-FIX2.md with AMENDME
 | F2BP | Plexy | `fix2/plexy-b-validation` | the F2BP rows above (FIX2 #2, #19, #20, #30, #33); relabelled from A (validate.py), FXL (test_fix1_ids.py, for #30's `CASE_FOLDING` patches at :286-295) and D (commands.py, wf.py) for this batch only |
 
 Rows go back to their previous owners when batch B is integrated.
+
+## Integration 2026-10-19 (FIX2 batch B into `fix2/integration`; coordinator Zen "Workforce Dev", lane D)
+
+`fix2/integration` merges `fix2/plexy-b-validation` `fc16399` (F2BP), VERIFIED (independent review Lazy WF-099, Linux MyBuddy WF-100, Windows Zen). The merge's OWNERS.md conflict (both registrations append a section) is resolved as the T-restored file plus batch B's registration exactly as `fix2/b-registration` `a03f8ed` wrote it; this commit then restores the batch-B relabels: validate.py A, test_fix1_ids.py FXL; the commands.py and wf.py rows are removed, so they fall back to D. The new test file `test_fix2_validation.py` stays registered to F2BP.
