@@ -21,7 +21,7 @@ from unittest import mock
 import test_wf
 from test_wf import Base
 
-from wfcore import export, paths
+from wfcore import db as dbm, export, paths
 
 WF_PY = os.path.join(test_wf.WF_DIR, "wf.py")
 BASE = {"path": "jobs/j/work/a.txt", "sha_before": "", "note": "n"}
@@ -194,8 +194,9 @@ class ProcessLevel(Adv):
         j = r["jobs"]["j"]
         self.assertEqual((j["problems"], j["pending_markers"]), ([], []), r)
         self.assertEqual(j["head"]["seq"], before + 8, r)
+        # Only files that change between refreshes can be torn; contract.json is the same bytes in every refresh here.
         allowed = {"export events.jsonl is stale relative to the ledger"} | \
-            {f"export file differs from manifest: {name}" for name in export.FILES}
+            {f"export file differs from manifest: {name}" for name in ("events.jsonl", "head.json")}
         self.assertLessEqual(set(j["export"]), allowed, j["export"])
         c, r = self.run_wf("export", "j", role="coordinator", session="C1")        # spec row 113's recovery path
         self.assertEqual(c, 0, r)
@@ -245,10 +246,15 @@ class ExportRefreshRace(Adv):
     Spec row 113 and 04-DECISIONS:70 accept a stale export as a recoverable exception, so these strict checks are
     expected failures until FIX2 #45 lands: then remove the decorators. Each one holds writer A in-process at a fixed
     point of its refresh (no product edit, only a mock wrapper), lets writer B append and refresh to the new head, and
-    then releases A."""
+    then releases A. A is released inside B's lock bound (review F3, S1): a fix that refreshes under the write lock
+    keeps B waiting in `begin_immediate` for up to T_ACQ_BOUND, and B must still commit for the test to flip. The
+    undecorated `*_preconditions_hold` tests run the same race and assert only that it happened (review F3, N2), so a
+    broken harness fails there instead of hiding inside an expected failure."""
 
     def _race(self, module, name: str) -> dict:
-        """Hold writer A's first call of `module.name` until writer B has appended and refreshed; return verify."""
+        """Hold writer A's first call of `module.name` until writer B has appended and refreshed (or is waiting on A),
+        then release A; assert that the race happened (A held, both COMMITTED, A's held call completed) and return
+        verify."""
         real = getattr(module, name)
         a_thread: dict = {}
         held, release = threading.Event(), threading.Event()
@@ -258,6 +264,9 @@ class ExportRefreshRace(Adv):
             if threading.current_thread() is a_thread.get("t") and not held.is_set():
                 held.set()
                 release.wait(30)
+                result = real(*args, **kwargs)
+                out["a_wrote"] = True
+                return result
             return real(*args, **kwargs)
 
         with mock.patch.object(module, name, side_effect=paused):
@@ -267,14 +276,26 @@ class ExportRefreshRace(Adv):
             self.assertTrue(held.wait(30), "writer A never reached its export refresh")
             b = threading.Thread(target=lambda: out.update(b=self.append_intent(json.dumps(dict(BASE, note="B")))))
             b.start()
-            b.join(5.0)                # today B commits and refreshes at once; a serialised refresh keeps B waiting
+            b.join(dbm.T_ACQ_BOUND / 2)  # today B is done at once; under a fix B waits on A, inside its lock bound
             release.set()
             a.join(30)
             b.join(30)
+        self.assertFalse(a.is_alive() or b.is_alive(), "a writer did not finish")
         self.assertEqual([out[k][1].get("outcome") for k in ("a", "b")], ["COMMITTED", "COMMITTED"], out)
+        self.assertTrue(out.get("a_wrote"), f"writer A's held {name} call did not complete")
         c, r = self.run_wf("verify", "j", role="coordinator", session="C1")
         self.assertEqual(c, 0, r)
         return r
+
+    def test_stale_race_preconditions_hold(self):
+        """Undecorated companion of the stale test (review F3, N2): the same race, asserting only its preconditions
+        (in `_race`). It passes today and once FIX2 #45 lands."""
+        self._race(export, "_write_atomic")
+
+    def test_torn_race_preconditions_hold(self):
+        """Undecorated companion of the torn test (review F3, N2): the same race, asserting only its preconditions
+        (in `_race`). It passes today and once FIX2 #45 lands."""
+        self._race(export.manifest, "write")
 
     @unittest.expectedFailure
     def test_older_refresh_last_leaves_export_stale(self):
