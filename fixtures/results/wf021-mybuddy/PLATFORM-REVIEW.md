@@ -186,3 +186,19 @@ Input `{"file_path": "jobs\\j\\work\\b.txt"}` with a POSIX `cwd`:
 #19 classify upper: P1 ['JOBS/J/WORK/a.txt'] result allowed, reason "in write scope (P1)"
 test_target_paths (step 1): AssertionError: Tuples differ: ([], 'unresolvable-path') != (['jobs/j/work/b.txt'], None)
 ```
+
+## Addendum — WF-021 review F1 (Lazy WF-038), re-based on `fix1/integration` dfd6e85
+The rows above describe 2dedc94. On branch `wf021b/mybuddy` (from dfd6e85) the characterisation tests pin the
+post-FIX1 behaviour and name the FIX1 item: rows **3** (I7 + R1, every platform), **16, 17** (P1, case-sensitive FS
+only), **18** (P1, every platform), **19** (P1, every platform, platform rule), **20** (P3, now `grant._excluded`, every
+platform), **43** (P4 + R2/R3, byte-name filesystems), **74** (P5, POSIX). Rows 1, 12, 25, 32, 35, 36, 70 are unchanged
+by FIX1.
+Skips are now per test (review L38-M1): rows 18, 19, 20, 25 and **70** run on every platform (row 70 covers the
+`_pid_alive` branch of the host it runs on, so the "Foreign pid: NO TEST" gap above is closed on both platforms once the
+Windows run is made); rows 35/36 skip only when a symlink cannot be created (probe); 16/17 need a case-sensitive
+filesystem; 1, 12, 32 need POSIX path rules; 43 needs byte file names; 74 needs POSIX modes.
+New row (from Lazy WF-038 L38-S4, Windows, not re-verified here): **45** — `wf.main` writes plain-text results with the
+console encoding; with a piped stdout on Windows (cp1252) a non-encodable character raises UnicodeEncodeError after the
+command committed (FINDINGS F16). Row 51 re-verified by Lazy on Windows (`PermissionError` note, row kept).
+Campaign evidence for this branch: `review-f1-concurrency-oplog.json` (contention) and `review-f1-interrupt.json`
+(adds the in-commit window, T28(b)); summarised in FINDINGS.md, addendum.

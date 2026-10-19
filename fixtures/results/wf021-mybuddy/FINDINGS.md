@@ -21,3 +21,54 @@ Row numbers refer to `PLATFORM-REVIEW.md` in this folder. "Re-verified" means My
 | F15 | Step 5: 30 kills (29 actual), 0 corrupt, every resolve agreed with the ledger. Two export staging files preserved by mid-refresh kills stay reported until removed by the owner. | Linux | step5-interrupt.json | **NOT A DEFECT** (designed: preserved, never deleted) |
 
 Not given a Linux test, with reasons: rows 48/50 (would need monkeypatching inside product modules; left as review findings), 15/27/44/45 (Windows-only behaviour), 80 (host-dependent).
+
+## Addendum — WF-021 review F1 (Lazy WF-038), re-based on `fix1/integration` dfd6e85 (branch `wf021b/mybuddy`)
+
+The table above is the pre-FIX1 record (base 2dedc94; branch `wf021/mybuddy` 88ea43f). Status after FIX1, checked by the
+re-based tests in `test_wf021_*.py` at this branch (Ubuntu), with Lazy's WF-038 check 5:
+
+| # | status after FIX1 (dfd6e85) | evidence on this branch |
+|---|---|---|
+| F1 | fixed (P1) | `test_row16_upper_case_scope_glob_walks_the_directory_as_written` (Linux) |
+| F2 | fixed (P1) | `test_row17_reconcile_keeps_the_written_case_and_hashes_the_file` (Linux) |
+| F3 | fixed (FXL I7 + review R1) | `test_row3_driveless_rooted_path_is_rooted_at_the_cwd_drive` (every platform) |
+| F4 | fixed (P3, `grant._excluded`) | `test_row20_…` now tests `_excluded` (review L38-S3); folds on Windows, exact on Linux |
+| F5 | decided by P1: case-sensitive on Linux, folded on Windows | `test_row19_…` (every platform, platform rule) |
+| F6 | fixed (P4 + review R2/R3) | `test_row43_non_utf8_file_name_is_a_structured_refusal_at_job_new` (Linux) |
+| F7 | fixed (FXL I8 test split) | `test_row1_…` (POSIX) |
+| F8 | **open**, NEEDS OWNER (not in FIX1) | `test_row32_…` (POSIX), unchanged |
+| F9 | fixed (P5, 0o600) | `test_row74_backup_file_is_owner_read_write_only` (POSIX) |
+| F10, F11, F12 | F11 fixed (FXL I1); F10, F12 **open** (not in FIX1) | review readings, unchanged |
+| F13 | NOT A DEFECT (unchanged) | step6-busy.json |
+| F14 | NOT A DEFECT; contention now measured (below) | review-f1-concurrency-oplog.json |
+| F15 | NOT A DEFECT; T28(b) now covered (below) | review-f1-interrupt.json |
+| F16 (new, Lazy L38-S4, row 45) | **open**, route to FIX2: on Windows, plain-text (no `--json`) output with non-cp1252 text and a piped stdout raises UnicodeEncodeError in `wf.main` **after** the row committed; FIX1 E1 does not cover it (the write is outside `run()`). Re-verified by Lazy on Windows; not reproducible here (Linux stdout is UTF-8). | Lazy WF-038 L38-S4 |
+
+**F14 contention (review L38-S1).** One 300 s repetition, 8 writers, every attempt with `wf --oplog`:
+`6946 attempts, 6946 committed, 0 rejected, 0 lost, 0 duplicated, 0 unreported, seq consecutive, verify clean`.
+- BEGIN IMMEDIATE waited for the reservation in **6519 / 6946 attempts (93.9 %)**: median 13 tries, max 368 (≈3.7 s at
+  the 10 ms step, under the 5 s bound); 0 give-ups.
+- COMMIT retried on busy in **61 / 6946 attempts (0.88 %)**: max 3 tries.
+- So the 0-lost / 0-duplicated result held under near-constant reservation contention, not in an idle ledger. (The
+  pre-FIX1 three repetitions, 20,906 attempts, had one lock-timeout; this repetition had none.)
+
+**F15 interruption (review L38-S2).** 40 SIGKILLs, seed 21, four windows of 10 (`review-f1-interrupt.json`):
+
+| window | outcome after kill | after `wf resolve` |
+|---|---|---|
+| random (uniform over the 0.070 s typical append) | 6 rolled back, no marker; 3 committed, no marker; 1 exited before the kill (committed) | — |
+| in-txn (delay-precommit: after INSERT + marker, before COMMIT) | 10 rolled back, marker left | 10 NOT-COMMITTED |
+| **in-commit (T28(b))** | **10 rolled back, marker left** | **10 NOT-COMMITTED** |
+| post-commit (delay-postcommit: after COMMIT, before marker delete) | 10 committed, marker left | 10 COMMITTED |
+
+- **in-commit** is new: the harness holds a SHARED read lock across the writer's COMMIT, so COMMIT cannot take its
+  EXCLUSIVE lock and the writer is inside txn.py's COMMIT retry loop when it is killed (0.15-1.47 s after its committing
+  marker appeared, all within the 2 s held bound). Two no-kill controls under the same reader show that loop in the
+  operation log (199 `commit_busy` entries over 2.0 s, then `commit-timeout`). No product fault seam was used. Result:
+  the journal rolls the transaction back at the next open, the committing marker remains, the next writer would refuse
+  (`uncertain-write-pending`), and `wf resolve` answers NOT-COMMITTED. T28(a), (b) and (c) are now each covered.
+- 0 corrupt; final chain 27 rows, consecutive, no pending marker.
+- The final `wf verify` is `clean: false` **only** because of two preserved export staging files
+  (`export temp file preserved: contract.json.<pid>-<hex>.tmp`, `head.json.<pid>-<hex>.tmp`), left by kills inside the
+  post-commit hold during the export refresh. That is the designed behaviour (staging is preserved, never deleted, and
+  reported until the owner removes it); chain, integrity and markers are clean. The pre-FIX1 campaign ended the same way.
