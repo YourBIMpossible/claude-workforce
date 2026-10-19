@@ -50,15 +50,21 @@ class E1InternalErrorExit(unittest.TestCase):
             code = wf.main()
         return code, out.getvalue()
 
-    def test_unexpected_exception_is_one_json_object_and_exit_3(self):
+    def test_unexpected_exception_is_one_json_object_and_exit_4(self):
         code, text = self._main("--json", "status", "j")
-        self.assertEqual(code, 3)
+        self.assertEqual(code, 4)
         self.assertEqual(json.loads(text), {"ok": False, "code": "internal-error", "error": "RuntimeError: boom"})
 
     def test_without_json_it_is_one_plain_line(self):
         code, text = self._main("status", "j")
-        self.assertEqual(code, 3)
+        self.assertEqual(code, 4)
         self.assertEqual(text, "internal-error: RuntimeError: boom\n")
+
+    def test_internal_exit_is_distinct_from_every_other_wf_exit(self):
+        """AMENDMENT FIX1-A1.1: 0 ok, 1 refusal, 2 usage, 3 the fault-seam kill (os._exit(3)); the crash code is none
+        of them."""
+        self.assertEqual(wf.EXIT_INTERNAL, 4)
+        self.assertNotIn(wf.EXIT_INTERNAL, {wf.EXIT_OK, wf.EXIT_ERR, wf.EXIT_USAGE, 3})
 
     def test_argparse_exits_are_unchanged(self):
         with contextlib.redirect_stderr(io.StringIO()), mock.patch.object(sys, "argv", ["wf.py"]):
@@ -181,7 +187,9 @@ class _RollbackFails:
 
 
 class E5ResolveRollback(Ledger):
-    def test_failing_rollback_is_still_uncertain_not_a_raw_sqlite_error(self):
+    def test_failing_final_rollback_keeps_the_decided_outcome_and_records_the_error(self):
+        """AMENDMENT FIX1-A1.2: nothing was written, so the decided outcome (here NOT-COMMITTED) stands; the failure is
+        reported as `rollback_error` in the result and the marker log, and the connection is still closed."""
         self.assertEqual(self.intent()[0], 0)
         conn = dbm.connect(self.db, create=False)
         try:
@@ -194,8 +202,15 @@ class E5ResolveRollback(Ledger):
         real = dbm.connect
         with mock.patch.object(txn.dbm, "connect", side_effect=lambda *a, **kw: _RollbackFails(real(*a, **kw))):
             c, r = self.coord("resolve", "j", str(seq + 1))
-        self.assertEqual((c, r["outcome"]), (1, "STILL-UNCERTAIN"), r)
-        self.assertIn("ROLLBACK raised", r["reason"])
+        self.assertEqual((c, r["outcome"]), (0, "NOT-COMMITTED"), r)
+        self.assertEqual(r["rollback_error"], "OperationalError: injected rollback failure")
+        self.assertNotIn("reason", r)
+        with open(ref.log, encoding="utf-8") as fh:
+            last = json.loads(fh.read().splitlines()[-1])
+        self.assertEqual((last["outcome"], last["rollback_error"]),
+                         ("NOT-COMMITTED", "OperationalError: injected rollback failure"))
+        c, r = self.coord("resolve", "j", str(seq + 1))
+        self.assertEqual((c, r["outcome"]), (0, "ALREADY-CLEARED"), r)
 
 
 # ------------------------------------------------------------------------------------------------ E6 (F11)

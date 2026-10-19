@@ -14,7 +14,7 @@ from wfcore.db import OpLog, WfError, WfUsage  # noqa: E402
 from wfcore.faults import FaultsNotAllowed, load as load_faults  # noqa: E402
 
 EXIT_OK, EXIT_ERR, EXIT_USAGE = 0, 1, 2
-EXIT_INTERNAL = 3  # PACKAGE-FIX1 E1: an unexpected exception; never a refusal (refusals keep 1 and 2)
+EXIT_INTERNAL = 4  # PACKAGE-FIX1 E1 / A1.1: an unexpected exception; not a refusal (1, 2) nor the fault-seam kill (3)
 
 
 def _parser() -> argparse.ArgumentParser:

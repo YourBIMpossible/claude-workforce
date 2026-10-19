@@ -482,18 +482,20 @@ def resolve(db_path: str, job: str, seq: int, attempt_id: str | None, oplog: OpL
                 outcome = "STILL-UNCERTAIN"
                 result["reason"] = f"delete failed: {exc}"
         if not re_recorded:
-            try:  # PACKAGE-FIX1 E5: guarded like every other ROLLBACK here; a failure is an uncertain outcome
+            # PACKAGE-FIX1 E5 / AMENDMENT A1.2: nothing was written in this transaction, so a failing ROLLBACK
+            # does not change the decided outcome; it is recorded, and the finally block still closes the connection.
+            try:
                 dbm.rollback(conn)
                 oplog.add("rollback")
             except sqlite3.Error as rexc:
                 oplog.add("rollback_error", error=str(rexc))
-                outcome = "STILL-UNCERTAIN"
-                result["reason"] = f"ROLLBACK raised {getattr(rexc, 'sqlite_errorname', type(rexc).__name__)}: {rexc}"
+                result["rollback_error"] = f"{getattr(rexc, 'sqlite_errorname', None) or type(rexc).__name__}: {rexc}"
         result["outcome"] = outcome
         markers.append_log(ref, {"outcome": outcome, "m0": result.get("m0"), "m1": result.get("m1"),
                                  "head_seq": head_seq, "reason": result.get("reason"),
                                  "re_recorded": result.get("re_recorded"),
-                                 "others_at_seq": result["others_at_seq"]})
+                                 "others_at_seq": result["others_at_seq"],
+                                 **({"rollback_error": result["rollback_error"]} if "rollback_error" in result else {})})
         if outcome == "COMMITTED" or re_recorded:
             # the originating write never reached its export refresh; bring the export up to the committed row
             conn.close()
