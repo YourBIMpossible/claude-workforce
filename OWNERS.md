@@ -52,8 +52,7 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_gatelog.py | S4L |
 | tools/wf/tests/test_gate_hook_deployed.py | S4L |
 | tools/wf/tests/test_t19_gate_faults.py | S4M |
-| tools/wf/wfcore/backup.py | F2CP |
-| tools/wf/wfcore/commands.py | F2CP |
+| tools/wf/wfcore/backup.py | S5B |
 | tools/wf/tests/test_fix2_backup.py | F2CP |
 | tools/wf/tests/test_t37_backup.py | S5B |
 | tools/wf/tests/test_t30_race_secondwriter_identity.py | S5R |
@@ -257,3 +256,7 @@ Package text: WorkForce collab `contracts/b2fix2/` (PACKAGE-FIX2.md with AMENDME
 | F2CP | Plexy | `fix2/plexy-c-backup` | the F2CP rows above (FIX2 #3, #22+#31, #23, #26+#32, #28, #50); relabelled from S5B (backup.py) and D (commands.py, for #50 at about :1224 only) for this batch only |
 
 Rows go back to their previous owners when batch C is integrated.
+
+## Integration 2026-10-19 (FIX2 batch C into `fix2/integration`, merge window 2; coordinator Zen "Workforce Dev", lane D)
+
+`fix2/integration` merges `fix2/plexy-c-backup` `8b91192` (F2CP), VERIFIED (independent review MyBuddy WF-105 and delta WF-108, Linux 658 OK, Windows Zen 658 OK). AMENDMENT FIX2-A5 widened F2CP's commands.py scope from #50 only to #50 and #3, both in `backup_cmd` (review WF-105 N3). The relabels are restored: backup.py S5B; the commands.py row is removed (back to D). The new test file `test_fix2_backup.py` stays registered to F2CP. Integrator edits under A5 section 3 (lanes W30/W29, recorded here): the expected-failure decorators of `test_wf030_backup_edges` `test_1c_…` (W30-F1), `test_3a_…` (W30-F3) and `test_2b_…` (W30-F2, its flip shown on Linux by WF-105) and of `test_wf029_store` `test_busy_copy_check_is_a_lock_timeout_refusal` (W29-F1) are removed, and the pin `test_busy_copy_check_today_is_an_internal_error` (today's exit 4, superseded by #28) is removed. `test_5b_…` (W30-F4) stays an expected failure.
