@@ -27,7 +27,7 @@ import test_gate_decide as G
 from test_t30_race_secondwriter_identity import FAULT, T30Base
 from test_wf import DECLARATIONS, WF_DIR, log
 
-from wfcore import backup, faults, gatecore
+from wfcore import backup, faults, gatecore, validate
 
 WF_PY = os.path.join(WF_DIR, "wf.py")
 RACE_ROUNDS = 8
@@ -96,6 +96,8 @@ class T30aRaceStrict(T30Base):
                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=self.env(), cwd=self.dir)
                  for i in range(2)]
         results = []
+        timed_out = False
+        survivors: list[int] = []
         try:
             time.sleep(0.5)                                  # both children are started and spinning on the barrier
             with open(barrier, "w") as fh:
@@ -105,13 +107,17 @@ class T30aRaceStrict(T30Base):
                 results.append((p.returncode, json.loads(out.decode("utf-8")) if out.strip() else {},
                                 err.decode("utf-8", "replace")))
         except subprocess.TimeoutExpired:
-            _kill_all(procs)
-            self.fail(f"round {n}: a child did not finish within {CHILD_TIMEOUT_S} s; both were killed")
+            timed_out = True
         finally:
             _kill_all(procs)                                 # item 2: never leave a child behind, on any path
-            self.assertTrue(all(p.poll() is not None for p in procs), "a child process outlived the round")
+            survivors = [p.pid for p in procs if p.poll() is None]   # recorded here, asserted after the try
+        self.assertEqual(survivors, [], f"round {n}: a child process outlived the round")
+        self.assertFalse(timed_out, f"round {n}: a child did not finish within {CHILD_TIMEOUT_S} s; both were killed")
         spans = []
         for w in windows:
+            if not os.path.isfile(w):
+                self.fail(f"round {n}: window file {os.path.basename(w)} is missing (the child did not finish its "
+                          f"wf run); results {results}")
             with open(w, encoding="utf-8") as fh:
                 a, b = fh.read().split()
             spans.append((float(a), float(b)))
@@ -145,6 +151,7 @@ class T30aRaceStrict(T30Base):
         print(f"\nWF-034 item 3: {overlaps}/{RACE_ROUNDS} rounds overlapped; outcomes "
               f"{[r['outcome'] for r in rounds]}", file=sys.stderr)
         self.assertEqual(len(rounds), RACE_ROUNDS)
+        self.assertGreaterEqual(overlaps, 1, f"no round overlapped: the barrier did not start a real race {rounds}")
 
     def test_a_child_that_hangs_is_killed_with_its_sibling(self):
         """Item 2 on the timeout path itself: a child that never passes its barrier times out; both are killed."""
@@ -200,8 +207,14 @@ class VerifyRestoredLimitStrict(T30Base):
 # ----------------------------------------------------------------------------------------------- item 5
 #: Content keys that may carry a session id, each defined by a schema: bind / ack-assignment / stop-confirmed
 #: (bind._SCHEMA_KEYS), reconcile-report / ack-reconcile (reconcile._REPORT_KEYS, _ACK_KEYS), the claimant-conflict
-#: blocker (README "Claimant conflict": holder_session, claimant_session), accept (commands.accept: builder_session).
+#: blocker (holder_session, claimant_session: stored content validate.py:310 `conflict_content`, the same keys in the
+#: result txn.py:44 `_conflict_info`), accept (builder_session: schema validate.py:228).
 SESSION_KEYS = frozenset({"session", "holder_session", "claimant_session", "builder_session"})
+#: Every event type the CLI can write (validate.ROLE_FOR_TYPE; asserted equal below): the D-S5-1 scan reaches all.
+EVENT_TYPES = frozenset({"accept", "ack-assignment", "ack-reconcile", "bind", "blocker", "close", "contract",
+                         "delivered", "exception-acknowledged", "grant", "grant-expired", "grant-revoked", "handoff",
+                         "intent", "intervention", "job-cancelled", "receipt", "reconcile-report", "recovery-closed",
+                         "recovery-decision", "recovery-opened", "stop-confirmed"})
 #: Key tokens that would name a ledger, machine, user or process identity (D-S5-1).
 IDENTITY_TOKENS = frozenset({"host", "hostname", "machine", "computer", "computername", "user", "username", "login",
                              "uid", "gid", "sid", "pid", "ino", "inode", "dev", "device", "identity", "cwd", "db",
@@ -219,9 +232,25 @@ def _walk(obj, where="$"):
 
 
 class NoIdentityInEvents(G._Gate):
+    def _implicit_job(self, job: str) -> None:
+        """A job in implicit mode (test_wf.GRANT has no ARS roles): contract and an activated grant; coordinator C1."""
+        import test_wf
+        ok, run = self.ok, self.run_wf
+        gpath = os.path.join(self.dir, f"grant-implicit-{job}.json")
+        with open(gpath, "w", encoding="utf-8") as fh:
+            json.dump(test_wf.GRANT, fh)
+        ok(run("job", "new", job, "--contract", self.cpath, role="coordinator", session="C1"))
+        h = ok(run("grant", "propose", job, "--grant", gpath, role="coordinator", session="C1"))["block_hash"]
+        ok(run("grant", "activate", job, "--owner-hash", h[:8], "--quote", f"approve G1 {h[:8]}", "--turn",
+               f"owner turn {job}", role="coordinator", session="C1"))
+
     def _lifecycle(self) -> None:
-        """Explicit job j through most event types, and an implicit job k with a claimant conflict, a recovery opened
-        and closed, an intervention and a cancellation."""
+        """Every event type the CLI can write (EVENT_TYPES), over four jobs:
+        j (explicit): bind, ack-assignment, intent, receipt, handoff, delivered, reconcile-report, ack-reconcile,
+          accept, intervention, stop-confirmed, recovery-decision, close;
+        k (implicit): a claimant conflict (blocker), a recovery opened over an orphan export temp file, the exception
+          acknowledged, the recovery closed, a cancellation;
+        m, n (implicit): grant-revoked and grant-expired."""
         self.explicit()
         ok, run = self.ok, self.run_wf
         rows = self.ledger_rows()
@@ -230,6 +259,11 @@ class NoIdentityInEvents(G._Gate):
                json.dumps({"role": "builder", "session": "B1", "bind_seq": bind_seq})))
         ok(run("append", "j", "--type", "intent", "--content",
                json.dumps({"path": "jobs/j/work/a.txt", "sha_before": "", "note": "n"})))
+        ok(run("append", "j", "--type", "receipt", "--content",
+               json.dumps({"path": "jobs/j/work/a.txt", "sha_before": "", "sha_after": "", "note": "no change"})))
+        ok(run("append", "j", "--type", "handoff", "--content",
+               json.dumps({"to_role": "coordinator", "write_scope": ["jobs/j/work/a.txt"], "actions": ["write"],
+                           "note": "n"})))
         ok(run("append", "j", "--type", "delivered", "--content", '{"claims":[{"claim":"c","evidence":["e"]}]}'))
         self.bind("reviewer", "R1")                                  # a reviewer is bound only after delivery
         rep = ok(run("reconcile", "j", role="coordinator", session="C1"))
@@ -237,28 +271,37 @@ class NoIdentityInEvents(G._Gate):
                json.dumps([e["id"] for e in rep["exceptions"]])))
         results = {"criteria": [{"id": "AC1", "pass": True, "actual": "ok"}], "changed_paths": [],
                    "environment": "disposable local scope", "limits": "none", **DECLARATIONS}
-        ok(run("accept", "j", "--results", json.dumps(results), role="reviewer", session="R1"))
+        self.assertEqual(ok(run("accept", "j", "--results", json.dumps(results), role="reviewer",
+                                session="R1"))["decision"], "accepted")
         ok(run("log-intervention", "j", "--label", "l", "--necessity", "unknown", "--minutes", "1",
                role="coordinator", session="C1"))
         self.stop("B1")
-        # job k, implicit mode (a grant without ARS roles): first builder session K1, a claimant conflict by K2, a
-        # recovery opened and closed, a cancellation
-        import test_wf
-        gk = os.path.join(self.dir, "grant-implicit.json")
-        with open(gk, "w", encoding="utf-8") as fh:
-            json.dump(test_wf.GRANT, fh)
-        ok(run("job", "new", "k", "--contract", self.cpath, role="coordinator", session="C1"))
-        h = ok(run("grant", "propose", "k", "--grant", gk, role="coordinator", session="C1"))["block_hash"]
-        ok(run("grant", "activate", "k", "--owner-hash", h[:8], "--quote", f"approve G1 {h[:8]}", "--turn",
-               "owner turn k", role="coordinator", session="C1"))
+        ok(run("reconcile", "j", role="coordinator", session="C1"))             # step 4 needs a post-stop report
+        ok(run("recover", "decide", "j", "--decision", "resume", "--turn", G.TURN, role="coordinator", session="C1"))
+        ok(run("close", "j", "--intervention", "l", role="coordinator", session="C1"))
+        # job k: first builder session K1, a claimant conflict by K2, a recovery over an orphan export temp file (a
+        # recoverable exception, export.orphans) acknowledged and closed, a cancellation
+        self._implicit_job("k")
         ok(run("append", "k", "--type", "intent", "--content",
                json.dumps({"path": "jobs/k/work/a.txt", "sha_before": "", "note": "n"}), session="K1"))
         c, r = run("append", "k", "--type", "intent", "--content",
                    json.dumps({"path": "jobs/k/work/a.txt", "sha_before": "", "note": "second"}), session="K2")
         self.assertEqual(r.get("conflict_outcome"), "COMMITTED", r)
-        ok(run("recover", "begin", "k", "--reason", "r", "--turn", "owner turn k", role="coordinator", session="C1"))
+        export_dir = ok(run("export", "k"))["export"]["dir"]
+        with open(os.path.join(export_dir, "head.json.tmp"), "xb") as fh:
+            fh.write(b"orphan\n")
+        opened = ok(run("recover", "begin", "k", "--reason", "r", "--turn", "owner turn k", role="coordinator",
+                        session="C1"))
+        self.assertGreaterEqual(len(opened["exceptions"]), 1, opened)
+        self.assertGreaterEqual(len(ok(run("recover", "reconcile", "k", "--turn", "owner turn k", role="coordinator",
+                                           session="C1"))["acknowledged"]), 1)
         ok(run("recover", "close", "k", "--turn", "owner turn k", role="coordinator", session="C1"))
         ok(run("cancel", "k", "--reason", "r", "--turn", "owner turn k", role="coordinator", session="C1"))
+        # jobs m and n: the two grant lifecycle ends
+        self._implicit_job("m")
+        ok(run("grant", "revoke", "m", "--reason", "r", "--turn", "owner turn m", role="coordinator", session="C1"))
+        self._implicit_job("n")
+        ok(run("grant", "expire", "n", "--reason", "r", "--turn", "owner turn n", role="coordinator", session="C1"))
 
     def test_no_identity_in_any_event_content(self):
         self._lifecycle()
@@ -295,6 +338,7 @@ class NoIdentityInEvents(G._Gate):
                     problems.append(f"seq {r['seq']} {r['type']}: ledger {k} {ident[k]}")
         log(f"{self._testMethodName}-scan", {"types": types, "rows": len(rows), "session_keys": sorted(session_keys_seen),
                                               "problems": problems})
-        self.assertGreaterEqual(len(types), 14, types)               # the scan covered a wide set of event types
+        self.assertEqual(EVENT_TYPES, frozenset(validate.ROLE_FOR_TYPE))   # a new event type must join the lifecycle
+        self.assertEqual(set(types), EVENT_TYPES)                    # the scan covered every event type
         self.assertEqual(problems, [])
         self.assertTrue(session_keys_seen <= SESSION_KEYS, session_keys_seen)
