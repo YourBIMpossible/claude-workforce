@@ -56,6 +56,9 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_t30_race_secondwriter_identity.py | S5R |
 | tools/wf/tests/test_t37_t36_matrix.py | S5M |
 | tools/wf/tests/test_fix1_errors.py | FXL |
+| tools/wf/wfcore/markers.py | F2AL |
+| tools/wf/wfcore/txn.py | F2AL |
+| tools/wf/tests/test_fix2_resolve.py | F2AL |
 | tools/wf/tests/test_fix1_ids.py | FXL |
 | tools/wf/tests/test_fix1_paths.py | FXM |
 | tools/wf/tests/test_wf020_*.py | W20 |
@@ -198,3 +201,13 @@ Branch `fix1/integration` combines `fix1/lazy-ids` (FXL, includes `fix1/lazy-err
 Integrator edits under G1: the only paths outside lane D are the two lane-B test files, where AMENDMENT FIX1-A2.3 pins three tests (`test_pathpolicy_hardening.py` x2, `test_t35_path_policy.py` x1) to the Windows case rule with `mock.patch.object(pathpolicy, "CASE_FOLDING", True)`. In lane D: `tools/wf/docs/RESTORE-RUNBOOK.md` gains `--db` (FIX1 I3) and MANIFEST.sha256 is regenerated over the integrated tree.
 Record correction (WF-031 review): the registration note above planned the relabel restore "in the same commit that updates MANIFEST.sha256"; in fact the relabels were restored in 7f3337b and MANIFEST.sha256 was regenerated in 38a1f43, and again after the review merges below.
 Review merges (independent review WF-027): `fix1/lazy-ids` 5c47587 (review R: R1, S1-S6) and `fix1/mybuddy-paths` 3a6dd00 (review R2/R3) are merged on top of 38a1f43, followed by this text fix and a regenerated MANIFEST.sha256.
+
+## Registration 2026-10-19 (package FIX2 batch A, AMENDMENT FIX2-A4; decided by the Foreman under the owner's delegation; coordinator Zen "Workforce Dev" while White is out)
+
+Package text: WorkForce collab `contracts/b2fix2/` (PACKAGE-FIX2.md with AMENDMENT-FIX2-A4.md, frozen with SHA256SUMS). Base: main `4321f16` plus this registration commit.
+
+| Lane | Worker | Branch | Scope |
+|---|---|---|---|
+| F2AL | Lazy | `fix2/lazy-a-resolve` | the F2AL rows above (FIX2 #1, #18, #21, #46, #47, #48); relabelled from D (markers.py, txn.py) for this batch only |
+
+Rows go back to their previous owners when batch A is integrated.
