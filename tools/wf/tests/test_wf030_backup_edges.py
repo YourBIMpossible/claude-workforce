@@ -7,7 +7,7 @@ is marked `expectedFailure`, and its docstring records the observed behaviour as
 
   1 symlinked ledger path        POSIX symlinks (Linux)        pins 1a/1b; 1c is finding W30-F1
   2 `..` in the destination      POSIX                         pin 2a; 2b (`..` after a symlink) is finding W30-F2
-  3 UNC alias / junction         Windows only (skip elsewhere) 3a is finding W30-F3 (predicted); 3b/3c pins
+  3 UNC alias / junction         Windows only (skip elsewhere) 3a is finding W30-F3 (confirmed on Windows); 3b/3c pins
   4 gap below the head           any platform                  pin: a gap is a distinct chain problem
   5 head_in_source lookup order  any platform                  pin 5a; 5b (same connection as the copy) is W30-F4
 
@@ -137,16 +137,25 @@ class WindowsAliases(_Backup):
 
     @unittest.expectedFailure
     def test_3a_admin_share_alias_of_the_ledger_directory_is_refused(self):
-        """W30-F3 (finding, PREDICTED from reading; Zen's Windows run decides): `--to \\\\localhost\\C$\\...\\ledger\\b.db`
-        names the ledger directory through the admin share. realpath keeps the UNC form, so commonpath raises
-        ValueError (different drives) and `_inside` answers False: no refusal. Intended: dest-inside-ledger.
-        Skipped (not counted) when the admin share is not reachable from this account."""
+        """W30-F3 (finding, fail-open plus a crash; CONFIRMED on Windows by Zen, WF-030 review F1, 2026-10-19):
+        `--to \\\\localhost\\C$\\...\\ledger\\b.db` names the ledger directory through the admin share. realpath keeps
+        the UNC form, so commonpath raises ValueError (different drives) and `_inside` answers False: no refusal.
+        OBSERVED on Zen (account can reach the share): the engine copy writes `b.db` INSIDE the ledger directory
+        through the share; then verification reopens it and `_open_ro` (backup.py:63, from backup.py:130) raises
+        `sqlite3.OperationalError: unable to open database file`, so `wf backup` ends in an error, not a result. The
+        Windows twin of W30-F2. Intended: dest-inside-ledger, nothing written. The sqlite error is caught and turned
+        into this test's own assertion failure, so the expected failure always fails on its assertion. Skipped (not
+        counted) when the admin share is not reachable or not writable from this account."""
         unc_ledger = self._unc(self.ledger)
         if not os.path.isdir(unc_ledger):
             raise unittest.SkipTest(f"admin share not reachable: {unc_ledger}")
         dest = unc_ledger + "\\b.db"
         try:
             code, res = self.wf_backup(dest)
+        except sqlite3.Error as exc:                 # observed on Windows: the finding, not the environment
+            landed = os.path.exists(os.path.join(self.ledger, "b.db"))
+            self.fail(f"W30-F3: not refused; {type(exc).__name__}: {exc}; "
+                      f"b.db written inside the ledger directory: {landed}")
         except OSError as exc:                       # environment, not the finding
             raise unittest.SkipTest(f"admin share not writable: {exc}") from exc
         self.assertEqual((code, res.get("error")), (1, "dest-inside-ledger"), res)
