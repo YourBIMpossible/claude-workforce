@@ -5,6 +5,10 @@ not gate tools by itself (the gate hook is separate), enforce identity, sandbox 
 the owner-driven `wf recover` procedure below. Python 3 stdlib only; always run with
 `python -I`.
 
+The gate requires Claude Code v2.1.295 or later, for `onFailure: block`: the settings snippet that
+`wf gate print-install` prints sets it, and on an older version a timed-out or failing gate hook lets the tool call
+through (spec §4.2, G-12).
+
 ```
 python -I F:\Claude-Workforce\tools\wf\wf.py --db PATH [--role R --session S] [--generation N] [--msg-id ID] [--json] [--oplog] <command>
 ```
@@ -26,13 +30,13 @@ error/refused/rejected, `2` usage, ambiguous resolve, or fault seam refused, `3`
 | `append <job> --type intent\|receipt\|blocker\|handoff\|delivered --content FILE\|JSON` | builder (handoff/blocker: any listed in `validate.ROLE_FOR_TYPE`) | Appends one event. |
 | `status <job>` | — | Head, contract pin, axes (execution, acceptance, review, authority), pending markers. Read-only. |
 | `digest <job>` | — | Owner surface (spec T26), read-only; ledger fields, `head` and `db_size_bytes` come from one read snapshot, pending markers from the marker files read after it: `head` (seq, self, `db_size_bytes`) to copy into an owner turn as the retained checkpoint; `done`; `active` (axes, latest event seq per axis); `needs_owner` (decision queue, each item with `recommendation` and `evidence`); `grants` (each activated grant's verbatim quote, source turn, block hash, proposed and activation seq, current state); `ars`; `bindings`; `evidence` (paths cited by receipts, delivered claims or an `evidence` field, with seq; listed, never opened); plus counts, contract pin, axes and pending markers. No raw event content is relayed. **Limits:** `bindings` is the `wf bind` table when the job has explicit bindings, otherwise the table observed from event headers (`source` says which); role, session and generation are caller-supplied text and the digest does not verify identity. |
-| `verify [job]` | — | Schema/constraints, `integrity_check`, chain (prev/self/content hashes, canonical JSON, contract pin), export consistency, pending markers. `clean: true` only when all are empty. Read-only. |
+| `verify [job]` | — | Schema/constraints, `integrity_check`, chain (prev/self/content hashes, canonical JSON, contract pin), export consistency, pending markers. `clean: true` only when all are empty. Read-only. `--checkpoint SEQ:HASH` compares the chain with an independently retained checkpoint (spec §3C level 3): `match`, `mismatch` or `missing`. `--restored PATH [--job J --checkpoint SEQ:HASH]` checks a restored copy read-only (docs\RESTORE-RUNBOOK.md): checkpoint status `matches`, `differs` or `missing`. Same three outcomes, two vocabularies (FIX2 #42). |
 | `export <job>` | — | Regenerates `jobs\<job>\export\` (events.jsonl, head.json, contract.json, manifest.txt) from a bounded read snapshot and re-checks it. Ledger-read-only, export-writing: no event, no write transaction, no marker; writes only under the export directory. Unknown job → `refused`; a refresh failure or remaining export problem → exit 1, code `export-error`. |
 | `checkpoint <job>` | — | Writes `jobs\<job>\export\checkpoint.json` = (job, seq, self, contract pin). Keep it elsewhere; a later `verify` plus comparison detects a rewrite of anything up to that seq. |
 | `accept <job> --results FILE` | reviewer | Records `accept` with decision `accepted` only when every contract criterion is present with `pass: true`, no changed path is outside scope (P4) or excluded (P5), and no unknown criterion is named; otherwise `rejected`. Refused (no event) if the session wrote any builder event (`same-session`) or nothing was delivered. |
 | `close <job> --intervention TEXT` | coordinator | Refused unless verify is clean, no marker is pending, and acceptance is `accepted` **or** the job is abandoned (the abandoned-close rule). Writes `close`; the job then rejects further events. |
 | `resolve <job> <seq> [--attempt ID] [--disposition TEXT]` | — | Decides an uncertain write (below). |
-| `bind <job> --bind-role R --bind-session S [--bind-generation N] [--tool T]... [--path GLOB]...` | coordinator | Records a role assignment checked against the activated grant's ARS (spec 2B); the bound session answers with `append --type ack-assignment`. |
+| `bind <job> --bind-role R --bind-session S [--bind-generation N] [--tool T]... [--path GLOB]...` | coordinator | Records a role assignment checked against the activated grant's ARS (spec 2B); the bound session answers with `append --type ack-assignment`. The `--tool` list is checked against the ARS here but is not enforced per tool call by the gate; restrict a session's tools with a Claude Code permission rule (spec R17). |
 | `reconcile <job> [--target-role builder]` | coordinator | Compares in-scope files with the baseline, receipts and intents and appends a `reconcile-report`; the role acknowledges it with `ack-reconcile <job> --report SEQ --exceptions JSON`. |
 | `recover begin\|reconcile\|close <job> --turn T` | coordinator (owner turn naming the job) | Opens a recovery (the chain is verified first), acknowledges each recoverable exception it lists, and closes it once all are acknowledged and the chain verifies. Every ordinary mutation refuses while a recovery is open. |
 | `recover decide <job> --decision resume\|restore\|abandon --turn T` | coordinator | Records the builder-role decision after a confirmed stop (spec 6.2 step 4). |
@@ -162,9 +166,18 @@ Auto-resolve is skipped for injected COMMIT errors so fixtures can resolve expli
 - Connection setup and `BEGIN IMMEDIATE` share one `T_ACQ_BOUND` window (connect wait is counted).
 - Case folding follows `os.path.normcase`: Windows folds case; POSIX hosts, including case-insensitive volumes such as
   default macOS APFS, compare case-sensitively. R1 supports Windows and Linux.
+- Windows name rules apply on every platform by design (fail closed, portability; FIX2 #6, kept): path resolution
+  refuses a path component that is a Windows device name (with or without an extension, for example `aux.c`), contains
+  `:`, or ends in a dot or a space, on Linux as on Windows; job ids follow the same rule (FIX1 I1, above). On Linux
+  this refuses some names the filesystem would accept (an availability cost, WF-021 F8).
 - A claimant conflict blocks a role on typed values; it is a recorded fact, not an authenticated one. The conflict
   record is guaranteed only when at least one durable write (row or marker) succeeds in the attempt; the double
   failure `conflict-unrecorded` is reported and leaves the holder unblocked (A4 §13a, accepted).
+- Gate limit for unbound sessions (G-4, documented): a session never bound to a job is denied only targets inside some
+  job's write scope or `jobs\<job>\` (`unbound-session`); other in-root paths are allowed. Grant `exclusions` are
+  applied by `grant.check` (`grant.py:297`), which only bound sessions reach, so an excluded path outside every write
+  scope and `jobs\<job>\` stays writable for unbound sessions: keep protected files (for example a pilot's
+  `pristine\**`) under `jobs\<job>\`. A replaced or stop-confirmed session is denied every preventable target (D-027).
 
 ## Tests
 
