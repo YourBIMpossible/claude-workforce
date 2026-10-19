@@ -5,8 +5,8 @@ Tests only; product code is unchanged. Contract: INTERFACE-CONTRACT-S5.md sectio
 is safe the test pins it. Where it contradicts the contract or White's note the test asserts the intended behaviour,
 is marked `expectedFailure`, and its docstring records the observed behaviour as a finding (W30-Fn).
 
-  1 symlinked ledger path        POSIX symlinks (Linux)        pins 1a/1b; 1c is finding W30-F1
-  2 `..` in the destination      POSIX                         pin 2a; 2b (`..` after a symlink) is finding W30-F2
+  1 symlinked ledger path        where symlinks can be made    pins 1a/1b; 1c is finding W30-F1 (POSIX and Windows)
+  2 `..` in the destination      2a any platform; 2b POSIX     pins 2a; 2b (`..` after a symlink) is finding W30-F2
   3 UNC alias / junction         Windows only (skip elsewhere) 3a is finding W30-F3 (confirmed on Windows); 3b/3c pins
   4 gap below the head           any platform                  pin: a gap is a distinct chain problem
   5 head_in_source lookup order  any platform                  pin 5a; 5b (same connection as the copy) is W30-F4
@@ -28,7 +28,7 @@ from wfcore import backup, db  # noqa: E402
 
 POSIX = os.name == "posix"
 WINDOWS = os.name == "nt"
-SKIP_POSIX = "POSIX symlink and `..` resolution semantics"
+SKIP_POSIX = "POSIX `..` resolution after a symlink (Win32 collapses `..` lexically; see 3c)"
 SKIP_WINDOWS = "UNC admin-share aliases and junctions exist on Windows only"
 
 
@@ -56,27 +56,39 @@ class _Backup(Base):
 
 # ------------------------------------------------------------------------------------------------ 1 symlinked ledger
 
-@unittest.skipUnless(POSIX, SKIP_POSIX)
 class SymlinkedLedger(_Backup):
+    """Runs wherever this account can create symlinks (capability-probed in setUp, review F2 W30-R1): Linux, and
+    Windows with Developer Mode or the symlink privilege. Skipped only when the probe symlink cannot be created."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        probe = os.path.join(self.dir, "symlink-probe")
+        try:
+            os.symlink(self.ledger, probe, target_is_directory=True)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"cannot create symlinks here: {type(exc).__name__}: {exc}")
+        (os.rmdir if WINDOWS else os.unlink)(probe)   # removes the link itself, never the ledger directory
+
     def test_1a_dest_through_a_symlink_to_the_ledger_directory_is_refused(self):
         """Pin: `<root>/alias -> <root>/ledger`; `--to <root>/alias/b.db` is inside the ledger (realpath)."""
         alias = os.path.join(self.dir, "alias")
-        os.symlink(self.ledger, alias)
+        os.symlink(self.ledger, alias, target_is_directory=True)
         self.assertRefusedInsideLedger(os.path.join(alias, "b.db"))
 
     def test_1b_db_given_through_a_symlinked_directory_is_compared_by_realpath(self):
         """Pin: `--db <root>/alias/l.db` with `alias -> ledger`; a dest in the real ledger directory is refused."""
         alias = os.path.join(self.dir, "alias")
-        os.symlink(self.ledger, alias)
+        os.symlink(self.ledger, alias, target_is_directory=True)
         self.assertRefusedInsideLedger(os.path.join(self.ledger, "b.db"), db_path=os.path.join(alias, "l.db"))
 
     @unittest.expectedFailure
     def test_1c_db_file_symlink_elsewhere_still_protects_the_real_ledger_directory(self):
-        """W30-F1 (finding, fail-open): `--db <root>/elsewhere/l-alias.db` is a symlink to `<root>/ledger/l.db`. The
-        ledger directory is taken as `dirname(abspath(db))` = `<root>/elsewhere` (backup._refuse_dest), not the
-        directory of the resolved ledger file. OBSERVED: `--to <root>/ledger/b.db` is not refused; the backup is
-        written into the real ledger directory (D-S5-3 says any destination inside the ledger directory is
-        refused). Intended: compare against `dirname(realpath(db))` as well."""
+        """W30-F1 (finding, fail-open, POSIX AND Windows): `--db <root>/elsewhere/l-alias.db` is a symlink to
+        `<root>/ledger/l.db`. The ledger directory is taken as `dirname(abspath(db))` = `<root>/elsewhere`
+        (backup._refuse_dest, backup.py:100), not the directory of the resolved ledger file. OBSERVED on Ubuntu, and
+        on Windows by Plexy's review WF-033 with the platform skip lifted: `--to <root>/ledger/b.db` is not refused;
+        the backup is written into the real ledger directory (D-S5-3 says any destination inside the ledger
+        directory is refused). Intended: compare against `dirname(realpath(db))` as well."""
         elsewhere = os.path.join(self.dir, "elsewhere")
         os.makedirs(elsewhere)
         link = os.path.join(elsewhere, "l-alias.db")
@@ -86,7 +98,6 @@ class SymlinkedLedger(_Backup):
 
 # ------------------------------------------------------------------------------------------------ 2 `..` in --to
 
-@unittest.skipUnless(POSIX, SKIP_POSIX)
 class DotDotDestination(_Backup):
     def test_2a_dotdot_that_resolves_inside_the_ledger_is_refused(self):
         """Pin: plain `..` forms that land in the ledger directory are refused (lexical and real forms agree)."""
@@ -103,6 +114,7 @@ class DotDotDestination(_Backup):
         self.assertEqual((code, res.get("clean")), (0, True), res)
         self.assertTrue(os.path.isfile(os.path.join(self.dir, "b.db")))
 
+    @unittest.skipUnless(POSIX, SKIP_POSIX)
     @unittest.expectedFailure
     def test_2b_dotdot_after_a_symlink_into_the_ledger_is_refused(self):
         """W30-F2 (finding, fail-open on POSIX): `<root>/lnk -> <root>/ledger/sub`, `--to <root>/lnk/../b.db`.
@@ -143,22 +155,22 @@ class WindowsAliases(_Backup):
         OBSERVED on Zen (account can reach the share): the engine copy writes `b.db` INSIDE the ledger directory
         through the share; then verification reopens it and `_open_ro` (backup.py:63, from backup.py:130) raises
         `sqlite3.OperationalError: unable to open database file`, so `wf backup` ends in an error, not a result. The
-        Windows twin of W30-F2. Intended: dest-inside-ledger, nothing written. The sqlite error is caught and turned
-        into this test's own assertion failure, so the expected failure always fails on its assertion. Skipped (not
-        counted) when the admin share is not reachable or not writable from this account."""
+        Windows twin of W30-F2. Intended: dest-inside-ledger, nothing written. Review F2 (W30-R3): the outcome is one
+        assertion over (refusal reason, b.db present in the ledger), so it holds for any product fix; any sqlite or
+        OS error from the backup is recorded in it, never turned into a skip. Skipped (not counted) only when the
+        admin share is not reachable at all from this account."""
         unc_ledger = self._unc(self.ledger)
         if not os.path.isdir(unc_ledger):
             raise unittest.SkipTest(f"admin share not reachable: {unc_ledger}")
         dest = unc_ledger + "\\b.db"
         try:
             code, res = self.wf_backup(dest)
-        except sqlite3.Error as exc:                 # observed on Windows: the finding, not the environment
-            landed = os.path.exists(os.path.join(self.ledger, "b.db"))
-            self.fail(f"W30-F3: not refused; {type(exc).__name__}: {exc}; "
-                      f"b.db written inside the ledger directory: {landed}")
-        except OSError as exc:                       # environment, not the finding
-            raise unittest.SkipTest(f"admin share not writable: {exc}") from exc
-        self.assertEqual((code, res.get("error")), (1, "dest-inside-ledger"), res)
+            reason = res.get("error") if code == 1 else f"exit {code}, not refused"
+        except (sqlite3.Error, OSError) as exc:      # observed on Windows: the finding, not the environment
+            reason = f"not refused; {type(exc).__name__}: {exc}"
+        written = os.path.exists(os.path.join(self.ledger, "b.db"))
+        self.assertEqual((reason, written), ("dest-inside-ledger", False),
+                         "W30-F3: (refusal reason, b.db written inside the ledger directory)")
 
     def _junction(self, link: str, target: str) -> None:
         import _winapi  # noqa: PLC0415 - Windows only
@@ -171,7 +183,8 @@ class WindowsAliases(_Backup):
         self.assertRefusedInsideLedger(os.path.join(jn, "b.db"))
 
     def test_3c_dotdot_after_a_junction_is_collapsed_lexically_and_stays_outside(self):
-        """Pin (PREDICTED; the Windows twin of 2b): `<root>\\jn2` is a junction to `<root>\\ledger\\sub`. Win32
+        """Pin (passes on Windows, review F1/F2 runs on Zen and Plexy; the Windows twin of 2b): `<root>\\jn2` is a
+        junction to `<root>\\ledger\\sub`. Win32
         collapses `..` lexically before any reparse point is followed, so `<root>\\jn2\\..\\b.db` is `<root>\\b.db`
         for both the check and the OS. The backup is allowed and lands outside the ledger."""
         sub = os.path.join(self.ledger, "sub")
