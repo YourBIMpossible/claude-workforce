@@ -298,26 +298,32 @@ class TxSeq(_Procs):
         violations: list[str] = []
 
         class Tracked(sqlite3.Connection):
+            _serials = iter(range(1, 1_000_000))  # FIX2 A12: a serial per connection; id() is reused once a closed one is freed
+
+            def __init__(self, *a, **k):
+                super().__init__(*a, **k)
+                self.serial = next(Tracked._serials)
+
             def execute(self, sql, *a, **k):
                 s = sql.strip().upper() if isinstance(sql, str) else ""
                 if s.startswith("BEGIN"):
                     if self.in_transaction:
-                        violations.append(f"BEGIN while in_transaction on {id(self)}: {s}")
+                        violations.append(f"BEGIN while in_transaction on {self.serial}: {s}")
                     if s.startswith("BEGIN IMMEDIATE"):
-                        if holders - {id(self)}:
-                            violations.append(f"second write reservation {id(self)} while {holders} held")
+                        if holders - {self.serial}:
+                            violations.append(f"second write reservation {self.serial} while {holders} held")
                         r = super().execute(sql, *a, **k)  # may raise BUSY; only a success marks the holder
-                        holders.add(id(self)); events.append(("W", id(self))); return r
-                    events.append(("R", id(self)))
+                        holders.add(self.serial); events.append(("W", self.serial)); return r
+                    events.append(("R", self.serial))
                 elif s.startswith(("COMMIT", "ROLLBACK")):
-                    if id(self) in holders:
-                        holders.discard(id(self)); events.append(("E", id(self)))
+                    if self.serial in holders:
+                        holders.discard(self.serial); events.append(("E", self.serial))
                 return super().execute(sql, *a, **k)
 
             def close(self):
-                if id(self) in holders:
-                    violations.append(f"connection {id(self)} closed while holding a write reservation")
-                events.append(("C", id(self))); return super().close()
+                if self.serial in holders:
+                    violations.append(f"connection {self.serial} closed while holding a write reservation")
+                events.append(("C", self.serial)); return super().close()
 
         real_connect = dbm.sqlite3.connect
         dbm.sqlite3.connect = lambda *a, **k: real_connect(*a, **{**k, "factory": Tracked})
@@ -341,8 +347,8 @@ class TxSeq(_Procs):
                 for c in writers:  # every writer connection released and closed
                     self.assertIn(("E", c), events, name); self.assertIn(("C", c), events, name)
             self.assertEqual(per_step["verify"]["write_reservations"], 0)
-            self.assertEqual(per_step["append"]["write_reservations"], 1)
-            self.assertEqual(per_step["append"]["distinct_writer_connections"], 1)
+            self.assertEqual(per_step["append"]["write_reservations"], 2)  # FIX2 #45 (b): the write's reservation, then export.refresh's own, never overlapping (violations above)
+            self.assertEqual(per_step["append"]["distinct_writer_connections"], 2)
         finally:
             dbm.sqlite3.connect = real_connect
         log(f"{self._testMethodName}-reservations", per_step)
