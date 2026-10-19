@@ -73,22 +73,30 @@ class ContentEncodings(Adv):
         under AMENDMENT FIX2-A6): a duplicate key at any depth is refused `rejected(malformed)` and nothing is written."""
         before = self.head_seq()
         c, r = self.append_intent('{"path":"jobs/j/work/a","path":"jobs/j/work/b","sha_before":"","note":"n"}')
-        self.assertEqual(c, 1, r)
-        self.assertIn("duplicate key", r.get("error", ""), r)
+        self.assertEqual((c, r.get("code")), (1, "rejected"), r)
+        self.assertIn("duplicate key 'path'", r.get("error", ""), r)
         self.assertEqual(self.head_seq(), before)
 
-    def test_large_event_body_from_a_file_is_refused(self):
-        """Was `test_large_event_body_from_a_file_is_committed`, which pinned the pre-FIX2 behaviour (a 2 MB body was
-        committed). FIX2 #2 (AMENDMENT FIX2-A2; flipped by the integrator under AMENDMENT FIX2-A6): JSON input over
-        1,048,576 bytes is refused `rejected(malformed)` before parsing, nothing is written, and the ledger verifies."""
+    def test_large_event_body_from_a_file_is_bounded(self):
+        """Was `test_large_event_body_from_a_file_is_committed` (a 2 MB body was committed). FIX2 #2 (AMENDMENT
+        FIX2-A2; flipped by the integrator under AMENDMENT FIX2-A6, shape per review WF-104 M1): a large but legal
+        body (about 1,000,000 bytes, under the 1,048,576-byte bound) from a file is still committed and verifies;
+        the same shape over the bound is refused `rejected(malformed)` before parsing, with no row written."""
         big = os.path.join(self.dir, "big.json")
         with open(big, "w", encoding="utf-8") as fh:
-            json.dump(dict(BASE, note="x" * 2_000_000), fh)
+            json.dump(dict(BASE, note="x" * 1_000_000), fh)
+        self.assertLess(os.path.getsize(big), 1_048_576)
         before = self.head_seq()
         c, r = self.append_intent(big)
-        self.assertEqual(c, 1, r)
+        self.assertEqual((c, r.get("outcome")), (0, "COMMITTED"), r)
+        self.assertEqual(self.head_seq(), before + 1)
+        over = os.path.join(self.dir, "over.json")
+        with open(over, "w", encoding="utf-8") as fh:
+            json.dump(dict(BASE, note="x" * 2_000_000), fh)
+        c, r = self.append_intent(over)
+        self.assertEqual((c, r.get("code")), (1, "rejected"), r)
         self.assertIn("limited to 1048576 bytes", r.get("error", ""), r)
-        self.assertEqual(self.head_seq(), before)
+        self.assertEqual(self.head_seq(), before + 1)
         c, r = self.run_wf("verify", "j", role="coordinator", session="C1")
         self.assertTrue(r["clean"], r)
 
