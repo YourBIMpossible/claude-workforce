@@ -9,7 +9,6 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 |---|---|
 | tools/wf/wfcore/validate.py | A |
 | tools/wf/tests/test_fix2_validation.py | F2BP |
-| tools/wf/wfcore/commands.py | F2SP |
 | tools/wf/tests/test_t24_accept_declarations.py | A |
 | tools/wf/wfcore/pathpolicy.py | B |
 | tools/wf/tests/test_t35_path_policy.py | B |
@@ -45,8 +44,8 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/wfcore/observe.py | S4L |
 | tools/wf/tests/test_t14_observe.py | S4L |
 | tools/wf/tests/test_t34_cli_matrix.py | S3M |
-| tools/wf/wfcore/gatecore.py | F2SP |
-| tools/wf/tests/test_gate_decide.py | F2SP |
+| tools/wf/wfcore/gatecore.py | S4G |
+| tools/wf/tests/test_gate_decide.py | S4G |
 | tools/wf/tests/test_fix2_gate.py | F2SP |
 | tools/wf/tests/test_gate_corpus_replay.py | S4G |
 | tools/wf/wfcore/gatelog.py | S4L |
@@ -272,3 +271,7 @@ Package text: WorkForce collab `contracts/b2fix2/` (PACKAGE-FIX2.md with AMENDME
 | F2SP | Plexy | `fix2/plexy-s-gate` | the F2SP rows above (FIX2 #4, #5, #56; test_gate_decide.py :40/:559 to `self.scratch`); relabelled from S4G (gatecore.py, test_gate_decide.py) and D (commands.py, for #5's `gate_print_install` only) for this batch only |
 
 Rows go back to their previous owners when batch S is integrated.
+
+## Integration 2026-10-19 (FIX2 batch S into `fix2/integration`, merge window 2; coordinator Zen "Workforce Dev", lane D)
+
+`fix2/integration` merges `fix2/plexy-s-gate` `3ee0344` (F2SP: #4 with review F1/F2, #5, #56 per S4A-A6, S-add), VERIFIED (independent review MyBuddy WF-110, Linux 930 OK, Windows Zen 930 OK). The relabels are restored: gatecore.py S4G, test_gate_decide.py S4G; the commands.py row is removed (back to D). The new test file `test_fix2_gate.py` stays registered to F2SP. Deferred to batch Z with a batch-D doc line: rule 1 follows a link on the root's anchor before rule 0's link refusal (WF-110 S1).
