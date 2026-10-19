@@ -10,9 +10,10 @@ written; nothing else on disk is written. It reuses the slice 1-3 decision logic
 Any exception inside `decide` becomes `deny` / `gate-error` (fail closed).
 
 Rules, first match decides (§2): 0 payload shape (and unresolvable target) -> 1 protected paths (preventable
-channel, everyone) -> 2 ledger health (unreadable, locked, identity, chain tail over the last 50 rows of every touched
-job; D-S4-4) -> 3 job resolution -> 4 per-job state for every touched job (recovery-open, cancelled, authority-<state>;
-`none`/`proposed` deny only for a job the session is bound to, D-S4-1) -> 5 preventable: a session with no current
+channel, everyone; a configured gate file by identity, FIX2 #4) -> 2 ledger health (unreadable, locked, identity, chain
+tail over the last 50 rows of every touched job; D-S4-4) -> 3 job resolution -> 4 per-job state for every touched job
+(recovery-open, cancelled, authority-<state>; `none`/`proposed` deny only for a job the session is bound to, D-S4-1;
+then, on the preventable channel only, job-closed, AMENDMENT S4A-A6) -> 5 preventable: a session with no current
 binding but a replaced or stopped one (stale-session / not-current-binding, any target, T13), then for a bound
 session `grant.check(action="write")` -> 6 preventable, unbound session into a
 job's write scope or `jobs/<job>/` (unbound-session) -> 7 shell channel: allow `shell-not-preventable` with
@@ -39,6 +40,17 @@ Reading choices recorded for review (no signature change):
   some job is decided by rules 5/8 as before, whatever it holds elsewhere.
 * A drive mismatch, a `..` that leaves the root, a link / reparse-point component inside the root, or a pathpolicy
   problem (device name, stream syntax, trailing dot) is `unresolvable-path`.
+* Rule 1 gate files (FIX2 #4): a target is a gate file when its normalised absolute path, its normcased `realpath` or
+  its file identity equals a configured gate file's. The identity is (st_dev, st_ino) of the deepest existing ancestor
+  by `os.stat`, which follows symlinks, junctions, 8.3 short names, the extended-length prefix and UNC admin-share
+  spellings to the one file, plus the normcased names below it. So an alias of a gate file not yet written is caught
+  through an aliased directory, and a hard link to a gate file is caught too. An identity that cannot be resolved (an
+  OS error other than not-found, on the target or on a gate file) is treated as the gate file: `protected-path`.
+* `job-closed` (AMENDMENT S4A-A6) is checked once recovery-open, cancelled and authority-<state> have been checked for
+  every touched job, so those states win on any touched job, not only on an earlier-sorted one. It applies to every
+  session that touches the closed job: the bound session (whatever its target, as authority-<state> does), an unbound
+  session writing in the job's scope or `jobs/<job>/`, and a session that holds only a replaced or stopped binding
+  there (formerly stale-session / not-current-binding).
 
 Claim limits: decisions on fixture payloads and fixture ledgers only. Nothing here registers or invokes a hook, and
 no write is claimed to be prevented in Claude Code (that needs slice 4b). Shell commands are recorded as invocations
@@ -78,7 +90,7 @@ REASONS: tuple[str, ...] = (
     "malformed-payload", "unresolvable-path", "protected-path",
     "ledger-unreadable", "ledger-locked", "ledger-identity", "chain-tail",
     "recovery-open", "cancelled", "authority-none", "authority-proposed", "authority-expired", "authority-revoked",
-    "authority-voided", "authority-malformed",
+    "authority-voided", "authority-malformed", "job-closed",  # AMENDMENT S4A-A6
     "stale-session", "not-current-binding", *_GRANT_CHECK_REASONS,
     "unbound-session", "shell-not-preventable", "out-of-scope", "outside-boundary", "not-mediated", "gate-error",
     # PACKAGE-FIX1 I6: reasons only the hook emits (config and integrity checks, audit write failure); listed here so
@@ -154,6 +166,48 @@ def _link_component(root: str, rel_parts: list[str]) -> bool:
         if getattr(st, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400):
             return True
     return False
+
+
+_NOT_FOUND = (FileNotFoundError, NotADirectoryError)
+
+
+def _identity(path: str) -> tuple:
+    """The file identity of `path` for rule 1: ("id", st_dev, st_ino, normcased names below) of its deepest existing
+    ancestor, by `os.stat` (it follows links, so every alias of one file or directory gives one identity); ("path",
+    normcased absolute path) when no ancestor exists or the filesystem reports no file id. Raises OSError / ValueError
+    when the path cannot be resolved; the caller fails closed."""
+    cur = path
+    below: list[str] = []
+    while True:
+        try:
+            st = os.stat(cur)
+        except _NOT_FOUND:
+            head, name = os.path.split(cur)
+            if head == cur or not head:
+                return ("path", os.path.normcase(os.path.abspath(path)))
+            if name:
+                below.append(os.path.normcase(name))
+            cur = head
+            continue
+        if not st.st_ino:
+            return ("path", os.path.normcase(os.path.abspath(path)))
+        return ("id", st.st_dev, st.st_ino, tuple(reversed(below)))
+
+
+def _is_gate_file(target: str, gate_files: list[str] | None) -> bool:
+    """Rule 1 (FIX2 #4): the absolute `target` names a configured gate file by spelling, `realpath` or identity. An
+    identity that cannot be resolved is treated as the gate file (fail closed)."""
+    gates = [g for g in gate_files or [] if isinstance(g, str)]
+    if not gates:
+        return False
+    spelled = os.path.normcase(os.path.abspath(target))
+    if any(os.path.normcase(os.path.abspath(g)) == spelled for g in gates):
+        return True
+    try:
+        real, ident = os.path.normcase(os.path.realpath(target)), _identity(target)
+        return any(os.path.normcase(os.path.realpath(g)) == real or _identity(g) == ident for g in gates)
+    except (OSError, ValueError):
+        return True
 
 
 def _to_root_relative(target: str, root: str) -> tuple[str | None, str | None]:
@@ -335,10 +389,9 @@ def _decide(payload: dict, out: dict, *, root: str, db_path: str, now: str, gate
         raw = payload["tool_input"].get(_PATH_KEY[payload["tool_name"]])
         if not isinstance(raw, str) or not raw.strip():
             raise _Deny("malformed-payload")
-        # rule 1 (gate files): compared on the normalised absolute path before any boundary classification, so a
-        # configured gate file is protected however its path is spelled (`..`, case, separators)
-        absolute = os.path.normcase(os.path.abspath(_absolute(raw, payload["cwd"])))
-        if any(isinstance(g, str) and os.path.normcase(os.path.abspath(g)) == absolute for g in gate_files or []):
+        # rule 1 (gate files): compared before any boundary classification, by spelling (`..`, case, separators),
+        # realpath and file identity (FIX2 #4: any alias of a gate file), failing closed
+        if _is_gate_file(_absolute(raw, payload["cwd"]), gate_files):
             raise _Deny("protected-path")
         targets, problem = target_paths(payload, root)
         if problem == "malformed-payload":
@@ -399,6 +452,9 @@ def _decide(payload: dict, out: dict, *, root: str, db_path: str, now: str, gate
                 raise _Deny(f"authority-{state}", touched)
             if state in ("none", "proposed") and j in bound:
                 raise _Deny(f"authority-{state}", touched)
+        # rule 4 (AMENDMENT S4A-A6): a closed job, preventable channel only; the shell channel is unchanged (rule 7)
+        if channel == "preventable" and any(r["type"] == "close" for j in touched for r in ledger[j][0]):
+            raise _Deny("job-closed", touched)
         # rule 7: shell channel (rule 4 has applied to the session's bound jobs)
         if channel == "shell":
             out.update(decision="allow", reason="shell-not-preventable")
