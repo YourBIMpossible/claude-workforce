@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import re
 import unittest
+from unittest import mock
 
 import test_wf
 from test_wf import LOGDIR, LOG_NAME_MAX, SCRATCH_MAP, TMP, Base, log, scratch_name
@@ -76,19 +77,27 @@ class AllLoadedTests(unittest.TestCase):
 
 
 class LogNames(unittest.TestCase):
+    """log() writes into a fresh folder of this run's scratch root, not the shared LOGDIR, so a repeat run in the
+    same checkout (where LOGDIR keeps earlier runs' files) sees only what this test wrote."""
+
+    def setUp(self) -> None:
+        self.logdir = os.path.join(TMP, scratch_name(self.id()))
+        self.assertFalse(os.path.exists(self.logdir), self.logdir)
+        patcher = mock.patch.object(test_wf, "LOGDIR", self.logdir)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_a_long_log_name_is_shortened_and_kept_distinct(self):
-        a, b = "x" * 150 + "-a", "x" * 150 + "-b"
-        before = set(os.listdir(LOGDIR)) if os.path.isdir(LOGDIR) else set()
-        log(a, {"n": 1})
-        log(b, {"n": 2})
-        new = sorted(set(os.listdir(LOGDIR)) - before)
+        log("x" * 150 + "-a", {"n": 1})
+        log("x" * 150 + "-b", {"n": 2})
+        new = sorted(os.listdir(self.logdir))
         self.assertEqual(len(new), 2, new)
         for f in new:
             self.assertLessEqual(len(f), LOG_NAME_MAX + len(".json"))
 
     def test_a_short_log_name_is_unchanged(self):
         log("fix2-40-short", {"n": 1})
-        self.assertTrue(os.path.isfile(os.path.join(LOGDIR, "fix2-40-short.json")))
+        self.assertEqual(os.listdir(self.logdir), ["fix2-40-short.json"])
 
 
 if __name__ == "__main__":
