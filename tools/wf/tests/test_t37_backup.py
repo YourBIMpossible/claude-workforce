@@ -18,8 +18,10 @@ import os
 import sqlite3
 import subprocess
 import sys
+import threading
 import time
 import unittest
+from unittest import mock
 
 from test_wf import WF_DIR, Base  # noqa: E402
 from wfcore import backup, db as dbm  # noqa: E402
@@ -97,9 +99,38 @@ class T37Backup(Base):
     def source_head(self) -> tuple[int, str]:
         conn = dbm.connect(self.db, create=False)
         try:
-            return dbm.head(conn, "j")
+            # W45-F1: a second process may be inside COMMIT (PENDING/EXCLUSIVE) and this connection has busy_timeout
+            # 0; read in a bounded snapshot as the product does (db.read_snapshot retries BUSY within T_ACQ_BOUND).
+            with dbm.read_snapshot(conn):
+                return dbm.head(conn, "j")
         finally:
             conn.close()
+
+    def test_source_head_waits_out_a_writer_holding_the_lock(self):
+        """FIX2 #38 (MyBuddy WF-051, W45-F1): a writer inside its commit window holds the lock just after
+        source_head's connection is set up, which is where the flake hit. source_head must wait the window out
+        within T_ACQ_BOUND, not fail with `database is locked` (its connection has busy_timeout 0)."""
+        self.ledger(intents=1)
+        expected = self.source_head()
+        holder = sqlite3.connect(self.db, timeout=0, isolation_level=None, check_same_thread=False)
+        release = threading.Timer(0.5, holder.execute, ("COMMIT",))
+        real_connect = dbm.connect
+
+        def connect_then_lock(*args, **kwargs):
+            conn = real_connect(*args, **kwargs)
+            holder.execute("BEGIN EXCLUSIVE")
+            release.start()
+            return conn
+
+        try:
+            with mock.patch.object(dbm, "connect", connect_then_lock):
+                self.assertEqual(self.source_head(), expected)
+        finally:
+            if release.ident is not None:
+                release.join()
+            if holder.in_transaction:
+                holder.execute("ROLLBACK")
+            holder.close()
 
     # --- §1 backup -----------------------------------------------------------------------------------------------
     def test_backup_while_second_process_writes(self):

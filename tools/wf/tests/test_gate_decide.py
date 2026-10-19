@@ -15,6 +15,7 @@ import json
 import os
 import sqlite3
 import unittest
+from pathlib import Path
 from typing import Any
 
 from test_wf import Base, CONTRACT, GRANT  # noqa: E402
@@ -240,12 +241,12 @@ class LedgerHealth(_Gate):
 
     def test_decide_never_writes_the_ledger(self):
         self.explicit()
-        before = (hashlib.sha256(open(self.db, "rb").read()).hexdigest(), os.path.getmtime(self.db),
+        before = (hashlib.sha256(Path(self.db).read_bytes()).hexdigest(), os.path.getmtime(self.db),
                   sorted(os.listdir(os.path.dirname(self.db))))
         for payload in (self.p("jobs/j/work/a.txt"), self.p("tools/wf/x.py"), self.p(tool="Bash"),
                         self.p("jobs/j/work/a.txt", session="U9")):
             self.d(payload)
-        after = (hashlib.sha256(open(self.db, "rb").read()).hexdigest(), os.path.getmtime(self.db),
+        after = (hashlib.sha256(Path(self.db).read_bytes()).hexdigest(), os.path.getmtime(self.db),
                  sorted(os.listdir(os.path.dirname(self.db))))
         self.assertEqual(before, after)
 

@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import unittest
+from contextlib import closing
 
 from test_wf import Base  # noqa: E402
 
@@ -30,7 +31,7 @@ class JobNewBaselineWiring(Base):
         self.assertNotEqual(code, 0, res)
         self.assertIn(BLOCKER, res.get("error", ""), res)
         if os.path.exists(self.db):
-            with sqlite3.connect(self.db) as con:
+            with closing(sqlite3.connect(self.db)) as con:
                 events = con.execute("SELECT count(*) FROM events").fetchone()[0]
                 contracts = con.execute("SELECT count(*) FROM contracts").fetchone()[0]
             self.assertEqual((events, contracts), (0, 0), "refusal must leave no record")
@@ -40,7 +41,7 @@ class JobNewBaselineWiring(Base):
         content beside the contract (chain-protected); the result reports how many entries were captured."""
         res = self.new_job()
         self.assertIsInstance(res.get("baseline_entries"), int, res)
-        with sqlite3.connect(self.db) as con:
+        with closing(sqlite3.connect(self.db)) as con:
             row = con.execute("SELECT content FROM events WHERE type = 'contract' ORDER BY seq LIMIT 1").fetchone()
         self.assertIsNotNone(row)
         self.assertIn('"baseline_manifest"', row[0])

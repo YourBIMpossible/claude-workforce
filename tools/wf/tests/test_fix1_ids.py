@@ -214,8 +214,8 @@ class ReviewR1TwoSeparatorPrefixes(Base):
                 "tool_input": {"file_path": raw, "content": "x"}, "cwd": self.dir, "transcript_path": "t"}
 
     def test_every_two_separator_form_keeps_the_base_outcome(self):
-        tail = os.path.splitdrive(self.dir)[1].strip("\/").replace("\\", "/") + "/jobs/j/work/a.txt"
-        for lead in ("\\\\", "//", "/\\", "\/"):
+        tail = os.path.splitdrive(self.dir)[1].strip("\\/").replace("\\", "/") + "/jobs/j/work/a.txt"
+        for lead in ("\\\\", "//", "/\\", "\\/"):
             with self.subTest(lead=lead):
                 raw = lead + tail
                 self.assertEqual(gatecore.target_paths(self._payload(raw), self.dir), ([], "unresolvable-path"))
@@ -223,7 +223,7 @@ class ReviewR1TwoSeparatorPrefixes(Base):
                                  ([], "unresolvable-path"))
 
 
-@unittest.skipUnless(sys.platform == "win32", "pending\JOB1 and pending\job1 are one directory only on NTFS")
+@unittest.skipUnless(sys.platform == "win32", r"pending\JOB1 and pending\job1 are one directory only on NTFS")
 class ReviewS1ClashBeforeMarkerGuard(Base):
     """WF-027 S1: the case-insensitive clash is refused before markers.guard can act on the other job's markers."""
 
