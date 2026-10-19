@@ -44,7 +44,7 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_t14_observe.py | S4L |
 | tools/wf/tests/test_t34_cli_matrix.py | S3M |
 | tools/wf/wfcore/gatecore.py | S4G |
-| tools/wf/tests/test_gate_decide.py | F2TP |
+| tools/wf/tests/test_gate_decide.py | S4G |
 | tools/wf/tests/test_gate_corpus_replay.py | S4G |
 | tools/wf/wfcore/gatelog.py | S4L |
 | tools/wf/gate/wf_gate_hook.py | S4L |
@@ -52,14 +52,12 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_gate_hook_deployed.py | S4L |
 | tools/wf/tests/test_t19_gate_faults.py | S4M |
 | tools/wf/wfcore/backup.py | S5B |
-| tools/wf/tests/test_t37_backup.py | F2TP |
+| tools/wf/tests/test_t37_backup.py | S5B |
 | tools/wf/tests/test_t30_race_secondwriter_identity.py | S5R |
 | tools/wf/tests/test_t37_t36_matrix.py | S5M |
 | tools/wf/tests/test_fix1_errors.py | FXL |
-| tools/wf/tests/test_fix1_ids.py | F2TP |
+| tools/wf/tests/test_fix1_ids.py | FXL |
 | tools/wf/tests/test_fix1_paths.py | FXM |
-| tools/wf/tests/test_t35_wiring.py | F2TP |
-| tools/wf/tests/test_wf.py | F2TL |
 | tools/wf/tests/test_fix2_scratch_names.py | F2TL |
 | tools/wf/tests/test_wf020_*.py | W20 |
 | fixtures/results/wf020-lazy/** | W20 |
@@ -212,3 +210,7 @@ Package text: WorkForce collab `contracts/b2fix2/PACKAGE-FIX2.md` (frozen with S
 | F2TP | Plexy | `fix2/plexy-t-hygiene` | the F2TP rows above (FIX2 #38, #43, #49); relabelled from S4G (test_gate_decide.py), S5B (test_t37_backup.py), FXL (test_fix1_ids.py) and D (test_t35_wiring.py) for this batch only |
 
 Rows go back to their previous owners when batch T is integrated.
+
+## Integration 2026-10-19 (FIX2 batch T into `fix2/integration`; coordinator Zen "Workforce Dev", lane D)
+
+Branch `fix2/integration` (from main `4321f16`) merges `fix2/plexy-t-hygiene` `5133101` (F2TP) and `fix2/lazy-t40` `9a4e70d` (F2TL), each VERIFIED (independent review MyBuddy WF-091, Linux MyBuddy, Windows Zen). The batch-T relabels are restored: test_gate_decide.py S4G, test_t37_backup.py S5B, test_fix1_ids.py FXL; the test_t35_wiring.py and test_wf.py rows are removed, so they fall back to D. The new test file `test_fix2_scratch_names.py` stays registered to F2TL. MANIFEST.sha256 is regenerated at the cumulative head before the PR.
