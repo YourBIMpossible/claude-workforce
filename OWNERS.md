@@ -7,14 +7,14 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 
 | Path | Owner |
 |---|---|
-| tools/wf/wfcore/validate.py | FXL |
+| tools/wf/wfcore/validate.py | A |
 | tools/wf/tests/test_t24_accept_declarations.py | A |
-| tools/wf/wfcore/pathpolicy.py | FXM |
+| tools/wf/wfcore/pathpolicy.py | B |
 | tools/wf/tests/test_t35_path_policy.py | B |
 | tools/wf/tests/test_pathpolicy_hardening.py | B |
 | tools/wf/tests/test_t35_remaining_requirements.py | B |
 | tools/wf/tests/requirements_t35_unmet.py | B |
-| tools/wf/wfcore/changeset.py | FXM |
+| tools/wf/wfcore/changeset.py | S2B |
 | tools/wf/tests/test_t35_changeset.py | S2B |
 | tools/wf/tests/test_t35_stray_files.py | A |
 | tools/wf/tests/test_transaction_sequence_requirements.py | C |
@@ -31,38 +31,30 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/wfcore/bind.py | S2B |
 | tools/wf/tests/test_t32_bind.py | S2B |
 | tools/wf/tests/test_t33_replacement.py | S2B |
-| tools/wf/wfcore/reconcile.py | FXM |
+| tools/wf/wfcore/reconcile.py | S4L |
 | tools/wf/tests/test_t06_reconcile.py | S4L |
 | tools/wf/tests/test_t16a_recover_begin.py | S2R |
 | tools/wf/tests/test_t30_recover_close.py | S2R |
 | tools/wf/tests/test_t30_recovery_faults.py | S2C |
-| tools/wf/wfcore/grant.py | FXM |
+| tools/wf/wfcore/grant.py | S4G |
 | tools/wf/tests/test_t34_grant_lifecycle.py | S4G |
 | tools/wf/tests/test_grant_check_corpus.py | S3G |
 | tools/wf/tests/data/grant_check_corpus.json | S3G |
 | tools/wf/wfcore/observe.py | S4L |
 | tools/wf/tests/test_t14_observe.py | S4L |
 | tools/wf/tests/test_t34_cli_matrix.py | S3M |
-| tools/wf/wfcore/gatecore.py | FXL |
-| tools/wf/tests/test_gate_decide.py | FXL |
+| tools/wf/wfcore/gatecore.py | S4G |
+| tools/wf/tests/test_gate_decide.py | S4G |
 | tools/wf/tests/test_gate_corpus_replay.py | S4G |
 | tools/wf/wfcore/gatelog.py | S4L |
 | tools/wf/gate/wf_gate_hook.py | S4L |
 | tools/wf/tests/test_gatelog.py | S4L |
 | tools/wf/tests/test_gate_hook_deployed.py | S4L |
 | tools/wf/tests/test_t19_gate_faults.py | S4M |
-| tools/wf/wfcore/backup.py | FXM |
+| tools/wf/wfcore/backup.py | S5B |
 | tools/wf/tests/test_t37_backup.py | S5B |
 | tools/wf/tests/test_t30_race_secondwriter_identity.py | S5R |
 | tools/wf/tests/test_t37_t36_matrix.py | S5M |
-| tools/wf/wf.py | FXL |
-| tools/wf/wfcore/commands.py | FXL |
-| tools/wf/wfcore/canon.py | FXL |
-| tools/wf/wfcore/markers.py | FXL |
-| tools/wf/wfcore/manifest.py | FXL |
-| tools/wf/wfcore/txn.py | FXL |
-| tools/wf/README.md | FXL |
-| .gitattributes | FXL |
 | tools/wf/tests/test_fix1_errors.py | FXL |
 | tools/wf/tests/test_fix1_ids.py | FXL |
 | tools/wf/tests/test_fix1_paths.py | FXM |
@@ -199,3 +191,8 @@ Package text: WorkForce collab `contracts/b2fix1/PACKAGE-FIX1.md` (frozen with S
 | W20 / W21 / W22 | Lazy / MyBuddy / Zen | `wf020/lazy`, `wf021/mybuddy`, `wf022/zen` (existing evidence branches) | registers the long-run evidence files (WF-020 F20) |
 
 Rows are restored to their previous owners when FIX1 is integrated, in the same commit that updates MANIFEST.sha256.
+
+## Integration 2026-10-19 (owner grant G1 "Approve FIX1 integration", typed in the coordinator session; integrator Zen "Workforce Dev", lane D)
+
+Branch `fix1/integration` combines `fix1/lazy-ids` (FXL, includes `fix1/lazy-errors`) and `fix1/mybuddy-paths` (FXM). The FIX1-only relabels are restored to their previous owners (validate.py A; gatecore.py, test_gate_decide.py, grant.py S4G; pathpolicy.py B; reconcile.py S4L; backup.py S5B; changeset.py S2B); the FXL rows for lane-D files (wf.py, commands.py, canon.py, markers.py, manifest.py, txn.py, tools/wf/README.md, .gitattributes) are removed, so they fall back to D. The new test files stay registered (FXL, FXM) and the evidence rows W20/W21/W22 stay.
+Integrator edits under G1 outside lane D: AMENDMENT FIX1-A2.3 pins three lane-B tests (`test_pathpolicy_hardening.py` x2, `test_t35_path_policy.py` x1) to the Windows case rule with `mock.patch.object(pathpolicy, "CASE_FOLDING", True)`; `tools/wf/docs/RESTORE-RUNBOOK.md` gains `--db` (FIX1 I3). MANIFEST.sha256 is regenerated over the integrated tree.
