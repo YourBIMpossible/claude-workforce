@@ -59,9 +59,6 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_t30_race_secondwriter_identity.py | S5R |
 | tools/wf/tests/test_t37_t36_matrix.py | S5M |
 | tools/wf/tests/test_fix1_errors.py | FXL |
-| tools/wf/wfcore/markers.py | F2AL |
-| tools/wf/wfcore/txn.py | F2AL |
-| tools/wf/wf.py | F2AL |
 | tools/wf/tests/test_fix2_resolve.py | F2AL |
 | tools/wf/tests/test_fix1_ids.py | FXL |
 | tools/wf/tests/test_fix1_paths.py | FXM |
@@ -289,3 +286,7 @@ Package text: WorkForce collab `contracts/b2fix2/` (PACKAGE-FIX2.md with AMENDME
 | F2AL | Lazy | `fix2/lazy-a-resolve` | the F2AL rows above (FIX2 #1, #18, #21, #46, #47, #48); relabelled from D (markers.py, txn.py; wf.py for #21's auto-resolve handler at about :257-261 only, AMENDMENT FIX2-A9) for this batch only |
 
 Rows go back to their previous owners when batch A is integrated.
+
+## Integration 2026-10-19 (FIX2 batch A into `fix2/integration`, merge window 2; coordinator Zen "Workforce Dev", lane D)
+
+`fix2/integration` merges `fix2/lazy-a-resolve` `52f7e64` (F2AL: #1, #18, #21 in wf.py per A9, #46, #47, #48, and the WF-109 M1 conflict-marker fix including probe B), VERIFIED (independent review Plexy WF-109 and its delta review, Linux MyBuddy WF-111 663 OK, Windows Zen 663 OK). The relabels are restored: the markers.py, txn.py and wf.py rows are removed (back to D). The new test file `test_fix2_resolve.py` stays registered to F2AL.
