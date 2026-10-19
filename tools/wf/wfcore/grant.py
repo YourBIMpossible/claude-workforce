@@ -113,6 +113,13 @@ def _instant(v: object) -> bool:
     return True
 
 
+def _excluded(item: str, globs: list[str] | tuple[str, ...]) -> bool:
+    """Exclusion match under the platform case rule (FIX1 P3, WF-021 F4): on a case-folding platform `SECRET/` is
+    the directory `secret/**` excludes. Deny side only; resources and scopes keep `_glob_in` (case-sensitive)."""
+    f = pathpolicy.fold
+    return any(f(item) == f(g) or fnmatch.fnmatchcase(f(item), f(g)) for g in globs if isinstance(g, str))
+
+
 def _glob_in(item: str, globs: list[str] | tuple[str, ...]) -> bool:
     """The `bind.declared_subset` rule: equal to a glob or `fnmatch.fnmatchcase`-matched by one (strings only)."""
     return any(item == g or fnmatch.fnmatchcase(item, g) for g in globs if isinstance(g, str))
@@ -287,7 +294,7 @@ def check(rows: list[dict], *, job: str, now: str, role: str, action: str, path:
     ws = contract.get("write_scope") if isinstance(contract, dict) else None
     if rel is None or not _str_list(ws) or not _glob_in(rel, ws) or not _glob_in(rel, cur["resources"]):
         return _deny("path-not-granted", auth)
-    if _glob_in(rel, cur.get("exclusions") or []):
+    if _excluded(rel, cur.get("exclusions") or []):
         return _deny("path-excluded", auth)
     ars = cur.get("ars")
     roles = ars.get("roles") if isinstance(ars, dict) else None

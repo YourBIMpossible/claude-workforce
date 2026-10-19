@@ -25,6 +25,9 @@ is not recorded. Matching uses pathpolicy's resolution and glob rules.
 A baseline captured before A-2 holds no write-scope entries: `compare` then reports every present write-scope file
 as `added` - correct and honest; a fixture that needs the new form regenerates the baseline.
 An unreadable file is a `problem` (fail closed), never skipped. Paths are repo-relative forward-slash strings.
+A file name that is not valid UTF-8 (POSIX byte names; `os.walk` yields it surrogate-escaped) in a recorded scope is
+a `problem` naming the escaped bytes (`\\xff`), never an entry (FIX1 P4, WF-021 F6: the surrogate key made the
+canonical hash raise UnicodeEncodeError, a traceback instead of a refusal).
 
 `compare`: the same walk now against `baseline["entries"]`: added = now and not in baseline, deleted = baseline and
 not now, modified = in both with a different sha256 or size (presence-only entries are never "modified"). A
@@ -81,6 +84,15 @@ def _is_link(path: str) -> bool:
     return bool(attrs & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))
 
 
+def _non_utf8(rel: str) -> str | None:
+    """None for a name that encodes as UTF-8; else the name with its undecodable bytes shown as `\\xNN`."""
+    try:
+        rel.encode("utf-8")
+    except UnicodeEncodeError:
+        return os.fsencode(rel).decode("utf-8", "backslashreplace")
+    return None
+
+
 def _static_prefix(glob: str) -> str:
     """Components of a normalized (forward-slash) glob before the first component holding a glob character."""
     out: list[str] = []
@@ -92,9 +104,11 @@ def _static_prefix(glob: str) -> str:
 
 
 def _coordination_prefix(rel: str) -> bool:
-    """True when `rel` (forward slash, lower) is inside the ledger directory or a job export directory."""
+    """True when `rel` (forward slash, as walked) is inside the ledger directory or a job export directory. The
+    ledger component is matched in any case, the same rule as `boundary_root` and paths.jobs_dir (a `LEDGER`
+    directory is the ledger there); FIX1 P1 stopped lower-casing scope globs, so this keeps it unwalked."""
     parts = rel.split("/")
-    if parts[0] == "ledger":
+    if parts[0].lower() == "ledger":
         return True
     return len(parts) >= 3 and parts[0] == "jobs" and parts[2] == "export"
 
@@ -137,10 +151,15 @@ def walk_entries(root: str, contract: dict) -> tuple[dict[str, dict], list[str],
         if r.problem is not None or r.outside or r.cmp is None:
             problems.append(f"unresolvable path inside the boundary: {rel} ({r.problem or 'outside'})")
             return
-        if pathpolicy._match(r.cmp, presence):
-            entries[rel] = {"present": True}  # never opened
+        is_presence = pathpolicy._match(r.cmp, presence)
+        if not is_presence and not pathpolicy._match(r.cmp, hashed):
             return
-        if not pathpolicy._match(r.cmp, hashed):
+        escaped = _non_utf8(rel)
+        if escaped is not None:
+            problems.append(f"file name is not valid UTF-8 inside the boundary: {escaped}")
+            return
+        if is_presence:
+            entries[rel] = {"present": True}  # never opened
             return
         try:
             entries[rel] = {"sha256": sha256_file(abs_path), "size": os.path.getsize(abs_path)}
