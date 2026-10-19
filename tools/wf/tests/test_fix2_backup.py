@@ -85,6 +85,16 @@ class C3Names(_Backup):
             with self.subTest(name=name):
                 self.assert_refused(os.path.join(self.out, name), "dest-trailing-dot-or-space")
 
+    def test_trailing_separator_is_refused(self):
+        """WF-105 M1: a `--to` ending in a path separator names a directory. It is refused before the name rule, whose
+        basename would be '' (so `CON/` or `name./` would pass it and write `CON` or `name.`)."""
+        for i, sep in enumerate(("/", "\\") if WINDOWS else ("/",)):
+            self.out = os.path.join(self.dir, f"out-sep{i}")   # one folder per separator: subtests stay independent
+            os.makedirs(self.out)
+            for name in ("CON", "name.", "b.db"):
+                with self.subTest(name=name, sep=sep):
+                    self.assert_refused(os.path.join(self.out, name) + sep, "dest-is-a-directory-path")
+
 
 class C22RealLedgerDir(_Backup):
     def test_db_file_symlink_protects_the_real_ledger(self):

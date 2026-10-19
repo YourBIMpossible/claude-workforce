@@ -1218,7 +1218,10 @@ def backup_cmd(db: str, job: str | None, *, all_jobs: bool, dest: str, writer_st
         raise WfUsage("--to <path> is required")
     # FIX2 #3 (AMENDMENT FIX2-A5): FIX1 I1's rule for names a filesystem merges with another name or a device, for the
     # destination's file name, on every platform and before any filesystem access; the device rule is validate's own.
-    # It lives here because backup.py may not import validate (INTERFACE-CONTRACT-S5 section 5).
+    # It lives here because backup.py may not import validate (INTERFACE-CONTRACT-S5 section 5). A destination ending
+    # in a path separator names a directory and has no file name to check (WF-105 M1), so it is refused first.
+    if dest.endswith(tuple(sep for sep in (os.sep, os.altsep) if sep)):
+        raise WfRefused("dest-is-a-directory-path", dest=dest)
     dest_name = os.path.basename(dest)
     if dest_name.endswith((".", " ")):
         raise WfRefused("dest-trailing-dot-or-space", dest=dest, name=dest_name)
