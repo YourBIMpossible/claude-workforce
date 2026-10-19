@@ -59,6 +59,10 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_t30_race_secondwriter_identity.py | S5R |
 | tools/wf/tests/test_t37_t36_matrix.py | S5M |
 | tools/wf/tests/test_fix1_errors.py | FXL |
+| tools/wf/wfcore/markers.py | F2AL |
+| tools/wf/wfcore/txn.py | F2AL |
+| tools/wf/wf.py | F2AL |
+| tools/wf/tests/test_fix2_resolve.py | F2AL |
 | tools/wf/tests/test_fix1_ids.py | FXL |
 | tools/wf/tests/test_fix1_paths.py | FXM |
 | tools/wf/tests/test_fix2_scratch_names.py | F2TL |
@@ -275,3 +279,13 @@ Rows go back to their previous owners when batch S is integrated.
 ## Integration 2026-10-19 (FIX2 batch S into `fix2/integration`, merge window 2; coordinator Zen "Workforce Dev", lane D)
 
 `fix2/integration` merges `fix2/plexy-s-gate` `3ee0344` (F2SP: #4 with review F1/F2, #5, #56 per S4A-A6, S-add), VERIFIED (independent review MyBuddy WF-110, Linux 930 OK, Windows Zen 930 OK). The relabels are restored: gatecore.py S4G, test_gate_decide.py S4G; the commands.py row is removed (back to D). The new test file `test_fix2_gate.py` stays registered to F2SP. Deferred to batch Z with a batch-D doc line: rule 1 follows a link on the root's anchor before rule 0's link refusal (WF-110 S1).
+
+## Registration 2026-10-19 (package FIX2 batch A, AMENDMENT FIX2-A4; decided by the Foreman under the owner's delegation; coordinator Zen "Workforce Dev" while White is out)
+
+Package text: WorkForce collab `contracts/b2fix2/` (PACKAGE-FIX2.md with AMENDMENT-FIX2-A4.md, frozen with SHA256SUMS). Base: main `4321f16` plus this registration commit.
+
+| Lane | Worker | Branch | Scope |
+|---|---|---|---|
+| F2AL | Lazy | `fix2/lazy-a-resolve` | the F2AL rows above (FIX2 #1, #18, #21, #46, #47, #48); relabelled from D (markers.py, txn.py; wf.py for #21's auto-resolve handler at about :257-261 only, AMENDMENT FIX2-A9) for this batch only |
+
+Rows go back to their previous owners when batch A is integrated.

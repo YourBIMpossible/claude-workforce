@@ -136,6 +136,25 @@ def append_log(ref: MarkerRef, entry: dict[str, Any]) -> None:
         fh.write(canonical({"ts": time.time(), **entry}) + "\n")
 
 
+#: FIX2 #1: the claimant fields a conflict payload carries (validate.WfClaimantConflict.conflict_content): the parties
+#: the conflict block names, and what `conflict_row_from_marker` re-records the row from.
+CONFLICT_FIELDS = ("role", "generation", "holder_session", "claimant_session", "attempted_msg_id")
+
+
+def conflict_problem(m: dict[str, Any]) -> str | None:
+    """FIX2 #1 (WF-020 F8): why the payload of a conflict marker (one with a `conflict` key, or in state
+    `conflict-pending`) cannot be trusted, else None; None for an ordinary marker. An empty, null, non-object or
+    incomplete payload still marks a conflict marker: it is refused and kept (fail closed), never cleared or resolved
+    as an ordinary attempt, and cleared only when its row is present with the marker's `self`."""
+    if "conflict" not in m and m.get("state") != "conflict-pending":
+        return None
+    c = m.get("conflict")
+    if not isinstance(c, dict):
+        return "conflict payload missing or null" if c is None else f"conflict payload is a {type(c).__name__}, not an object"
+    missing = [k for k in CONFLICT_FIELDS if k not in c]
+    return f"conflict payload lacks {', '.join(missing)}" if missing else None
+
+
 def guard(conn: sqlite3.Connection, db: str, job: str, oplog: OpLog, bypass: str = "") -> list[dict[str, Any]]:
     """Run under the caller's BEGIN IMMEDIATE, before SELECT head.
     Clears provably finished attempts by exact filename; raises UncertainWritePending otherwise.
@@ -161,13 +180,19 @@ def guard(conn: sqlite3.Connection, db: str, job: str, oplog: OpLog, bypass: str
             oplog.add("guard_clear", outcome="committed", attempt_id=ref.attempt_id, seq=ref.seq)
             cleared.append({"attempt_id": ref.attempt_id, "seq": ref.seq, "cleared": "committed"})
             continue
-        if m.get("state") == "aborting" and row is None:
+        problem = conflict_problem(m)
+        if m.get("state") == "aborting" and row is None and problem is None:
             delete(ref)
             oplog.add("guard_clear", outcome="aborting", attempt_id=ref.attempt_id, seq=ref.seq)
             cleared.append({"attempt_id": ref.attempt_id, "seq": ref.seq, "cleared": "aborting"})
             continue
         # `committing` and `conflict-pending` (FB1.4-A4 §3: a conflict row whose COMMIT went busy) both refuse
-        # until `wf resolve` settles them; a conflict marker is never cleared without its row present.
+        # until `wf resolve` settles them; a conflict marker is never cleared without its row present. FIX2 #1: nor is
+        # one whose conflict payload is malformed, whatever its state says.
+        if problem is not None:
+            raise UncertainWritePending(f"uncertain-write pending: {job}/{ref.seq}/{ref.attempt_id} "
+                                        f"(conflict marker malformed: {problem})", job=job, seq=ref.seq,
+                                        attempt_id=ref.attempt_id, state=m.get("state"), conflict_problem=problem)
         raise UncertainWritePending(f"uncertain-write pending: {job}/{ref.seq}/{ref.attempt_id}",
                                     job=job, seq=ref.seq, attempt_id=ref.attempt_id, state=m.get("state"))
     return cleared

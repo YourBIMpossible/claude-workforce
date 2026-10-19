@@ -272,6 +272,8 @@ def run(argv: list[str]) -> tuple[int, dict]:
                     out["auto_resolve"] = commands.resolve(db, out["job"], int(out["seq"]), out["attempt_id"], None, OpLog())
                 except WfError as rexc:
                     out["auto_resolve"] = {"outcome": "ERROR", "error": str(rexc)}
+                except Exception as rexc:  # noqa: BLE001 -- FIX2 #21: recorded beside the uncertain result, never replaces it
+                    out["auto_resolve"] = {"outcome": "ERROR", "error": f"{type(rexc).__name__}: {rexc}"}
         if isinstance(res_amb := out.get("outcome"), str) and res_amb == "AMBIGUOUS":
             code = EXIT_USAGE
         return code, out

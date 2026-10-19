@@ -28,6 +28,13 @@ def _close(conn: sqlite3.Connection | None, oplog: OpLog) -> None:
         oplog.add("close_error", error=str(exc))
 
 
+def _rollback_error(oplog: OpLog, holder: dict[str, Any], rexc: sqlite3.Error) -> None:
+    """PACKAGE-FIX1 E5 / FIX2 #18, #47: a failing ROLLBACK where nothing durable was written is recorded beside the
+    decided outcome (`rollback_error`), never raised; the caller still closes the connection."""
+    oplog.add("rollback_error", error=str(rexc))
+    holder["rollback_error"] = f"{getattr(rexc, 'sqlite_errorname', None) or type(rexc).__name__}: {rexc}"
+
+
 def _remaining(t_start: float, bound: float, oplog: OpLog) -> float:
     """The acquisition bound covers connection setup and BEGIN IMMEDIATE together (one T_ACQ window), so a
     connect-time wait shortens the reservation wait instead of adding to it."""
@@ -72,6 +79,7 @@ def write_event(db_path: str, job: str, faults: Faults, oplog: OpLog, *,
     conn = dbm.connect(db_path, bound=acq_bound)
     attempt_id = ""
     ref: markers.MarkerRef | None = None
+    marker: dict[str, Any] | None = None
     try:
         t_begin = begin_immediate(conn, oplog, _remaining(t_start, acq_bound, oplog))
         attempt_id = markers.new_attempt_id()
@@ -260,10 +268,15 @@ def write_event(db_path: str, job: str, faults: Faults, oplog: OpLog, *,
             res["marker_left"] = marker_left
         return res
     except DuplicateIgnored as dup:
-        dbm.rollback(conn)
-        _close(conn, oplog)
+        failed: dict[str, Any] = {}
+        try:
+            dbm.rollback(conn)
+        except sqlite3.Error as rexc:  # FIX2 #47: nothing was written, so DUPLICATE-IGNORED stands
+            _rollback_error(oplog, failed, rexc)
+        finally:  # FIX2 #47: the write lock is never left held
+            _close(conn, oplog)
         return WriteResult(outcome="DUPLICATE-IGNORED", msg_id=str(dup), attempt_id=attempt_id, ops=oplog.ops,
-                           faults_used=list(faults.used))
+                           faults_used=list(faults.used), **failed)
     except WfCommitUncertain as exc:
         exc.info["ops"] = oplog.ops
         exc.info["faults_used"] = list(faults.used)
@@ -276,19 +289,40 @@ def write_event(db_path: str, job: str, faults: Faults, oplog: OpLog, *,
         raise
     except (WfCommitTimeout,):
         raise
-    except Exception:
+    except BaseException as exc:  # FIX2 #48: KeyboardInterrupt and SystemExit also roll back and close
         # REJECTED-UNCOMMITTED: anything before the first COMMIT attempt; marker (if any) is ours and uncommitted
+        undeleted: OSError | None = None
         if conn is not None:
             try:
-                dbm.rollback(conn)
-                oplog.add("rollback")
-            except sqlite3.Error as rexc:
-                oplog.add("rollback_error", error=str(rexc))
-            if ref is not None:
-                markers.delete(ref)
-                oplog.add("marker_delete", path=ref.path, removed=True)
-            _close(conn, oplog)
-        raise
+                # Review WF-109 M1: our claimant-conflict marker is never deleted without its row (FB1.4-A4 §3). As the
+                # conflict give-up path does, it is kept as `conflict-pending` (best effort) and `wf resolve` re-records
+                # the row. `ref` is set only after `conflict` is, so the check below never reads an unbound name.
+                keep = ref is not None and conflict is not None
+                if keep and marker is not None:
+                    try:
+                        marker.update(state="conflict-pending", rev=2)
+                        markers.write_atomic(ref, marker)
+                        oplog.add("marker_conflict_pending", path=ref.path, rev=2)
+                    except OSError as mexc:
+                        oplog.add("marker_conflict_pending_failed", error=str(mexc))  # the committing marker stands
+                try:
+                    dbm.rollback(conn)
+                    oplog.add("rollback")
+                except sqlite3.Error as rexc:
+                    oplog.add("rollback_error", error=str(rexc))
+                if ref is not None and not keep:
+                    try:  # FIX2 #46: a failing delete of our own marker is reported, never an exit 4
+                        markers.delete(ref)
+                        oplog.add("marker_delete", path=ref.path, removed=True)
+                    except OSError as dexc:
+                        oplog.add("marker_delete_failed", path=ref.path, error=str(dexc))
+                        undeleted = dexc
+            finally:  # FIX2 #46: the connection, and the reservation it holds, is always closed
+                _close(conn, oplog)
+        if undeleted is not None and ref is not None and isinstance(exc, Exception):
+            raise WfRefused(f"marker-unwritable: own marker {ref.path} not deleted "
+                            f"({type(undeleted).__name__}: {undeleted}) after: {exc}", marker_path=ref.path) from exc
+        raise  # FIX2 #48: the original exception, unchanged
 
 
 def write_contracts_update(db_path: str, job: str, oplog: OpLog, sql: str, params: tuple) -> dict[str, Any]:
@@ -398,7 +432,10 @@ def resolve(db_path: str, job: str, seq: int, attempt_id: str | None, oplog: OpL
             return result
         m1 = markers.read_checked(ref)
         if m1 is None:
-            dbm.rollback(conn)
+            try:
+                dbm.rollback(conn)
+            except sqlite3.Error as rexc:  # FIX2 #18: as E5; nothing was written, ALREADY-CLEARED stands
+                _rollback_error(oplog, result, rexc)
             result.update(outcome="ALREADY-CLEARED", ops=oplog.ops)
             return result
         result["m1"] = {"state": m1.get("state"), "rev": m1.get("rev")}
@@ -432,6 +469,13 @@ def resolve(db_path: str, job: str, seq: int, attempt_id: str | None, oplog: OpL
         else:
             outcome = "STILL-UNCERTAIN"
             result["reason"] = f"head {head_seq} vs seq {seq} without a matching row"
+        problem = markers.conflict_problem(m1)
+        if problem is not None and outcome in ("CONFLICT", "NOT-COMMITTED"):
+            # FIX2 #1 (WF-020 F8): a conflict marker with a malformed payload is never decided as an ordinary attempt
+            # and deleted; it is kept (fail closed). Only its row present with its `self` (COMMITTED) clears it.
+            outcome = "STILL-UNCERTAIN"
+            result.update(reason=f"conflict marker malformed: {problem}; kept, not resolved as an ordinary attempt",
+                          conflict_problem=problem)
         re_recorded = False
         if outcome == "NOT-COMMITTED" and m1.get("conflict"):
             # FB1.4-A4 §3: a conflict marker is never deleted without its row present. Re-insert the row from
@@ -466,7 +510,10 @@ def resolve(db_path: str, job: str, seq: int, attempt_id: str | None, oplog: OpL
                                 break
                             time.sleep(min(SLEEP_STEP, max(0.0, cdeadline - time.monotonic())))
                     if not re_recorded:
-                        dbm.rollback(conn)
+                        try:
+                            dbm.rollback(conn)
+                        except sqlite3.Error as rexc:  # FIX2 #18: as E5; the outcome is STILL-UNCERTAIN either way
+                            _rollback_error(oplog, result, rexc)
                         outcome = "STILL-UNCERTAIN"
                         result["reason"] = "conflict row re-record did not COMMIT within the resolve budget"
                     else:
@@ -488,8 +535,7 @@ def resolve(db_path: str, job: str, seq: int, attempt_id: str | None, oplog: OpL
                 dbm.rollback(conn)
                 oplog.add("rollback")
             except sqlite3.Error as rexc:
-                oplog.add("rollback_error", error=str(rexc))
-                result["rollback_error"] = f"{getattr(rexc, 'sqlite_errorname', None) or type(rexc).__name__}: {rexc}"
+                _rollback_error(oplog, result, rexc)
         result["outcome"] = outcome
         markers.append_log(ref, {"outcome": outcome, "m0": result.get("m0"), "m1": result.get("m1"),
                                  "head_seq": head_seq, "reason": result.get("reason"),
