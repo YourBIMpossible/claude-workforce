@@ -16,10 +16,12 @@ import threading
 import time
 import unittest
 
+from unittest import mock
+
 import test_wf
 from test_wf import Base
 
-from wfcore import paths
+from wfcore import export, paths
 
 WF_PY = os.path.join(test_wf.WF_DIR, "wf.py")
 BASE = {"path": "jobs/j/work/a.txt", "sha_before": "", "note": "n"}
@@ -161,7 +163,14 @@ class IntentPathsAreUnconstrainedAtWriteTime(Adv):
 
 class ProcessLevel(Adv):
     def test_eight_concurrent_appends_distinct_seqs(self):
-        """Renamed from `test_eight_concurrent_appends_all_commit_with_distinct_seqs_and_a_clean_chain`
+        """Eight concurrent `wf append` processes all commit with distinct consecutive seqs and leave the ledger clean
+        (schema, integrity, chain, no pending marker). WF-020 review F2: the export may be left stale or torn by the
+        concurrent refreshes (FIX2 #45: `export.refresh` runs after the write lock is released, txn.py:246-248, and
+        rewrites the files one by one under no lock). The spec accepts that as a recoverable exception that `wf export`
+        regenerates (FIRST-RELEASE-SPEC:113; 04-DECISIONS:70 keeps export freshness after every commit a limitation),
+        so this test allows exactly those two problems and then requires `wf export` to make verify clean. The strict
+        check lives in ExportRefreshRace as deterministic expected failures.
+        Renamed from `test_eight_concurrent_appends_all_commit_with_distinct_seqs_and_a_clean_chain`
         (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         before = self.head_seq()
         results: list = [None] * 8
@@ -179,8 +188,19 @@ class ProcessLevel(Adv):
         seqs = sorted(out["seq"] for _, out, _ in results)
         self.assertEqual(seqs, list(range(before + 1, before + 9)))
         c, r = self.run_wf("verify", "j", role="coordinator", session="C1")
+        self.assertEqual(c, 0, r)
+        self.assertEqual(r["ledger_problems"], {"schema": [], "integrity": []}, r)
+        self.assertEqual(r["ledger_directory"]["problems"], [], r)
+        j = r["jobs"]["j"]
+        self.assertEqual((j["problems"], j["pending_markers"]), ([], []), r)
+        self.assertEqual(j["head"]["seq"], before + 8, r)
+        allowed = {"export events.jsonl is stale relative to the ledger"} | \
+            {f"export file differs from manifest: {name}" for name in export.FILES}
+        self.assertLessEqual(set(j["export"]), allowed, j["export"])
+        c, r = self.run_wf("export", "j", role="coordinator", session="C1")        # spec row 113's recovery path
+        self.assertEqual(c, 0, r)
+        c, r = self.run_wf("verify", "j", role="coordinator", session="C1")
         self.assertTrue(r["clean"], r)
-        self.assertEqual(r["jobs"]["j"]["pending_markers"], [])
 
     def test_kill_before_commit_leaves_resolvable_marker(self):
         """Renamed from `test_process_terminated_between_insert_and_commit_leaves_a_resolvable_marker`
@@ -216,6 +236,66 @@ class ProcessLevel(Adv):
         self.assertEqual((c, r["outcome"]), (0, "COMMITTED"), r)
         c, r = self.run_wf("verify", "j", role="coordinator", session="C1")
         self.assertTrue(r["clean"], r)
+
+
+class ExportRefreshRace(Adv):
+    """FIX2 #45, deterministic (WF-020 review F2). `txn.write_event` releases the write lock and only then calls
+    `export.refresh` (txn.py:246-248). `refresh` reads a snapshot and rewrites events.jsonl, head.json, contract.json
+    and manifest.txt one at a time under no lock (export.py:133-161), so an older snapshot can land after a newer one.
+    Spec row 113 and 04-DECISIONS:70 accept a stale export as a recoverable exception, so these strict checks are
+    expected failures until FIX2 #45 lands: then remove the decorators. Each one holds writer A in-process at a fixed
+    point of its refresh (no product edit, only a mock wrapper), lets writer B append and refresh to the new head, and
+    then releases A."""
+
+    def _race(self, module, name: str) -> dict:
+        """Hold writer A's first call of `module.name` until writer B has appended and refreshed; return verify."""
+        real = getattr(module, name)
+        a_thread: dict = {}
+        held, release = threading.Event(), threading.Event()
+        out: dict = {}
+
+        def paused(*args, **kwargs):
+            if threading.current_thread() is a_thread.get("t") and not held.is_set():
+                held.set()
+                release.wait(30)
+            return real(*args, **kwargs)
+
+        with mock.patch.object(module, name, side_effect=paused):
+            a = threading.Thread(target=lambda: out.update(a=self.append_intent(json.dumps(dict(BASE, note="A")))))
+            a_thread["t"] = a
+            a.start()
+            self.assertTrue(held.wait(30), "writer A never reached its export refresh")
+            b = threading.Thread(target=lambda: out.update(b=self.append_intent(json.dumps(dict(BASE, note="B")))))
+            b.start()
+            b.join(5.0)                # today B commits and refreshes at once; a serialised refresh keeps B waiting
+            release.set()
+            a.join(30)
+            b.join(30)
+        self.assertEqual([out[k][1].get("outcome") for k in ("a", "b")], ["COMMITTED", "COMMITTED"], out)
+        c, r = self.run_wf("verify", "j", role="coordinator", session="C1")
+        self.assertEqual(c, 0, r)
+        return r
+
+    @unittest.expectedFailure
+    def test_older_refresh_last_leaves_export_stale(self):
+        """FIX2 #45, stale path: A is held after its snapshot, before its first export write; B commits and refreshes
+        to the new head; A then writes its older snapshot over B's. Observed today: verify is not clean, with
+        `export events.jsonl is stale relative to the ledger`. Expected failure until FIX2 #45 (export.refresh runs
+        after the lock release, txn.py:246-248); remove the decorator when it is fixed."""
+        r = self._race(export, "_write_atomic")
+        self.assertTrue(r["clean"], r)
+        self.assertEqual(r["jobs"]["j"]["export"], [])
+
+    @unittest.expectedFailure
+    def test_torn_refresh_leaves_manifest_mismatch(self):
+        """FIX2 #45, torn path: A writes its files and builds its manifest entries, then is held before
+        `manifest.write`; B refreshes every file to the new head; A then writes its older manifest over B's files.
+        Observed today: verify is not clean, with `export file differs from manifest: events.jsonl` (and head.json).
+        Not covered by the stale test, which leaves a self-consistent older export. Expected failure until FIX2 #45
+        (export.refresh runs after the lock release, txn.py:246-248); remove the decorator when it is fixed."""
+        r = self._race(export.manifest, "write")
+        self.assertTrue(r["clean"], r)
+        self.assertEqual(r["jobs"]["j"]["export"], [])
 
 
 class JobIdsAreDirectoryNames(Base):
