@@ -4,7 +4,6 @@ Reuses run_flow's logged calls. Run: python -I -B finish_interruption.py <repo> 
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -34,10 +33,7 @@ def main() -> int:
                      "evidence": ["check-acceptance.ps1", "receipts", "reconcile report + ack"]}]})))
     rf.must(rf.run("finish", C, "bind", job, "--bind-role", "reviewer", "--bind-session", R[0], "--bind-generation", "1",
                    "--tool", "Read", "--path", "scope/**", "--path", "pristine/**"))
-    chk = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                          str(repo / "fixtures" / "results" / "wf022-zen" / "check-acceptance.ps1"), "-Root", str(root)],
-                         capture_output=True, text=True, timeout=120)
-    checks = dict(line.split(" ", 1) for line in chk.stdout.split("\n") if line.strip())
+    chk, checks = rf.run_checks(root)
     print(f"[review] check-acceptance.ps1 -> exit {chk.returncode} {checks}")
     contract = json.loads((root / "build" / "contract.json").read_text(encoding="utf-8"))
     results = {"criteria": [{"id": f"AC{i}", "pass": checks.get(f"AC{i}", "").strip() == "True" if i < 7 else True,

@@ -10,7 +10,7 @@
 
 1. Build the disposable scope: `python -I -B fixtures\results\wf022-zen\make_scope.py <repo> %LOCALAPPDATA%\wf022`. It refuses if the root exists. See ACCEPTANCE-LIST-DRAFT.md for the planted inconsistencies I1-I5.
 2. Boundary rule: `wf` takes the boundary root as the parent of the ledger folder when that folder is named `ledger`. So the ledger must be `<root>\ledger\wf.db`, and contract paths are relative to `<root>`.
-3. **Pass `--db <root>\ledger\wf.db` on EVERY command.** The default `--db` is the repository's real ledger (`wf.py --help`: "default …\ledger\ledger.db"; finding WF022-F2).
+3. **Pass `--db <root>\ledger\wf.db` on EVERY command.** The default `--db` is the repository's real ledger (`wf.py --help`: "default …\ledger\ledger.db"; finding WF022-F2). (True at base 2dedc94. After FIX1 I3, `wf` refuses any command without `--db` or `WF_DB`: exit 2, `rejected(usage)`.)
 4. Driver used for this run: `python -I -B fixtures\results\wf022-zen\run_flow.py <repo> <root> wf022-docfix`. It runs each call as its own `python -I -B tools\wf\wf.py --db … --role … --session … --json …` process and logs it to `<root>\flow-log.jsonl`.
 
 Contract (`<root>\build\contract.json`), essentials:
@@ -27,7 +27,7 @@ Grant (`<root>\build\grant.json`): `G-docfix`, `actions [write]`, `resources [sc
 
 ## 1. Executed flow (attempt 4, the one that completed)
 
-Every command runs as `python -I -B tools\wf\wf.py --db <root>\ledger\wf.db --role <role> --session <session> --json <command>`; `<root>` = `C:\Users\<user>\AppData\Local\wf022`. Exit codes, result fields and wall times are copied from `<root>\flow-log.jsonl` by a renderer, not transcribed by hand.
+Every command runs as `python -I -B tools\wf\wf.py --db <root>\ledger\wf.db --role <role> --session <session> --json <command>`; `<root>` = `C:\Users\<user>\AppData\Local\wf022`. Exit codes, result fields and wall times are copied from `<root>\flow-log.jsonl` by `render_table.py` (in this folder), not transcribed by hand.
 
 | # | Phase | Role / session | Command | Exit | Result | Seconds | Owner turn |
 |---|---|---|---|---|---|---|---|
@@ -187,3 +187,12 @@ No step needed a product-code change or a force option, and none exists.
   - (a) the recovery's list covers only ledger/export-level exceptions, and role-level attempt gaps belong to the ordinary reconcile. Then the result is correct, but the README should say so.
   - (b) the recovery should have listed X1.
 - The owner picks the reading. Nothing was changed.
+
+## Status after FIX1 (added 2026-10-19 after the independent review WF-040, Lazy)
+- Lazy re-ran both flows independently. They reproduce at base 2dedc94 and run unchanged on `fix1/integration` dfd6e85.
+- **WF022-F1** (CRLF corpus check): fixed by FIX1 I2 (`.gitattributes`).
+- **WF022-F2** (`--db` silently defaulting to the real ledger): fixed by FIX1 I3 (`--db` or `WF_DB` required).
+- **WF022-F5** (read/write scope overlap): mitigated by FIX1 I4. `job new` now warns.
+- **WF022-F6** (README out of date): fixed by FIX1 I5.
+- **WF022-F7** (recover vs reconcile): closed by the coordinator decision of 2026-10-19 01:35Z (reading (a), NOT A DEFECT) and FIX1 I5's README sentence. A matching spec sentence is proposed in WF-042.
+- The drivers now find `check-acceptance.ps1` beside themselves and stop loudly if it does not report AC1–AC6 (L40-S1).

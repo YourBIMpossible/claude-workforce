@@ -54,6 +54,28 @@ def run(phase: str, who: tuple[str, str], *argv: str, owner_turn: str | None = N
     return entry
 
 
+CHECKS_PS1 = Path(__file__).resolve().parent / "check-acceptance.ps1"   # beside this driver, not under the repo argument
+AC_IDS = [f"AC{i}" for i in range(1, 7)]
+
+
+def run_checks(root: Path) -> tuple[subprocess.CompletedProcess, dict[str, str]]:
+    """Run check-acceptance.ps1 on `root` and return its AC1..AC6 verdicts; fail loudly when it did not really run
+    (WF-040 L40-S1: on another tree the script was not found and PowerShell's banner was parsed as checks)."""
+    if not CHECKS_PS1.is_file():
+        raise SystemExit(f"check-acceptance.ps1 not found beside the driver: {CHECKS_PS1}")
+    chk = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(CHECKS_PS1),
+                          "-Root", str(root)], capture_output=True, text=True, timeout=120)
+    checks: dict[str, str] = {}
+    for line in chk.stdout.splitlines():
+        parts = line.strip().split(" ")
+        if len(parts) == 2 and parts[0] in AC_IDS and parts[1] in ("True", "False"):
+            checks[parts[0]] = parts[1]
+    if chk.returncode not in (0, 1) or sorted(checks) != sorted(AC_IDS):
+        raise SystemExit(f"check-acceptance.ps1 did not report AC1..AC6 (exit {chk.returncode}): "
+                         f"stdout {chk.stdout[-300:]!r} stderr {chk.stderr[-300:]!r}")
+    return chk, checks
+
+
 def must(e: dict) -> dict:
     if e["exit"] != 0:
         raise SystemExit(f"unexpected failure: {e['argv']} -> {e['summary']} {e['stderr_tail']}")
@@ -125,10 +147,7 @@ def main() -> int:
              "--tool", "Read", "--path", "scope/**", "--path", "pristine/**",
              note="a reviewer can be bound only after delivery (reviewer-precondition)"))
 
-    chk = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                          str(REPO / "fixtures" / "results" / "wf022-zen" / "check-acceptance.ps1"), "-Root", str(ROOT)],
-                         capture_output=True, text=True, timeout=120)
-    checks = dict(line.split(" ", 1) for line in chk.stdout.split("\n") if line.strip())
+    chk, checks = run_checks(ROOT)
     with LOG.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps({"phase": "review", "role": "reviewer", "session": R[0], "argv": ["check-acceptance.ps1"],
                              "exit": chk.returncode, "summary": checks, "seconds": None, "owner_turn": None,

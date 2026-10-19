@@ -6,7 +6,7 @@ This document lists where the owner is needed, and how many worker commands run 
 
 **Owner minutes are `unknown` everywhere.** The rehearsal simulated every owner turn, so it measured none, and none is estimated. Worker wall time is the measured sum of the `wf` call times in each phase. It does not include agent thinking time or the time a human takes to read.
 
-Status: REHEARSAL, NOT A PILOT. Every OWNER TURN below was typed by the agent and marked SIMULATED in the log.
+Status: REHEARSAL, NOT A PILOT. Every OWNER TURN below was typed by the agent. The owner-turn texts recorded in the ledger (`source_turn`, the `--turn` arguments) say SIMULATED; in the flow log, 2 of the 5 `owner_turn` notes carry the word (grant activate, close) and the other 3 do not (WF-040 L40-S2).
 
 ## A. Uninterrupted flow (attempt 4, job `wf022-docfix`)
 
@@ -15,10 +15,10 @@ Status: REHEARSAL, NOT A PILOT. Every OWNER TURN below was typed by the agent an
 | A0 | Pick the job and approve the acceptance list | Choose the first pilot job (§12 candidate (b) or another). Read `ACCEPTANCE-LIST-DRAFT.md`, then change or approve AC1–AC7 and its open items. This happens outside `wf`. | unknown | 0 | 0 | 0 |
 | A1 | Contract | **OT1**: the owner's request in their own words. It goes into `owner_request.quote` and `source_turn`. | unknown | 1 `job new` (coordinator) | 0 | 0.32 |
 | A2 | Grant | **OT2**: read the Grant Confirmation Block that `grant propose` prints, then reply with its hash prefix and an approval quote. The coordinator passes these to `grant activate --owner-hash --quote --turn`. | unknown | 2 `grant propose`, `grant activate` (coordinator) | 0 | 0.57 |
-| A3 | Bind | none | — | 3 `bind` coordinator and builder, plus `status` (coordinator). The coordinator bind needs an explicit `--path` (WF022-F3). | 0 | 1.05 |
+| A3 | Bind | none | — | 2 `bind` (coordinator, builder) plus `status` (coordinator). The coordinator bind needs an explicit `--path` (WF022-F3). | 0 | 0.78 (0.278 + 0.278 + 0.224) |
 | A4 | Repair | none | — | 10 `append` (5 × intent → edit → receipt) (builder) | 0 | 2.73 |
 | A5 | Deliver | none | — | 1 `append --type delivered` (builder) | 0 | 0.28 |
-| A6 | Review | none | — | 1 `bind` reviewer (coordinator, only after delivered: WF022-F4), 1 `check-acceptance.ps1` (reviewer, not a `wf` call), 1 `accept --results` (reviewer) | 0 | 0.34 (accept) |
+| A6 | Review | none | — | 1 `bind` reviewer (coordinator, only after delivered: WF022-F4), 1 `check-acceptance.ps1` (reviewer, not a `wf` call), 1 `accept --results` (reviewer) | 0 | 0.61 (reviewer bind 0.27 + accept 0.344) |
 | A7 | Checkpoint | **OT3**: copy the head (seq, self) from `checkpoint` into an owner turn as the retained checkpoint (spec §3C). | unknown | 1 `checkpoint`, 1 `verify` (coordinator) | 0 | 0.44 |
 | A8 | Close | **OT4**: the intervention declaration (T21), giving minutes or `none`. In the rehearsal this was `none`. | unknown | 1 `close` (coordinator) | 0 | 0.29 |
 | A9 | Export and verify | none | — | 1 `export`, 1 `verify` (coordinator) | 0 | 0.48 |
@@ -57,3 +57,5 @@ Phases A0–A3 and the first repair ran as in section A. These rows are the extr
 2. **WF022-F7 (NEEDS OWNER):** `recover begin` listed no exceptions, yet the plain `reconcile` after the recovery reported X1. The answer decides whether B7–B8 can ever be folded into B4–B6.
 3. **Checkpoint cadence:** section A took one checkpoint (OT3) before close, and section B took none. The owner picks when a pilot takes them.
 4. **Owner minutes:** only a real pilot can fill these in. The rehearsal deliberately leaves them `unknown`.
+
+Correction 2026-10-19 (independent review WF-040, Lazy): A3 had counted the reviewer bind (0.27 s), which belongs to A6; the per-phase split is fixed above and the 6.75 s total is unchanged. The SIMULATED wording in the header is made exact (L40-S2).
