@@ -16,7 +16,8 @@ Subcases (test names):
   D-S3-1 none/proposed .......... test_D_S3_1_none_and_proposed_record_work_but_grant_check_denies
   grant-check vs guard .......... test_grant_check_agrees_with_mutation_guard_per_state
 NOT RUN here (contract section 8): contract amendment and environment/stance change (no command in R1); gate halves
-of T15/T34 (slice 4); explicit-binding rows after renewal (S3G).
+of T15/T34 (slice 4, now in test_gate_decide.py::JobState); explicit-binding rows after renewal (S3G, now in
+test_t34_grant_lifecycle.py::MutationGuardMatrix) (WF-019 F11 docstring correction).
 
 Wiring: `wf grant revoke|expire`, `wf grant-check`, `wf cancel`, `wf log-intervention` and `status.authority` land on
 White's `sprint/white-b2s3-wiring`; on a tree without them every test is skipped with the reason
