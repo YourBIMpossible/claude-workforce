@@ -130,10 +130,12 @@ class ContentEncodings(Adv):
 
 
 class IntentPathsAreUnconstrainedAtWriteTime(Adv):
-    def test_escaping_absolute_and_unc_intent_paths_are_committed_then_reported_by_reconcile(self):
+    def test_escaping_intent_paths_commit_then_reconcile(self):
         """append accepts any string as an intent path; `wf reconcile` reports it as an exception (class
         matches-neither / attempt-without-completion). Designed record-and-verify behaviour: NOT A DEFECT, but the
-        gate, not append, is what stops an escaping write."""
+        gate, not append, is what stops an escaping write. Renamed from
+        `test_escaping_absolute_and_unc_intent_paths_are_committed_then_reported_by_reconcile` (84 characters): on
+        Windows without long paths that name pushed the fixture marker path past 260 characters in a deep worktree."""
         paths_ = ["jobs/j/work/../../../../etc/x", "C:/Windows/x", "//server/share/x", "jobs/j/work/CON",
                   "jobs/j/work/a.", "jobs/j/work/" + "a" * 400]
         for p in paths_:

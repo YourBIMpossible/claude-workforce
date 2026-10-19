@@ -86,12 +86,14 @@ class ResolveOutcomes(Fixture):
         self.assertTrue(__import__("os").path.exists(ref.path))
 
     @unittest.expectedFailure
-    def test_conflict_pending_marker_with_an_empty_conflict_payload_is_not_silently_dropped(self):
-        """FINDING (low; needs a tampered or truncated marker): a `conflict-pending` marker whose `conflict` object is
-        empty is treated as an ordinary attempt: resolve answers NOT-COMMITTED and deletes it, so no conflict row is
+    def test_empty_conflict_payload_marker_not_dropped(self):
+        """FINDING F8 (low; needs a tampered or truncated marker): a `conflict-pending` marker whose `conflict` object
+        is empty is treated as an ordinary attempt: resolve answers NOT-COMMITTED and deletes it, so no conflict row is
         re-recorded and the claimant-conflict block is lost. markers.guard states that a conflict marker is never
         cleared without its row present. Observed: (0, NOT-COMMITTED), marker deleted, no row. Still open on
-        fix1/integration dfd6e85 (not in FIX1): fails on its own assertNotEqual."""
+        fix1/integration dfd6e85 (not in FIX1): fails on its own assertNotEqual. Renamed from
+        `test_conflict_pending_marker_with_an_empty_conflict_payload_is_not_silently_dropped` (83 characters): on
+        Windows without long paths that name pushed the fixture marker path past 260 characters in a deep worktree."""
         seq, head_self = self.head()
         ref = self.put_marker(seq + 1, "conflict-pending", "f" * 64, head_self, {"conflict": {}})
         c, r = self.resolve(seq + 1)
