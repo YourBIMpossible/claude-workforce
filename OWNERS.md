@@ -7,7 +7,10 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 
 | Path | Owner |
 |---|---|
-| tools/wf/wfcore/validate.py | A |
+| tools/wf/wfcore/validate.py | F2BP |
+| tools/wf/wfcore/commands.py | F2BP |
+| tools/wf/wf.py | F2BP |
+| tools/wf/tests/test_fix2_validation.py | F2BP |
 | tools/wf/tests/test_t24_accept_declarations.py | A |
 | tools/wf/wfcore/pathpolicy.py | B |
 | tools/wf/tests/test_t35_path_policy.py | B |
@@ -56,7 +59,7 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_t30_race_secondwriter_identity.py | S5R |
 | tools/wf/tests/test_t37_t36_matrix.py | S5M |
 | tools/wf/tests/test_fix1_errors.py | FXL |
-| tools/wf/tests/test_fix1_ids.py | FXL |
+| tools/wf/tests/test_fix1_ids.py | F2BP |
 | tools/wf/tests/test_fix1_paths.py | FXM |
 | tools/wf/tests/test_fix2_scratch_names.py | F2TL |
 | tools/wf/tests/test_wf020_*.py | W20 |
@@ -214,3 +217,13 @@ Rows go back to their previous owners when batch T is integrated.
 ## Integration 2026-10-19 (FIX2 batch T into `fix2/integration`; coordinator Zen "Workforce Dev", lane D)
 
 Branch `fix2/integration` (from main `4321f16`) merges `fix2/plexy-t-hygiene` `5133101` (F2TP) and `fix2/lazy-t40` `9a4e70d` (F2TL), each VERIFIED (independent review MyBuddy WF-091, Linux MyBuddy, Windows Zen). The batch-T relabels are restored: test_gate_decide.py S4G, test_t37_backup.py S5B, test_fix1_ids.py FXL; the test_t35_wiring.py and test_wf.py rows are removed, so they fall back to D. The new test file `test_fix2_scratch_names.py` stays registered to F2TL. MANIFEST.sha256 is regenerated at the cumulative head before the PR.
+
+## Registration 2026-10-19 (package FIX2 batch B, AMENDMENT FIX2-A2; decided by the Foreman under the owner's delegation; coordinator Zen "Workforce Dev" while White is out)
+
+Package text: WorkForce collab `contracts/b2fix2/` (PACKAGE-FIX2.md with AMENDMENT-FIX2-A2.md, frozen with SHA256SUMS). Base: main `4321f16` plus this registration commit.
+
+| Lane | Worker | Branch | Scope |
+|---|---|---|---|
+| F2BP | Plexy | `fix2/plexy-b-validation` | the F2BP rows above (FIX2 #2, #19, #20, #30, #33); relabelled from A (validate.py), FXL (test_fix1_ids.py, for #30's `CASE_FOLDING` patches at :286-295) and D (commands.py, wf.py) for this batch only |
+
+Rows go back to their previous owners when batch B is integrated.
