@@ -111,11 +111,15 @@ class MissingJobInExistingLedger(Fixture):
             with self.subTest(argv=argv):
                 self.refused(self.coord(*argv), 1, "refused", "job k has no contract")
 
-    def test_recover_reconcile_says_no_recovery_open_not_no_contract(self):
+    def test_recover_reconcile_says_no_recovery_open(self):
+        """Renamed from `test_recover_reconcile_says_no_recovery_open_not_no_contract`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         self.refused(self.coord("recover", "reconcile", "k", "--turn", "owner turn k"), 1, "rejected",
                      "no recovery is open for this job")
 
-    def test_abandon_close_backup_and_verify_on_a_missing_job(self):
+    def test_abandon_close_backup_verify_missing_job(self):
+        """Renamed from `test_abandon_close_backup_and_verify_on_a_missing_job`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         self.refused(self.coord("job", "abandon", "k", "--reason", "r"), 1, "refused", "job k not found")
         self.refused(self.coord("close", "k", "--intervention", "x"), 1, "refused", "close refused: verify not clean")
         self.refused(self.coord("backup", "k", "--to", os.path.join(self.dir, "b.db")), 1, "refused",
@@ -126,7 +130,9 @@ class MissingJobInExistingLedger(Fixture):
         self.assertFalse(r["clean"])
         self.assertEqual(r["jobs"]["k"]["problems"], ["no contract row"])
 
-    def test_resolve_of_a_seq_with_no_marker_is_already_cleared(self):
+    def test_resolve_seq_without_marker_already_cleared(self):
+        """Renamed from `test_resolve_of_a_seq_with_no_marker_is_already_cleared`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         c, r = self.coord("resolve", "j", "99")
         self.assertEqual(c, 0, r)
         self.assertEqual(r["outcome"], "ALREADY-CLEARED")
@@ -164,7 +170,9 @@ class JobNewOnExistingJob(Fixture):
 
 
 class GrantInputs(Fixture):
-    def test_activate_needs_quote_and_a_hex_hash_of_8_chars(self):
+    def test_activate_needs_quote_and_8_hex_hash(self):
+        """Renamed from `test_activate_needs_quote_and_a_hex_hash_of_8_chars`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         self.refused(self.coord("grant", "activate", "j", "--owner-hash", "abcdef12", "--quote", " ", "--turn", "t"),
                      1, "rejected", "rejected(no-provenance): --quote")
         for bad in ("abc", "zzzzzzzz"):
@@ -190,7 +198,9 @@ class AppendValidation(Fixture):
                            session="C1")
         self.assertEqual((c, r["code"]), (2, "usage"))
 
-    def test_content_that_is_not_json_is_usage_and_not_an_object_is_malformed(self):
+    def test_content_not_json_usage_not_object_malformed(self):
+        """Renamed from `test_content_that_is_not_json_is_usage_and_not_an_object_is_malformed`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         c, r = self.run_wf("append", "j", "--type", "intent", "--content", "zzz{")
         self.assertEqual((c, r["code"]), (2, "usage"))
         self.assertIn("not a file and not JSON", r["error"])
@@ -261,7 +271,9 @@ class AcceptCloseBindRecoverInputs(Fixture):
         self.assertEqual((c, r["code"]), (2, "usage"))
         self.assertIn("--bind-session is required", r["error"])
 
-    def test_ack_reconcile_exceptions_must_be_a_json_list_of_ids(self):
+    def test_ack_reconcile_exceptions_json_id_list(self):
+        """Renamed from `test_ack_reconcile_exceptions_must_be_a_json_list_of_ids`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         for bad in ("{}", "[1]"):
             with self.subTest(exceptions=bad):
                 self.refused(self.run_wf("ack-reconcile", "j", "--report", "1", "--exceptions", bad), 1, "rejected",

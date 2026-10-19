@@ -19,7 +19,9 @@ class BackupDestination(Base):
     def backup(self, dest: str):
         return self.run_wf("backup", "j", "--to", dest, role="coordinator", session="C1")
 
-    def test_destination_inside_the_ledger_directory_is_refused_directly_via_dotdot(self):
+    def test_dest_in_ledger_dir_via_dotdot_is_refused(self):
+        """Renamed from `test_destination_inside_the_ledger_directory_is_refused_directly_via_dotdot`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         for dest in (os.path.join(self.ledger_dir, "b.db"),
                      os.path.join(self.dir, "x", "..", "ledger", "c.db")):
             with self.subTest(dest=dest):
@@ -28,7 +30,9 @@ class BackupDestination(Base):
         self.assertEqual(sorted(os.listdir(self.ledger_dir)), ["l.db", "pending"])
 
     @unittest.skipUnless(sys.platform == "win32", "uses an NTFS junction")
-    def test_destination_inside_the_ledger_directory_is_refused_through_a_junction(self):
+    def test_dest_in_ledger_dir_via_junction_is_refused(self):
+        """Renamed from `test_destination_inside_the_ledger_directory_is_refused_through_a_junction`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         link = os.path.join(self.dir, "jn")
         made = subprocess.run(["cmd", "/c", "mklink", "/J", link, self.ledger_dir], capture_output=True, text=True)
         if made.returncode != 0:
@@ -37,7 +41,9 @@ class BackupDestination(Base):
         self.assertEqual((c, r["code"], r["error"]), (1, "refused", "dest-inside-ledger"), r)
         self.assertEqual(sorted(os.listdir(self.ledger_dir)), ["l.db", "pending"])
 
-    def test_existing_destination_and_missing_parent_are_refused(self):
+    def test_existing_dest_and_missing_parent_refused(self):
+        """Renamed from `test_existing_destination_and_missing_parent_are_refused`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         ok = os.path.join(self.dir, "ok.db")
         c, r = self.backup(ok)
         self.assertEqual(c, 0, r)
@@ -77,8 +83,10 @@ class RestoredCopyChecks(Base):
                 self.assertEqual((c, r["code"]), (1, "refused"), r)
                 self.assertIn("restored copy not found", r["error"])
 
-    def test_file_that_is_not_sqlite_exits_zero_but_is_not_clean(self):
-        """RESTORE-RUNBOOK.md:36: `--restored` exits 0 whenever it could run; the caller must read `clean`."""
+    def test_non_sqlite_file_exits_zero_but_not_clean(self):
+        """RESTORE-RUNBOOK.md:36: `--restored` exits 0 whenever it could run; the caller must read `clean`.
+        Renamed from `test_file_that_is_not_sqlite_exits_zero_but_is_not_clean`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         junk = os.path.join(self.dir, "junk.db")
         with open(junk, "w") as fh:
             fh.write("not sqlite")

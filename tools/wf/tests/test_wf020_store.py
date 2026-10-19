@@ -107,7 +107,9 @@ class ExportChecks(Base):
     def test_clean_export_has_no_problems(self):
         self.assertEqual(self._verify_problems(), [])
 
-    def test_stray_file_and_directory_entries_are_reported_not_removed(self):
+    def test_stray_file_and_dir_reported_not_removed(self):
+        """Renamed from `test_stray_file_and_directory_entries_are_reported_not_removed`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         with open(os.path.join(self.out, "stray.txt"), "w") as fh:
             fh.write("x")
         os.mkdir(os.path.join(self.out, "stray-dir"))
@@ -117,9 +119,11 @@ class ExportChecks(Base):
         self.assertTrue(os.path.exists(os.path.join(self.out, "stray.txt")), "report only: nothing deleted")
         self.assertTrue(os.path.isdir(os.path.join(self.out, "stray-dir")), "report only: nothing deleted")
 
-    def test_a_link_entry_is_reported_as_a_link_not_followed_or_removed(self):
+    def test_link_entry_reported_not_followed(self):
         """A junction (Windows) or a symlink (POSIX) in the export directory is `unexpected export link` (export.strays:
-        `is_symlink() or is_junction()`); skipped where the platform cannot create one (W39-M2)."""
+        `is_symlink() or is_junction()`); skipped where the platform cannot create one (W39-M2).
+        Renamed from `test_a_link_entry_is_reported_as_a_link_not_followed_or_removed`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         target = os.path.join(self.dir, "link-target")
         os.mkdir(target)
         link = os.path.join(self.out, "stray-link")
@@ -131,14 +135,18 @@ class ExportChecks(Base):
         self.assertNotIn("unexpected export directory: stray-link/", problems)
         self.assertTrue(os.path.lexists(link) and os.path.isdir(target), "report only: nothing deleted")
 
-    def test_malformed_manifest_is_reported_with_its_line_number(self):
+    def test_malformed_manifest_reported_with_line(self):
+        """Renamed from `test_malformed_manifest_is_reported_with_its_line_number`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         with open(os.path.join(self.out, "manifest.txt"), "w", encoding="utf-8", newline="\n") as fh:
             fh.write("not a manifest line\n")
         problems = self._verify_problems()
         self.assertTrue(any(p.startswith("MALFORMED line 1: expected exactly 3 fields") for p in problems), problems)
 
-    def test_unicode_digit_size_in_the_manifest_is_reported_by_verify(self):
-        """F5 end to end (FIX1 E4): `wf verify` reports the '²' size as a MALFORMED manifest line instead of raising."""
+    def test_unicode_digit_size_reported_by_verify(self):
+        """F5 end to end (FIX1 E4): `wf verify` reports the '²' size as a MALFORMED manifest line instead of raising.
+        Renamed from `test_unicode_digit_size_in_the_manifest_is_reported_by_verify`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         with open(os.path.join(self.out, "manifest.txt"), "w", encoding="utf-8", newline="\n") as fh:
             fh.write(f"{SHA}  ²  events.jsonl\n")
         try:
@@ -148,7 +156,9 @@ class ExportChecks(Base):
         self.assertTrue(any(p.startswith("MALFORMED line 1: field 2 is not a non-negative integer") for p in problems),
                         problems)
 
-    def test_missing_manifest_and_unreadable_export_directory(self):
+    def test_missing_manifest_and_unreadable_export(self):
+        """Renamed from `test_missing_manifest_and_unreadable_export_directory`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         os.remove(os.path.join(self.out, "manifest.txt"))
         problems = self._verify_problems()
         self.assertTrue(any(p.startswith("export manifest missing") for p in problems), problems)
@@ -165,7 +175,9 @@ class ExportChecks(Base):
         os.remove(os.path.join(self.out, "head.json"))
         self.assertIn("export file missing: head.json", self._verify_problems())
 
-    def test_export_refresh_reports_a_ledger_error_instead_of_raising(self):
+    def test_export_refresh_reports_ledger_error(self):
+        """Renamed from `test_export_refresh_reports_a_ledger_error_instead_of_raising`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         res = export.refresh(os.path.join(self.dir, "nope", "l.db"), "j")
         self.assertIn("error", res)
         self.assertTrue(res["error"].startswith(("WfRefused", "OperationalError", "OSError", "FileNotFoundError")), res)
@@ -188,13 +200,17 @@ class PendingMarkers(Base):
         with open(self.marker, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(text)
 
-    def test_append_refuses_on_a_corrupt_marker_with_the_state_named(self):
+    def test_append_refuses_corrupt_marker_state_named(self):
+        """Renamed from `test_append_refuses_on_a_corrupt_marker_with_the_state_named`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         self._damage("{not json")
         c, r = self.intent()
         self.assertEqual((c, r["code"]), (1, "uncertain-write-pending"), r)
         self.assertIn("marker unreadable", r["error"])
 
-    def test_append_refuses_on_a_marker_that_is_not_the_named_attempt(self):
+    def test_append_refuses_marker_of_other_attempt(self):
+        """Renamed from `test_append_refuses_on_a_marker_that_is_not_the_named_attempt`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         self._damage(json.dumps({"attempt_id": "cd" * 16, "seq": 7}))
         c, r = self.intent()
         self.assertEqual((c, r["code"]), (1, "uncertain-write-pending"), r)
@@ -213,10 +229,12 @@ class PendingMarkers(Base):
         self.assertEqual((m["seq"], m["attempt_id"], m["state"]), (7, self.aid, "marker-corrupt"), m)
         self.assertEqual(m["problem"], f"marker-corrupt: {self.marker}: {why}")
 
-    def test_status_and_verify_report_a_corrupt_marker_instead_of_crashing(self):
+    def test_corrupt_marker_reported_not_a_crash(self):
         """F3, fixed by FIX1 E3: status, digest and verify report a corrupt marker file as `marker-corrupt` with a
         problem naming its path; verify is not clean and digest asks the owner to resolve it. At 2dedc94
-        `markers.describe` let json.JSONDecodeError escape `wf.run` (traceback, no result)."""
+        `markers.describe` let json.JSONDecodeError escape `wf.run` (traceback, no result).
+        Renamed from `test_status_and_verify_report_a_corrupt_marker_instead_of_crashing`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         self._damage("{not json")
         why = "JSONDecodeError: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)"
         self._assert_corrupt_listed(self._diagnose("status")["pending_markers"], why)
@@ -229,16 +247,20 @@ class PendingMarkers(Base):
                        "recommendation": "run `wf resolve j 7` before any further write", "evidence": [self.marker]},
                       d["needs_owner"])
 
-    def test_status_reports_a_marker_file_holding_a_json_list(self):
+    def test_status_reports_list_marker_as_corrupt(self):
         """F4, fixed by FIX1 E3: a marker file holding `[1]` is listed as `marker-corrupt` ("not a JSON object (list)").
-        At 2dedc94 `.get` on the list raised AttributeError out of `wf.run`."""
+        At 2dedc94 `.get` on the list raised AttributeError out of `wf.run`.
+        Renamed from `test_status_reports_a_marker_file_holding_a_json_list`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         self._damage("[1]")
         self._assert_corrupt_listed(self._diagnose("status")["pending_markers"], "not a JSON object (list)")
         self._assert_corrupt_listed(self._diagnose("verify")["jobs"]["j"]["pending_markers"], "not a JSON object (list)")
 
-    def test_describe_labels_a_marker_that_vanished_as_unreadable(self):
+    def test_describe_vanished_marker_is_unreadable(self):
         """A marker listed by `list_markers` that is gone when describe() reads it (another process cleared it in
-        between) is labelled `unreadable`, not an error (markers._corrupt_reason: a vanished file is (None, None))."""
+        between) is labelled `unreadable`, not an error (markers._corrupt_reason: a vanished file is (None, None)).
+        Renamed from `test_describe_labels_a_marker_that_vanished_as_unreadable`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         ref = markers.MarkerRef(self.pend, 7, self.aid)
         self.assertFalse(os.path.exists(ref.path))
         self.assertEqual(markers.read(ref), None)
@@ -247,9 +269,11 @@ class PendingMarkers(Base):
         self.assertEqual((entry["seq"], entry["attempt_id"], entry["state"]), (7, self.aid, "unreadable"))
         self.assertNotIn("problem", entry)
 
-    def test_describe_labels_an_empty_marker_object_as_unreadable(self):
+    def test_describe_empty_marker_is_unreadable(self):
         """A marker file holding `{}` (no state) is labelled `unreadable`, not `marker-corrupt` (it is a JSON object).
-        W39-S5: this case was the body of the vanished-marker test before; it is its own test now."""
+        W39-S5: this case was the body of the vanished-marker test before; it is its own test now.
+        Renamed from `test_describe_labels_an_empty_marker_object_as_unreadable`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         with open(self.marker, "w", encoding="utf-8") as fh:
             json.dump({}, fh)
         (entry,) = markers.describe(self.db, "j")

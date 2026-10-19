@@ -30,11 +30,13 @@ class GrantCheckReasonsThroughDecide(_Gate):
         r = self._decide_builder()
         self.assertEqual((r["decision"], r["reason"]), ("deny", "action-not-granted"), r)
 
-    def test_path_outside_role_is_unreachable_through_bind_because_bind_refuses_first(self):
+    def test_path_outside_role_unreachable_via_bind(self):
         """grant.check's `path-outside-role` (gatecore.py:425) cannot be produced from a ledger built with the CLI:
         `wf bind` already refuses a binding whose default path set is not inside the role's ARS paths, so the gate's
         second line of defence is never exercised end to end. Defence in depth, NOT A DEFECT; the decide-level reason
-        stays covered only by the grant-check corpus (test_grant_check_corpus)."""
+        stays covered only by the grant-check corpus (test_grant_check_corpus).
+        Renamed from `test_path_outside_role_is_unreachable_through_bind_because_bind_refuses_first`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         roles = dict(ROLES, builder=dict(ROLES["builder"], paths=["jobs/j/work/sub/**"]))
         self.grant_obj = dict(GATE_GRANT, ars=dict(GATE_GRANT["ars"], roles=roles))
         self.setUp_grant()

@@ -19,7 +19,9 @@ class AbandonAndVerifyFlags(Base):
         super().setUp()
         self.new_job()
 
-    def test_abandon_with_a_blank_reason_is_a_usage_error_and_changes_nothing(self):
+    def test_abandon_blank_reason_usage_changes_nothing(self):
+        """Renamed from `test_abandon_with_a_blank_reason_is_a_usage_error_and_changes_nothing`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         c, r = self.run_wf("job", "abandon", "j", "--reason", " ", role="coordinator", session="C1")
         self.assertEqual((c, r["code"]), (2, "usage"), r)
         self.assertIn("--reason is required", r["error"])
@@ -79,9 +81,11 @@ class BaselineDoesNotFollowLinks(Base):
     Windows, a symlink on POSIX: changeset._is_link treats both alike) is skipped, not followed: the files behind it are
     not baselined, and a per-link limitation names it (changeset.py link handling)."""
 
-    def test_link_under_the_scope_is_skipped_with_a_per_link_limitation(self):
+    def test_link_in_scope_skipped_with_per_link_limit(self):
         """W39-S3: asserts the per-link `skipped link or reparse point: tools/wf/jlink` text; the generic limitation
-        ("links and junctions are skipped, not resolved") is in every baseline and proves nothing about this link."""
+        ("links and junctions are skipped, not resolved") is in every baseline and proves nothing about this link.
+        Renamed from `test_link_under_the_scope_is_skipped_with_a_per_link_limitation`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         scope = os.path.join(self.dir, "tools", "wf")
         os.makedirs(scope)
         with open(os.path.join(scope, "a.txt"), "w") as fh:

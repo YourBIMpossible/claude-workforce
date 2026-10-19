@@ -53,7 +53,9 @@ class Fixture(Base):
 
 
 class ResolveOutcomes(Fixture):
-    def test_marker_for_an_existing_seq_with_a_different_self_is_a_conflict(self):
+    def test_marker_existing_seq_other_self_conflict(self):
+        """Renamed from `test_marker_for_an_existing_seq_with_a_different_self_is_a_conflict`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         seq, _ = self.head()
         ref = self.put_marker(seq, "committing", "f" * 64, "p" * 64)
         c, r = self.resolve(seq)
@@ -61,7 +63,9 @@ class ResolveOutcomes(Fixture):
         self.assertEqual(r["head_seq"], seq)
         self.assertIn("row_self", r)
 
-    def test_marker_far_beyond_the_head_stays_uncertain_and_is_kept(self):
+    def test_marker_far_beyond_head_stays_uncertain(self):
+        """Renamed from `test_marker_far_beyond_the_head_stays_uncertain_and_is_kept`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         seq, head_self = self.head()
         ref = self.put_marker(seq + 5, "committing", "f" * 64, head_self)
         c, r = self.resolve(seq + 5)
@@ -70,7 +74,9 @@ class ResolveOutcomes(Fixture):
         self.assertFalse(r["ok"])
         self.assertTrue(__import__("os").path.exists(ref.path), "an undecided marker is never deleted")
 
-    def test_next_seq_committing_marker_that_never_committed_is_not_committed(self):
+    def test_next_seq_uncommitted_marker_not_committed(self):
+        """Renamed from `test_next_seq_committing_marker_that_never_committed_is_not_committed`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         seq, head_self = self.head()
         ref = self.put_marker(seq + 1, "committing", "f" * 64, head_self)
         c, r = self.resolve(seq + 1)
@@ -106,7 +112,9 @@ class ResolveOutcomes(Fixture):
 
 
 class PostCommitMarkerDelete(Fixture):
-    def test_failed_marker_delete_after_commit_is_reported_as_marker_left_not_as_failure(self):
+    def test_failed_marker_delete_is_marker_left(self):
+        """Renamed from `test_failed_marker_delete_after_commit_is_reported_as_marker_left_not_as_failure`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         before, _ = self.head()
         with mock.patch.object(markers, "delete", side_effect=OSError("injected delete failure")):
             c, r = self.intent(note="delete-fails")
@@ -138,10 +146,12 @@ class _RollbackFails:
 
 
 class ResolveRollbackFailure(Fixture):
-    def test_resolve_reports_a_failing_rollback_instead_of_raising(self):
+    def test_resolve_reports_failing_rollback(self):
         """F9, fixed by FIX1 E5 / AMENDMENT A1.2: when resolve wrote nothing, a failing ROLLBACK does not change the
         decided outcome; it is reported as `rollback_error` (in the result and in the marker's resolve log). At
-        2dedc94 the unguarded `dbm.rollback(conn)` let sqlite3.OperationalError escape `wf resolve`."""
+        2dedc94 the unguarded `dbm.rollback(conn)` let sqlite3.OperationalError escape `wf resolve`.
+        Renamed from `test_resolve_reports_a_failing_rollback_instead_of_raising`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         seq, head_self = self.head()
         ref = self.put_marker(seq + 1, "committing", "f" * 64, head_self)
         real_connect = dbm.connect
@@ -213,7 +223,9 @@ class GiveUpFailures(Fixture):
 
 
 class JobAbandonCommit(Fixture):
-    def test_abandon_commit_busy_past_the_bound_is_commit_timeout(self):
+    def test_abandon_busy_past_bound_is_commit_timeout(self):
+        """Renamed from `test_abandon_commit_busy_past_the_bound_is_commit_timeout`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         holder = self.hold_shared_reader()
         try:
             c, r = self.run_wf("job", "abandon", "j", "--reason", "r", role="coordinator", session="C1")

@@ -85,7 +85,9 @@ class ContentEncodings(Adv):
         c, r = self.run_wf("verify", "j", role="coordinator", session="C1")
         self.assertTrue(r["clean"], r)
 
-    def test_contract_file_with_utf8_bom_is_rejected_as_malformed_and_crlf_is_accepted(self):
+    def test_contract_bom_rejected_crlf_accepted(self):
+        """Renamed from `test_contract_file_with_utf8_bom_is_rejected_as_malformed_and_crlf_is_accepted`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         bom = os.path.join(self.dir, "bom.json")
         with open(bom, "wb") as fh:
             fh.write(b"\xef\xbb\xbf" + json.dumps(test_wf.CONTRACT).encode())
@@ -98,7 +100,9 @@ class ContentEncodings(Adv):
         c, r = self.run_wf("job", "new", "jc", "--contract", crlf, role="coordinator", session="C1")
         self.assertEqual((c, r["outcome"]), (0, "COMMITTED"), r)
 
-    def test_5000_digit_integer_is_a_usage_error_not_a_crash(self):
+    def test_5000_digit_integer_is_a_usage_error(self):
+        """Renamed from `test_5000_digit_integer_is_a_usage_error_not_a_crash`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         c, r = self.append_intent('{"path":"p","sha_before":"","note":' + "9" * 5000 + "}")
         self.assertEqual((c, r["code"]), (2, "usage"), r)
 
@@ -112,9 +116,11 @@ class ContentEncodings(Adv):
         self.assertEqual(r["error"], f"rejected(malformed): {reason}")
         self.assertEqual(self.head_seq(), before, "nothing may be appended")
 
-    def test_nan_and_infinity_in_content_are_rejected_not_crashes(self):
+    def test_nan_in_content_is_rejected_not_a_crash(self):
         """F1, fixed by FIX1 E2: `NaN` in the content is `rejected(malformed)` at input, nothing appended. At 2dedc94
-        json.loads accepted it and canonical() (allow_nan=False) raised ValueError out of `wf.run` (a traceback)."""
+        json.loads accepted it and canonical() (allow_nan=False) raised ValueError out of `wf.run` (a traceback).
+        Renamed from `test_nan_and_infinity_in_content_are_rejected_not_crashes`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         self._clean_rejection('{"path":"jobs/j/work/a","sha_before":"","note":NaN}', "non-finite number NaN is not JSON")
 
     def test_infinity_in_content_is_rejected_not_a_crash(self):
@@ -122,9 +128,11 @@ class ContentEncodings(Adv):
         self._clean_rejection('{"path":"jobs/j/work/a","sha_before":"","note":Infinity}',
                               "non-finite number Infinity is not JSON")
 
-    def test_lone_surrogate_in_content_is_rejected_not_a_crash(self):
+    def test_lone_surrogate_in_content_is_rejected(self):
         """F2, fixed by FIX1 E2: a lone surrogate (`"\\ud800"`) is `rejected(malformed)` naming the field. At 2dedc94
-        hashing the content raised UnicodeEncodeError out of `wf.run`."""
+        hashing the content raised UnicodeEncodeError out of `wf.run`.
+        Renamed from `test_lone_surrogate_in_content_is_rejected_not_a_crash`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         self._clean_rejection(json.dumps(dict(BASE, note="\ud800")),
                               "$.note: string contains a lone surrogate (not encodable as UTF-8)")
 
@@ -152,7 +160,9 @@ class IntentPathsAreUnconstrainedAtWriteTime(Adv):
 
 
 class ProcessLevel(Adv):
-    def test_eight_concurrent_appends_all_commit_with_distinct_seqs_and_a_clean_chain(self):
+    def test_eight_concurrent_appends_distinct_seqs(self):
+        """Renamed from `test_eight_concurrent_appends_all_commit_with_distinct_seqs_and_a_clean_chain`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         before = self.head_seq()
         results: list = [None] * 8
 
@@ -172,7 +182,9 @@ class ProcessLevel(Adv):
         self.assertTrue(r["clean"], r)
         self.assertEqual(r["jobs"]["j"]["pending_markers"], [])
 
-    def test_process_terminated_between_insert_and_commit_leaves_a_resolvable_marker(self):
+    def test_kill_before_commit_leaves_resolvable_marker(self):
+        """Renamed from `test_process_terminated_between_insert_and_commit_leaves_a_resolvable_marker`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         env = dict(os.environ)
         env["WF_TEST_FAULTS"] = "delay-precommit:20000"
         p = subprocess.Popen([sys.executable, "-I", "-B", WF_PY, "--db", self.db, "--role", "builder", "--session", "B1",
@@ -251,7 +263,9 @@ class JobIdsOnNtfs(Base):
     """The NTFS half of F6/F7 (W39-S1): `jobs/J` and `jobs/j.` name the directory of job j, which is why I1 refuses
     those ids; with the refusals, job j's export is not overwritten and verify stays clean."""
 
-    def test_case_and_trailing_dot_variants_name_the_same_directory_and_job_j_stays_clean(self):
+    def test_ntfs_aliases_same_dir_and_j_stays_clean(self):
+        """Renamed from `test_case_and_trailing_dot_variants_name_the_same_directory_and_job_j_stays_clean`
+        (WF-020 review F1 follow-up 2: test-name length and Windows path length)."""
         self.new_job("j")
         jobs = os.path.join(self.dir, "jobs")
         for alias in ("J", "j."):
