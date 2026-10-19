@@ -1,6 +1,7 @@
 """WF-020 (Lazy): regression tests for refusals/rejections in wfcore/commands.py and validate.py that no earlier test
-reached (from-lazy WF-020 GAP-LIST.md). Current behaviour at 2dedc94 is asserted; where a path is surprising the
-docstring says so (FINDINGS.md carries the disposition).
+reached (from-lazy WF-020 GAP-LIST.md). Written at 2dedc94; updated for fix1/integration dfd6e85 (WF-020 review F1,
+WF-039 W39-S2/S4: the F11 pin now asserts FIX1 E6). Where a path is surprising the docstring says so (FINDINGS.md
+carries the disposition).
 
 Runs inside the test_wf.py harness (fresh scratch ledger per test under WF_TEST_TMP)."""
 from __future__ import annotations
@@ -10,6 +11,8 @@ import os
 
 import test_wf
 from test_wf import CONTRACT, DECLARATIONS, Base
+
+from wfcore import db as dbm
 
 OWNER_J = "owner turn j"
 
@@ -128,20 +131,35 @@ class MissingJobInExistingLedger(Fixture):
         self.assertEqual(c, 0, r)
         self.assertEqual(r["outcome"], "ALREADY-CLEARED")
 
+    def _all_rows(self) -> tuple[int, list[str]]:
+        conn = dbm.connect(self.db, create=False)
+        try:
+            return conn.execute("SELECT count(*) FROM events").fetchone()[0], dbm.jobs(conn)
+        finally:
+            conn.close()
+
     def test_no_refusal_changed_the_ledger(self):
-        before = self.head_seq()
-        self.coord("cancel", "k", "--reason", "r", "--turn", "owner turn k")
-        self.coord("bind", "k", "--bind-role", "builder", "--bind-session", "S")
+        """W39-S4: the refusals on job k write nothing anywhere: job j's head, the ledger's total row count and its job
+        list are unchanged, and job k still does not exist."""
+        before, rows_before = self.head_seq(), self._all_rows()
+        self.refused(self.coord("cancel", "k", "--reason", "r", "--turn", "owner turn k"), 1, "refused",
+                     "job k has no contract")
+        self.refused(self.coord("bind", "k", "--bind-role", "builder", "--bind-session", "S"), 1, "refused",
+                     "job k has no contract")
         self.assertEqual(self.head_seq(), before)
+        self.assertEqual(self._all_rows(), rows_before)
+        self.assertEqual(rows_before[1], ["j"])
+        self.refused(self.coord("status", "k"), 1, "refused", "job k not found")
 
 
 class JobNewOnExistingJob(Fixture):
-    def test_second_job_new_is_rejected_as_malformed_not_as_already_exists(self):
-        """The `job <j> already exists` refusal (commands.py:157) is shadowed by validate.py:338 (`contract event must be
-        the first event`), so the user-facing text never says the job exists. Exit 1, nothing appended."""
+    def test_second_job_new_is_refused_as_already_exists(self):
+        """FIX1 E6 (W39-S2: at 2dedc94 this pinned `rejected(malformed): contract event must be the first event`, which
+        shadowed the existing-job refusal): a second `job new j` is `refused` with `job j already exists`. Exit 1,
+        nothing appended."""
         before = self.head_seq()
-        self.refused(self.coord("job", "new", "j", "--contract", self.cpath), 1, "rejected",
-                     "contract event must be the first event")
+        r = self.refused(self.coord("job", "new", "j", "--contract", self.cpath), 1, "refused", "job j already exists")
+        self.assertEqual(r["error"], "job j already exists")
         self.assertEqual(self.head_seq(), before)
 
 

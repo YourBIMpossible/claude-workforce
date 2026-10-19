@@ -1,6 +1,7 @@
 """WF-020 (Lazy): remaining small gaps (from-lazy WF-020 GAP-LIST.md): `job abandon` blank reason, `verify --gate-file /
---gate-sha` pairing, `gate print-install` with a tree that has no hook, and grant.authority's `malformed` states.
-Current behaviour at 2dedc94 is asserted."""
+--gate-sha` pairing, `gate print-install` with a tree that has no hook, grant.authority's `malformed` states, and a
+link under the baselined scope. Written at 2dedc94; updated for fix1/integration dfd6e85 (WF-020 review F1, WF-039
+W39-S3: the link test asserts the per-link limitation and runs on POSIX with a symlink)."""
 from __future__ import annotations
 
 import json
@@ -8,6 +9,7 @@ import os
 
 import test_wf
 from test_wf import Base
+from test_wf020_store import make_dir_link
 
 from wfcore import grant
 
@@ -72,15 +74,14 @@ class AuthorityMalformedStates(Base):
         self.assertEqual((res["state"], res["reason"]), ("cancelled", "job-cancelled"))
 
 
-class BaselineDoesNotFollowJunctions(Base):
-    """`job new` snapshots the read scope (tools/wf/** in the harness contract). A junction inside it is skipped, not
-    followed: the files behind it are not baselined and the limitation says so (changeset.py link handling)."""
+class BaselineDoesNotFollowLinks(Base):
+    """`job new` snapshots the read scope (tools/wf/** in the harness contract). A link inside it (an NTFS junction on
+    Windows, a symlink on POSIX: changeset._is_link treats both alike) is skipped, not followed: the files behind it are
+    not baselined, and a per-link limitation names it (changeset.py link handling)."""
 
-    def test_junction_under_the_scope_is_skipped_with_a_limitation(self):
-        import subprocess
-        import sys
-        if sys.platform != "win32":
-            self.skipTest("uses an NTFS junction")
+    def test_link_under_the_scope_is_skipped_with_a_per_link_limitation(self):
+        """W39-S3: asserts the per-link `skipped link or reparse point: tools/wf/jlink` text; the generic limitation
+        ("links and junctions are skipped, not resolved") is in every baseline and proves nothing about this link."""
         scope = os.path.join(self.dir, "tools", "wf")
         os.makedirs(scope)
         with open(os.path.join(scope, "a.txt"), "w") as fh:
@@ -89,15 +90,14 @@ class BaselineDoesNotFollowJunctions(Base):
         os.makedirs(behind)
         with open(os.path.join(behind, "secret.txt"), "w") as fh:
             fh.write("s")
-        made = subprocess.run(["cmd", "/c", "mklink", "/J", os.path.join(scope, "jlink"), behind], capture_output=True,
-                              text=True)
-        if made.returncode != 0:
-            self.skipTest(f"junction not creatable: {made.stdout.strip()}")
+        why = make_dir_link(os.path.join(scope, "jlink"), behind)
+        if why is not None:
+            self.skipTest(why)
         self.new_job()
         events = os.path.join(self.dir, "jobs", "j", "export", "events.jsonl")
         with open(events, encoding="utf-8") as fh:
             contract = json.loads(json.loads(fh.readline())["content"])
         baseline = contract["baseline_manifest"]
         self.assertEqual(sorted(baseline["entries"]), ["tools/wf/a.txt"])
-        self.assertTrue(any("links and junctions are skipped, not resolved" in x for x in baseline["limitations"]),
-                        baseline["limitations"])
+        self.assertIn("skipped link or reparse point: tools/wf/jlink", baseline["limitations"])
+        self.assertFalse(any("secret.txt" in x for x in baseline["limitations"] + list(baseline["entries"])))

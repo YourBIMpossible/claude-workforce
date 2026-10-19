@@ -1,7 +1,8 @@
 """WF-020 (Lazy) adversarial pass: hostile inputs and process-level failures against a scratch ledger (WF_TEST_TMP,
-fixtures only). Each test records the CURRENT outcome at 2dedc94. Where the outcome is a crash (traceback instead of a
-reported refusal) or contradicts the spec, the test asserts the spec outcome and is an expectedFailure whose docstring
-names the observed behaviour: those are FINDINGS (from-lazy WF-020 FINDINGS.md), not fixes.
+fixtures only). Written at 2dedc94, where findings F1, F2, F6 and F7 were expectedFailures; updated for
+fix1/integration dfd6e85 (WF-020 review F1, WF-039 W39-M1/S1/S2): FIX1 E2 and I1 fixed them, so these are ordinary
+tests of the FIX1 behaviour, and each fails on its own assertion (an exception escaping `wf.run` is reported through
+`self.fail`) if the defect returns. Findings: from-lazy WF-020 FINDINGS.md.
 
 Spec anchors: FIRST-RELEASE-SPEC.md line 221 (Windows case-insensitive comparison, trailing dots/spaces, device names
 fail closed); `rejected(malformed)` is the engine's answer to unusable input."""
@@ -101,31 +102,31 @@ class ContentEncodings(Adv):
         c, r = self.append_intent('{"path":"p","sha_before":"","note":' + "9" * 5000 + "}")
         self.assertEqual((c, r["code"]), (2, "usage"), r)
 
-    def _clean_rejection(self, content: str) -> None:
+    def _clean_rejection(self, content: str, reason: str) -> None:
         before = self.head_seq()
-        c, r = self.append_intent(content)           # an escaping ValueError/UnicodeError fails this test
-        self.assertEqual((c, r["code"]), (1, "rejected"), r)
+        try:
+            c, r = self.append_intent(content)
+        except Exception as exc:  # noqa: BLE001 -- the WF-020 defect: an exception escaping wf.run is a FAIL here
+            self.fail(f"{type(exc).__name__} escaped wf.run instead of rejected(malformed): {exc}")
+        self.assertEqual((c, r.get("code")), (1, "rejected"), r)
+        self.assertEqual(r["error"], f"rejected(malformed): {reason}")
         self.assertEqual(self.head_seq(), before, "nothing may be appended")
 
-    @unittest.expectedFailure
     def test_nan_and_infinity_in_content_are_rejected_not_crashes(self):
-        """FINDING: json.loads accepts NaN/Infinity; canonical() (allow_nan=False) then raises ValueError('Out of range
-        float values are not JSON compliant') which nothing catches, so `wf append` exits 1 with a traceback and no
-        JSON result (verified with a real subprocess: stderr ends `ValueError ... nan`). Spec: unusable input is
-        `rejected(malformed)`. Observed: ValueError escapes `wf.run`."""
-        self._clean_rejection('{"path":"jobs/j/work/a","sha_before":"","note":NaN}')
+        """F1, fixed by FIX1 E2: `NaN` in the content is `rejected(malformed)` at input, nothing appended. At 2dedc94
+        json.loads accepted it and canonical() (allow_nan=False) raised ValueError out of `wf.run` (a traceback)."""
+        self._clean_rejection('{"path":"jobs/j/work/a","sha_before":"","note":NaN}', "non-finite number NaN is not JSON")
 
-    @unittest.expectedFailure
     def test_infinity_in_content_is_rejected_not_a_crash(self):
-        """FINDING (same cause as the NaN test): `Infinity` -> ValueError from canonical()."""
-        self._clean_rejection('{"path":"jobs/j/work/a","sha_before":"","note":Infinity}')
+        """F1 (same cause as the NaN test), fixed by FIX1 E2: `Infinity` is `rejected(malformed)`."""
+        self._clean_rejection('{"path":"jobs/j/work/a","sha_before":"","note":Infinity}',
+                              "non-finite number Infinity is not JSON")
 
-    @unittest.expectedFailure
     def test_lone_surrogate_in_content_is_rejected_not_a_crash(self):
-        """FINDING: `"\\ud800"` parses (lone surrogate); hashing the content (`text.encode('utf-8')`) then raises
-        UnicodeEncodeError ('surrogates not allowed'), uncaught: traceback, no JSON result. Observed: UnicodeEncodeError
-        escapes `wf.run`."""
-        self._clean_rejection(json.dumps(dict(BASE, note="\ud800")))
+        """F2, fixed by FIX1 E2: a lone surrogate (`"\\ud800"`) is `rejected(malformed)` naming the field. At 2dedc94
+        hashing the content raised UnicodeEncodeError out of `wf.run`."""
+        self._clean_rejection(json.dumps(dict(BASE, note="\ud800")),
+                              "$.note: string contains a lone surrogate (not encodable as UTF-8)")
 
 
 class IntentPathsAreUnconstrainedAtWriteTime(Adv):
@@ -203,38 +204,59 @@ class ProcessLevel(Adv):
         self.assertTrue(r["clean"], r)
 
 
-@unittest.skipUnless(sys.platform == "win32", "job-id/path-component collisions are Windows (NTFS) behaviour")
 class JobIdsAreDirectoryNames(Base):
-    """A job id becomes `ledger/pending/<id>` and `jobs/<id>/export`. NTFS folds case and strips trailing dots, so ids that
-    differ only by case or a trailing dot are the same directory."""
+    """A job id becomes `ledger/pending/<id>` and `jobs/<id>/export`. FIX1 I1 refuses, at `job new` and on every
+    platform, an id that a filesystem could merge with another name or a device (validate.check_new_job_id). F6 and F7
+    were expectedFailures on Windows at 2dedc94; the refusal is a string rule, so it is tested everywhere (W39-S1)."""
 
-    def _two_jobs(self, a: str, b: str):
+    def _second_job(self, a: str, b: str):
         self.new_job(a)
         c, r = self.run_wf("job", "new", b, "--contract", self.cpath, role="coordinator", session="C1")
         return c, r
 
-    @unittest.expectedFailure
-    def test_job_ids_differing_only_in_case_do_not_share_an_export_directory(self):
-        """FINDING: `job new J` is accepted after `job new j`; both write `jobs/j/export` (same NTFS directory), so each
-        refresh overwrites the other's events.jsonl and `wf verify` then reports 'export events.jsonl is stale relative
-        to the ledger' for BOTH jobs (clean:false) with no hint of the collision. Spec line 221 requires case-insensitive
-        comparison on Windows. Observed: second job accepted, verify not clean."""
-        c, r = self._two_jobs("j", "J")
-        self.assertEqual(c, 1, r)
+    def _refused_before_writing(self, c: int, r: dict, job: str, reason: str) -> None:
+        self.assertEqual((c, r.get("code")), (1, "rejected"), r)
+        self.assertEqual(r["error"], f"rejected(malformed): job id {job!r} {reason}")
+        c, r = self.run_wf("status", job, role="coordinator", session="C1")
+        self.assertEqual((c, r.get("error")), (1, f"job {job} not found"), r)    # no job row was written for the id
 
-    @unittest.expectedFailure
-    def test_job_id_with_a_trailing_dot_is_not_accepted_as_a_second_name_for_the_same_directory(self):
-        """FINDING: id `j.` matches the id regex ([A-Za-z0-9._-]) and is accepted; Windows strips the trailing dot, so
-        `jobs/j./export` is `jobs/j/export` (and `ledger/pending/j.` is `pending/j`): two jobs, one directory.
-        Observed: second job accepted."""
-        c, r = self._two_jobs("j", "j.")
-        self.assertEqual(c, 1, r)
+    def test_job_ids_differing_only_in_case_are_refused(self):
+        """F6, fixed by FIX1 I1: `job new J` after `job new j` is `rejected(malformed)`. At 2dedc94 it was accepted and,
+        on NTFS, both jobs wrote `jobs/j/export` (see JobIdsOnNtfs)."""
+        c, r = self._second_job("j", "J")
+        self._refused_before_writing(c, r, "J", "equals existing job 'j' case-insensitively")
+
+    def test_job_id_with_a_trailing_dot_is_refused(self):
+        """F7, fixed by FIX1 I1: `job new j.` is `rejected(malformed)` (a trailing dot is refused on every platform; NTFS
+        strips it, so `jobs/j./` would be `jobs/j/`)."""
+        c, r = self._second_job("j", "j.")
+        self._refused_before_writing(c, r, "j.", "must not end in a dot or a space")
 
     def test_device_name_and_double_dot_ids_are_refused_before_anything_is_written(self):
-        for jid in ("nul", "j.."):
+        """FIX1 I1 (W39-S2: at 2dedc94 these were `refused ... marker-unwritable` on Windows, after the attempt began):
+        a device name, with or without an extension, and `..` are `rejected(malformed)` before the ledger exists."""
+        for jid, reason in (("nul", "is a Windows device name"), ("nul.txt", "is a Windows device name"),
+                            ("j..", "must not end in a dot or a space"), ("a..b", "must not contain '..'")):
             with self.subTest(job=jid):
                 c, r = self.run_wf("job", "new", jid, "--contract", self.cpath, role="coordinator", session="C1")
-                self.assertEqual((c, r["code"]), (1, "refused"), r)
-                self.assertIn("marker-unwritable", r["error"])
-        c, r = self.run_wf("status", "nul", role="coordinator", session="C1")
-        self.assertEqual((c, r["code"]), (1, "refused"), r)          # no job row was written for either id
+                self.assertEqual((c, r.get("code")), (1, "rejected"), r)
+                self.assertEqual(r["error"], f"rejected(malformed): job id {jid!r} {reason}")
+        self.assertFalse(os.path.exists(self.db), "nothing was written, not even the ledger")
+
+
+@unittest.skipUnless(sys.platform == "win32", "NTFS folds case and strips trailing dots (Windows only)")
+class JobIdsOnNtfs(Base):
+    """The NTFS half of F6/F7 (W39-S1): `jobs/J` and `jobs/j.` name the directory of job j, which is why I1 refuses
+    those ids; with the refusals, job j's export is not overwritten and verify stays clean."""
+
+    def test_case_and_trailing_dot_variants_name_the_same_directory_and_job_j_stays_clean(self):
+        self.new_job("j")
+        jobs = os.path.join(self.dir, "jobs")
+        for alias in ("J", "j."):
+            with self.subTest(alias=alias):
+                self.assertTrue(os.path.samefile(os.path.join(jobs, "j"), os.path.join(jobs, alias)))
+                c, r = self.run_wf("job", "new", alias, "--contract", self.cpath, role="coordinator", session="C1")
+                self.assertEqual((c, r.get("code")), (1, "rejected"), r)
+        c, r = self.run_wf("verify", role="coordinator", session="C1")
+        self.assertTrue(r["clean"], r)
+        self.assertEqual(sorted(r["jobs"]), ["j"])

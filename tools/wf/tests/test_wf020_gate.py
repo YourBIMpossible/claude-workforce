@@ -1,15 +1,18 @@
 """WF-020 (Lazy): gate (gatecore / gatelog / gate print-install) paths that no earlier test exercised
-(from-lazy WF-020 GAP-LIST.md section 5). Current behaviour at 2dedc94 is asserted. Fixture ledgers are built with the
-real CLI via test_gate_decide._Gate; `decide` is called in-process; no hook is registered or run here."""
+(from-lazy WF-020 GAP-LIST.md section 5). Written at 2dedc94; updated for fix1/integration dfd6e85 (WF-020 review F1,
+WF-039 W39-S2: the F12 pin now asserts FIX1 I6). Fixture ledgers are built with the real CLI via
+test_gate_decide._Gate; `decide` is called in-process; no hook is registered or run here (the hook source is only read)."""
 from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import unittest
 
 import test_gate_decide as G
 from test_gate_decide import GATE_GRANT, ROLES, _Gate
+from test_wf import WF_DIR
 
 from wfcore import gatecore, gatelog
 
@@ -60,12 +63,16 @@ class GrantCheckReasonsThroughDecide(_Gate):
 
 
 class ReasonsTuple(unittest.TestCase):
-    def test_reasons_omit_the_three_hook_only_reasons(self):
-        """The hook emits gate-config, gate-integrity and audit-unavailable (gate/wf_gate_hook.py) but
-        gatecore.REASONS, the tuple every decide test checks reasons against, does not list them. Documented gap
-        (FINDINGS: NOT A DEFECT if the hook owns them; PROPOSED to list them for one source of truth)."""
+    def test_reasons_list_the_three_hook_only_reasons(self):
+        """FIX1 I6 (W39-S2: at 2dedc94 this pinned their absence, finding F12): the hook-only reasons gate-config,
+        gate-integrity and audit-unavailable are in gatecore.REASONS, and every reason the hook source raises through
+        `_Deny("<reason>"` is in it, so REASONS is the one vocabulary of gate reasons."""
         for name in ("gate-config", "gate-integrity", "audit-unavailable"):
-            self.assertNotIn(name, gatecore.REASONS)
+            self.assertIn(name, gatecore.REASONS)
+        with open(os.path.join(WF_DIR, "gate", "wf_gate_hook.py"), encoding="utf-8") as fh:
+            raised = set(re.findall(r'_Deny\("([a-z-]+)"', fh.read()))
+        self.assertTrue(raised, "the hook source raises _Deny with a literal reason")
+        self.assertEqual(raised - set(gatecore.REASONS), set())
 
 
 class GatelogRowValidation(_Gate):

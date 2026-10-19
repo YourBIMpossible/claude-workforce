@@ -1,6 +1,7 @@
 """WF-020 (Lazy): transaction / `wf resolve` / `job abandon` failure paths that no earlier test exercised
-(from-lazy WF-020 GAP-LIST.md section 3). Current behaviour at 2dedc94 is asserted; a path whose observed behaviour
-contradicts the code's own stated rule is an expectedFailure with the observation in its docstring (a FINDING).
+(from-lazy WF-020 GAP-LIST.md section 3). Written at 2dedc94; updated for fix1/integration dfd6e85 (WF-020 review F1,
+WF-039 W39-M1/S4): F9 is fixed by FIX1 E5 / AMENDMENT A1.2 and is an ordinary test of that behaviour. F8 is not in FIX1
+and stays an expectedFailure that fails on its own assertion (a FINDING).
 
 Failures are injected by patching the module seams (`markers.delete`, `markers.write_atomic`, `dbm.connect`) or by
 holding a SHARED reader (the pattern used by test_wf.T29). Runs inside the test_wf.py harness."""
@@ -89,7 +90,8 @@ class ResolveOutcomes(Fixture):
         """FINDING (low; needs a tampered or truncated marker): a `conflict-pending` marker whose `conflict` object is
         empty is treated as an ordinary attempt: resolve answers NOT-COMMITTED and deletes it, so no conflict row is
         re-recorded and the claimant-conflict block is lost. markers.guard states that a conflict marker is never
-        cleared without its row present. Observed: (0, NOT-COMMITTED), marker deleted, no row."""
+        cleared without its row present. Observed: (0, NOT-COMMITTED), marker deleted, no row. Still open on
+        fix1/integration dfd6e85 (not in FIX1): fails on its own assertNotEqual."""
         seq, head_self = self.head()
         ref = self.put_marker(seq + 1, "conflict-pending", "f" * 64, head_self, {"conflict": {}})
         c, r = self.resolve(seq + 1)
@@ -134,17 +136,27 @@ class _RollbackFails:
 
 
 class ResolveRollbackFailure(Fixture):
-    @unittest.expectedFailure
     def test_resolve_reports_a_failing_rollback_instead_of_raising(self):
-        """FINDING (low; needs a failing ROLLBACK): txn.resolve ends with an unguarded `dbm.rollback(conn)` (txn.py:484)
-        while every other ROLLBACK in txn.py is wrapped into WfCommitUncertain or logged. A failing ROLLBACK there lets a
-        raw sqlite3.OperationalError escape `wf resolve` (traceback, no result). Observed: OperationalError raised."""
+        """F9, fixed by FIX1 E5 / AMENDMENT A1.2: when resolve wrote nothing, a failing ROLLBACK does not change the
+        decided outcome; it is reported as `rollback_error` (in the result and in the marker's resolve log). At
+        2dedc94 the unguarded `dbm.rollback(conn)` let sqlite3.OperationalError escape `wf resolve`."""
         seq, head_self = self.head()
-        self.put_marker(seq + 1, "committing", "f" * 64, head_self)
+        ref = self.put_marker(seq + 1, "committing", "f" * 64, head_self)
         real_connect = dbm.connect
-        with mock.patch.object(txn.dbm, "connect", side_effect=lambda *a, **kw: _RollbackFails(real_connect(*a, **kw))):
-            c, r = self.resolve(seq + 1)
-        self.assertIn(c, (0, 1), r)
+        try:
+            with mock.patch.object(txn.dbm, "connect",
+                                   side_effect=lambda *a, **kw: _RollbackFails(real_connect(*a, **kw))):
+                c, r = self.resolve(seq + 1)
+        except sqlite3.Error as exc:
+            self.fail(f"{type(exc).__name__} escaped wf resolve instead of rollback_error: {exc}")
+        self.assertEqual((c, r["ok"], r["outcome"]), (0, True, "NOT-COMMITTED"), r)   # the decided outcome is kept
+        self.assertEqual(r["rollback_error"], "OperationalError: injected rollback failure")
+        self.assertFalse(__import__("os").path.exists(ref.path), "the decided NOT-COMMITTED marker is cleared")
+        with open(ref.log, encoding="utf-8") as fh:
+            last = json.loads(fh.read().splitlines()[-1])
+        self.assertEqual((last["outcome"], last["rollback_error"]),
+                         ("NOT-COMMITTED", "OperationalError: injected rollback failure"))
+        self.assertEqual(self.head()[0], seq, "nothing was written")
 
 
 class GiveUpFailures(Fixture):
@@ -209,10 +221,18 @@ class JobAbandonCommit(Fixture):
         self.assertEqual((c, r["code"]), (1, "commit-timeout"), r)
 
     def test_abandon_then_abandon_again(self):
+        """W39-S4: the second abandon is pinned. It is refused and changes nothing (the UPDATE matches only a row with
+        `abandoned_ts IS NULL`), so the first reason is kept. Its text is `job j not found` although the job exists
+        (abandoned): an already-abandoned job is reported as missing (observation, wording only)."""
         c, r = self.run_wf("job", "abandon", "j", "--reason", "r", role="coordinator", session="C1")
         self.assertEqual(c, 0, r)
         c2, r2 = self.run_wf("job", "abandon", "j", "--reason", "again", role="coordinator", session="C1")
-        self.assertIn(c2, (0, 1))
+        self.assertEqual((c2, r2["code"], r2["error"]), (1, "refused", "job j not found"), r2)
+        conn = dbm.connect(self.db, create=False)
+        try:
+            self.assertEqual(dbm.contract(conn, "j")["abandon_reason"], "r")
+        finally:
+            conn.close()
         c3, r3 = self.intent(note="after-abandon")
         self.assertEqual((c3, r3["code"]), (1, "refused"), r3)
         self.assertIn("is abandoned", r3["error"])
