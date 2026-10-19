@@ -214,8 +214,8 @@ class ReviewR1TwoSeparatorPrefixes(Base):
                 "tool_input": {"file_path": raw, "content": "x"}, "cwd": self.dir, "transcript_path": "t"}
 
     def test_every_two_separator_form_keeps_the_base_outcome(self):
-        tail = os.path.splitdrive(self.dir)[1].strip("\/").replace("\\", "/") + "/jobs/j/work/a.txt"
-        for lead in ("\\\\", "//", "/\\", "\/"):
+        tail = os.path.splitdrive(self.dir)[1].strip("\\/").replace("\\", "/") + "/jobs/j/work/a.txt"
+        for lead in ("\\\\", "//", "/\\", "\\/"):
             with self.subTest(lead=lead):
                 raw = lead + tail
                 self.assertEqual(gatecore.target_paths(self._payload(raw), self.dir), ([], "unresolvable-path"))
@@ -223,7 +223,7 @@ class ReviewR1TwoSeparatorPrefixes(Base):
                                  ([], "unresolvable-path"))
 
 
-@unittest.skipUnless(sys.platform == "win32", "pending\JOB1 and pending\job1 are one directory only on NTFS")
+@unittest.skipUnless(sys.platform == "win32", r"pending\JOB1 and pending\job1 are one directory only on NTFS")
 class ReviewS1ClashBeforeMarkerGuard(Base):
     """WF-027 S1: the case-insensitive clash is refused before markers.guard can act on the other job's markers."""
 
@@ -281,18 +281,18 @@ class ReviewS5PathInScopeFolding(unittest.TestCase):
     """WF-027 S5: validate._path_in_scope folds case only where the platform folds it (same rule as P1)."""
 
     def test_folding_follows_the_platform_rule(self):
-        from wfcore import validate
+        from wfcore import pathpolicy, validate  # FIX2 #30: validate folds by pathpolicy's rule, its one patch point
         scope = ["jobs/j/work/**"]
-        with mock.patch.object(validate, "CASE_FOLDING", True):
+        with mock.patch.object(pathpolicy, "CASE_FOLDING", True):
             self.assertTrue(validate._path_in_scope("JOBS/J/WORK/a.txt", scope))
-        with mock.patch.object(validate, "CASE_FOLDING", False):
+        with mock.patch.object(pathpolicy, "CASE_FOLDING", False):
             self.assertFalse(validate._path_in_scope("JOBS/J/WORK/a.txt", scope))
             self.assertFalse(validate._path_in_scope("jobs/j/work/a.txt", ["Jobs/J/Work/**"]))
             self.assertTrue(validate._path_in_scope("jobs/j/work/a.txt", scope))
 
     def test_default_rule_is_os_path_normcase(self):
-        from wfcore import validate
-        self.assertEqual(validate.CASE_FOLDING, os.path.normcase("A") == "a")
+        from wfcore import pathpolicy
+        self.assertEqual(pathpolicy.CASE_FOLDING, os.path.normcase("A") == "a")
 
 
 class ReviewS3S4Readme(I5Readme):

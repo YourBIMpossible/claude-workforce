@@ -26,6 +26,7 @@ The `test_spec_Txx` methods below already use spec numbering.
   test_T31b_export_refresh_failure_keeps_commit  spec T28(c)"""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -70,18 +71,39 @@ GRANT = {"grant_id": "G1", "actions": ["write"], "resources": ["jobs/j/work/**"]
          "ars": {"a": "owner"}, "delegation": {}, "expiry": "2026-12-31T00:00:00Z", "revocation_rule": "owner"}
 
 
+# FIX2 #40: a test's scratch folder is named by a short id of its full test id, not by its method name, so the
+# deepest scratch path no longer grows with the test name (MAX_PATH on Windows hosts without long paths). Each run
+# writes the folder -> test id map to SCRATCH_MAP, one line per test.
+SCRATCH_MAP = os.path.join(TMP, "scratch-map.tsv")
+_SCRATCH_IDS: dict[str, str] = {}  # short folder name -> full test id, for this process's run
+LOG_NAME_MAX = 64  # FIX2 #40: longer log names are shortened, so a test-name-derived log path cannot reach MAX_PATH
+
+
+def scratch_name(test_id: str) -> str:
+    """The short scratch-folder name for a full test id (`TestCase.id()`): `t-` and 8 hex of its sha256."""
+    return "t-" + hashlib.sha256(test_id.encode("utf-8")).hexdigest()[:8]
+
+
 def log(name: str, data) -> None:
     os.makedirs(LOGDIR, exist_ok=True)
+    if len(name) > LOG_NAME_MAX:
+        name = name[:LOG_NAME_MAX - 9] + "~" + hashlib.sha256(name.encode("utf-8")).hexdigest()[:8]
     with open(os.path.join(LOGDIR, f"{name}.json"), "w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=1, default=str)
 
 
 class Base(unittest.TestCase):
     def setUp(self) -> None:
-        self.dir = os.path.join(TMP, self._testMethodName)
+        self.scratch = scratch_name(self.id())
+        holder = _SCRATCH_IDS.setdefault(self.scratch, self.id())
+        if holder != self.id():  # FIX2 #40: two tests in one run never share a folder
+            raise SystemExit(f"refused: scratch name {self.scratch} collides: {holder} and {self.id()}")
+        self.dir = os.path.join(TMP, self.scratch)
         if os.path.exists(self.dir):  # FB1.4-A4 §5: refuse-existing, never rmtree
             raise SystemExit(f"refused: {self.dir} exists (use a fresh WF_TEST_TMP)")
         os.makedirs(self.dir)
+        with open(SCRATCH_MAP, "a", encoding="utf-8") as fh:
+            fh.write(f"{self.scratch}\t{self.id()}\n")
         self.db = os.path.join(self.dir, "ledger", "l.db")
         self.cpath = os.path.join(self.dir, "contract.json")
         self.gpath = os.path.join(self.dir, "grant.json")
@@ -96,7 +118,7 @@ class Base(unittest.TestCase):
         if "msg_id" in kw:
             base += ["--msg-id", kw["msg_id"]]
         code, res = wf.run(base + list(argv))
-        log(f"{self._testMethodName}-{len(os.listdir(LOGDIR)) if os.path.isdir(LOGDIR) else 0}", {"argv": argv, "code": code, "res": res})
+        log(f"{self.scratch}-{len(os.listdir(LOGDIR)) if os.path.isdir(LOGDIR) else 0}", {"argv": argv, "code": code, "res": res})
         return code, res
 
     def new_job(self, job="j"):
@@ -564,7 +586,7 @@ class TConflict(Base):
             res = json.loads(p.stdout) if p.stdout.strip() else {}
         except ValueError:
             res = {"raw": p.stdout}
-        log(f"{self._testMethodName}-sub-{len(os.listdir(LOGDIR))}", {"argv": argv, "code": p.returncode, "res": res, "stderr": p.stderr[-2000:]})
+        log(f"{self.scratch}-sub-{len(os.listdir(LOGDIR))}", {"argv": argv, "code": p.returncode, "res": res, "stderr": p.stderr[-2000:]})
         return p.returncode, res
 
     def conflict(self, session="B2", generation="1", **kw):
@@ -719,7 +741,7 @@ class TConflict(Base):
         self.assertEqual(commands.status(self.db, "j")["events"], n)
         c, rr = self.sub_wf("append", "j", "--type", "intent", "--content", '{"path":"p","sha_before":"","note":"n"}')
         self.assertEqual((c, rr["outcome"]), (0, "COMMITTED"), rr)  # BOUNDARY: holder continues; recorded, not enforced
-        log(f"{self._testMethodName}-BOUNDARY", {"label": "BOUNDARY", "t01": "not satisfied for this attempt (A4 §13a)", "res": r})
+        log(f"{self.scratch}-BOUNDARY", {"label": "BOUNDARY", "t01": "not satisfied for this attempt (A4 §13a)", "res": r})
 
 
 if __name__ == "__main__":

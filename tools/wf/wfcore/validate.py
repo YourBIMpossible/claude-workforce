@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import fnmatch
 import json
-import os
 import re
 import sqlite3
 import time
 from typing import Any
 
+from . import pathpolicy
 from .canon import canonical, event_self_hash, sha256_text
 from .db import WfRejected, rows
 
@@ -62,8 +62,9 @@ CONTRACT_REQUIRED: dict[str, type | tuple[type, ...]] = {
     "environment": str,
 }
 
-_HEX64 = re.compile(r"^[0-9a-f]{64}$")
-_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+# FIX2 #20: `\Z`, not `$`: `$` also matches before a trailing newline, so "j\n" passed as a job id.
+_HEX64 = re.compile(r"^[0-9a-f]{64}\Z")
+_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z")
 
 
 def now_ts() -> str:
@@ -76,7 +77,7 @@ def check_job_id(job: str) -> None:
         raise WfRejected("malformed", f"job id {job!r} must match {_ID.pattern}")
 
 
-_DEVICE = re.compile(r"^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$", re.IGNORECASE)
+_DEVICE = re.compile(r"^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?\Z", re.IGNORECASE)
 
 
 def check_new_job_id(job: str, existing: list[str]) -> None:
@@ -141,13 +142,10 @@ def _req(content: dict, key: str, typ: type | tuple[type, ...], nonempty: bool =
     return v
 
 
-#: Review WF-027 S5: fold case only where the platform folds it (Windows), as FIX1 P1 does in pathpolicy
-#: (`CASE_FOLDING`/`fold` there, lane FXM). The same rule, kept here so lane FXL needs no FXM file; tests patch it.
-CASE_FOLDING = os.path.normcase("A") == "a"
-
-
+#: Review WF-027 S5 and FIX2 #30: fold case only where the platform folds it (Windows), by pathpolicy's one rule
+#: (`pathpolicy.CASE_FOLDING`), which is also the one patch point for tests.
 def _fold(s: str) -> str:
-    return s.lower() if CASE_FOLDING else s
+    return pathpolicy.fold(s)
 
 
 def _path_in_scope(path: str, scope: list[str]) -> bool:
