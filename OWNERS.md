@@ -7,7 +7,10 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 
 | Path | Owner |
 |---|---|
-| tools/wf/wfcore/validate.py | A |
+| tools/wf/wfcore/validate.py | F2BP |
+| tools/wf/wfcore/commands.py | F2BP |
+| tools/wf/wf.py | F2BP |
+| tools/wf/tests/test_fix2_validation.py | F2BP |
 | tools/wf/tests/test_t24_accept_declarations.py | A |
 | tools/wf/wfcore/pathpolicy.py | B |
 | tools/wf/tests/test_t35_path_policy.py | B |
@@ -56,7 +59,7 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_t30_race_secondwriter_identity.py | S5R |
 | tools/wf/tests/test_t37_t36_matrix.py | S5M |
 | tools/wf/tests/test_fix1_errors.py | FXL |
-| tools/wf/tests/test_fix1_ids.py | FXL |
+| tools/wf/tests/test_fix1_ids.py | F2BP |
 | tools/wf/tests/test_fix1_paths.py | FXM |
 | tools/wf/tests/test_wf020_*.py | W20 |
 | fixtures/results/wf020-lazy/** | W20 |
@@ -198,3 +201,13 @@ Branch `fix1/integration` combines `fix1/lazy-ids` (FXL, includes `fix1/lazy-err
 Integrator edits under G1: the only paths outside lane D are the two lane-B test files, where AMENDMENT FIX1-A2.3 pins three tests (`test_pathpolicy_hardening.py` x2, `test_t35_path_policy.py` x1) to the Windows case rule with `mock.patch.object(pathpolicy, "CASE_FOLDING", True)`. In lane D: `tools/wf/docs/RESTORE-RUNBOOK.md` gains `--db` (FIX1 I3) and MANIFEST.sha256 is regenerated over the integrated tree.
 Record correction (WF-031 review): the registration note above planned the relabel restore "in the same commit that updates MANIFEST.sha256"; in fact the relabels were restored in 7f3337b and MANIFEST.sha256 was regenerated in 38a1f43, and again after the review merges below.
 Review merges (independent review WF-027): `fix1/lazy-ids` 5c47587 (review R: R1, S1-S6) and `fix1/mybuddy-paths` 3a6dd00 (review R2/R3) are merged on top of 38a1f43, followed by this text fix and a regenerated MANIFEST.sha256.
+
+## Registration 2026-10-19 (package FIX2 batch B, AMENDMENT FIX2-A2; decided by the Foreman under the owner's delegation; coordinator Zen "Workforce Dev" while White is out)
+
+Package text: WorkForce collab `contracts/b2fix2/` (PACKAGE-FIX2.md with AMENDMENT-FIX2-A2.md, frozen with SHA256SUMS). Base: main `4321f16` plus this registration commit.
+
+| Lane | Worker | Branch | Scope |
+|---|---|---|---|
+| F2BP | Plexy | `fix2/plexy-b-validation` | the F2BP rows above (FIX2 #2, #19, #20, #30, #33); relabelled from A (validate.py), FXL (test_fix1_ids.py, for #30's `CASE_FOLDING` patches at :286-295) and D (commands.py, wf.py) for this batch only |
+
+Rows go back to their previous owners when batch B is integrated.
