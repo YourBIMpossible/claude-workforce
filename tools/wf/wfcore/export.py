@@ -24,9 +24,10 @@ PRESERVED = "export temp file preserved: "
 #: and `wf close` refuses (test_wf T08/C4). Reported to White for the paired integration decision.
 PRODUCT_FILES: frozenset[str] = frozenset({"checkpoint.json"})
 #: Staging names: the legacy fixed `<file>.tmp` and the per-writer `<file>.<pid>-<hex8>.tmp`, for the export
-#: files and the product-written checkpoint (also staged through `_write_atomic`).
+#: files and the product-written checkpoint (also staged through `_write_atomic`). FIX2 #61: `\Z`, not `$`, which
+#: also matches before a trailing newline.
 _STAGING = re.compile(r"^(?P<base>" + "|".join(re.escape(f) for f in (*FILES, *sorted(PRODUCT_FILES)))
-                      + r")(?:\.(?P<pid>\d+)-[0-9a-f]{8})?\.tmp$")
+                      + r")(?:\.(?P<pid>\d+)-[0-9a-f]{8})?\.tmp\Z")
 #: Staging paths this process currently has open (active, never an orphan). Module-level so every refresh in
 #: this process agrees; a path is removed as soon as its write completes or fails.
 _ACTIVE: set[str] = set()
@@ -132,17 +133,23 @@ def orphans(out: str) -> list[str]:
 
 def refresh(db_path: str, job: str) -> dict[str, Any]:
     """Read-only against the ledger; rewrites the export files and their manifest. Failures are
-    reported, never raised past the caller's committed write."""
+    reported, never raised past the caller's committed write.
+
+    FIX2 #45, option (b): the refresh runs under the write lock. A connection of its own takes BEGIN IMMEDIATE (the
+    reservation every writer takes, bounded by T_ACQ_BOUND) before its snapshot and holds it until manifest.txt is
+    written, then rolls back; nothing is written to the ledger. Refreshes therefore serialize with each other and with
+    commits: two refreshes never interleave (no torn export), and the last one to run reads the newest commit (no stale
+    export left behind). Readers and the gate take SHARED and are not blocked. A caller must not hold the write lock
+    itself (txn closes its write connection first); a refresh that cannot get the lock reports it like any failed
+    refresh."""
     out = paths.export_dir(db_path, job)
+    lock: sqlite3.Connection | None = None
     try:
         os.makedirs(out, exist_ok=True)
-        conn = dbm.connect(db_path, create=False, bound=dbm.T_HELD_BOUND)
-        try:
-            with dbm.read_snapshot(conn, bound=dbm.T_HELD_BOUND):
-                rows = dbm.rows(conn, job)
-                c = dbm.contract(conn, job)
-        finally:
-            conn.close()
+        lock = dbm.connect(db_path, create=False, bound=dbm.T_HELD_BOUND)
+        dbm.begin_immediate(lock, dbm.OpLog())
+        rows = dbm.rows(lock, job)  # the snapshot, read inside the reservation
+        c = dbm.contract(lock, job)
         _write_atomic(os.path.join(out, "events.jsonl"), "".join(canonical(r) + "\n" for r in rows))
         head = rows[-1] if rows else None
         _write_atomic(os.path.join(out, "head.json"), canonical(
@@ -157,6 +164,16 @@ def refresh(db_path: str, job: str) -> dict[str, Any]:
                                 "manifest_sha256": sha256_file(os.path.join(out, "manifest.txt"))}
     except (OSError, sqlite3.Error, dbm.WfError, ValueError) as exc:
         note = {"dir": out, "error": f"{type(exc).__name__}: {exc}"}
+    finally:
+        if lock is not None:  # release the reservation: roll back (nothing was written), then close
+            try:
+                dbm.rollback(lock)
+            except sqlite3.Error:
+                pass
+            try:
+                lock.close()
+            except sqlite3.Error:
+                pass
     preserved = orphans(out)
     if preserved:
         note["preserved"] = preserved
@@ -206,23 +223,43 @@ def check(db_path: str, job: str) -> list[str]:
         entries = manifest.read(mpath)
     except manifest.ManifestMalformed as exc:
         return [str(exc), *preserved, *strays(out, set(FILES))]
+    except OSError as exc:  # FIX2 #51: held by another process, for example
+        return [_unreadable("manifest.txt", exc), *preserved, *strays(out, set(FILES))]
     preserved += strays(out, {e.relpath for e in entries})
+    unreadable: set[str] = set()
     for e in entries:
         full = os.path.join(out, e.relpath)
         if not os.path.isfile(full):
             problems.append(f"export file missing: {e.relpath}")
             continue
-        if sha256_file(full) != e.sha256 or os.path.getsize(full) != e.size:
+        try:
+            differs = sha256_file(full) != e.sha256 or os.path.getsize(full) != e.size
+        except OSError as exc:  # FIX2 #51
+            problems.append(_unreadable(e.relpath, exc))
+            unreadable.add(e.relpath)
+            continue
+        if differs:
             problems.append(f"export file differs from manifest: {e.relpath}")
     ev = os.path.join(out, "events.jsonl")
-    if os.path.isfile(ev):
+    if os.path.isfile(ev) and "events.jsonl" not in unreadable:
         conn = dbm.connect(db_path, create=False)
         try:
             with dbm.read_snapshot(conn):
                 expected = "".join(canonical(r) + "\n" for r in dbm.rows(conn, job))
         finally:
             conn.close()
-        with open(ev, "r", encoding="utf-8") as fh:
-            if fh.read() != expected:
+        try:
+            with open(ev, "r", encoding="utf-8") as fh:
+                text = fh.read()
+        except OSError as exc:  # FIX2 #51
+            problems.append(_unreadable("events.jsonl", exc))
+        else:
+            if text != expected:
                 problems.append("export events.jsonl is stale relative to the ledger")
     return problems + preserved
+
+
+def _unreadable(relpath: str, exc: OSError) -> str:
+    """FIX2 #51 (N-b): an export file that cannot be read is a recoverable exception naming the file and the OS
+    error, never an exit 4 (`wf verify`; `wf recover begin` lists it through `reconcile.recoverable_exceptions`)."""
+    return f"export file unreadable: {relpath} ({type(exc).__name__}: {exc})"
