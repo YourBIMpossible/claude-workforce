@@ -14,11 +14,12 @@ A requirement whose mechanism the product does not have gets a `test_LIMIT_<subj
 PR #15 correction 1/3; lane rule issue #13): it asserts the ACTUAL present behaviour, and its docstring carries the
 spec sentence, the missing mechanism and "missing-implementation; T35 stays PARTIAL on this element". No decorator
 of any kind; no expected PASS is invented; such a test fails the day the behaviour changes, so the limit cannot
-drift silently. A LIMIT test closes no requirement. One LIMIT test remains (R3a, export folder); the R3b ledger
-LIMIT was removed when the verify listing landed (A3), and the R1/R2 LIMITs were removed when the changed-set
-baseline and the P4 coordination set landed (A1/A2, test_t35_changeset.py), since the limits they asserted no
-longer exist. The remaining requirement assertion (R3a) stays failing, separately runnable, in
-tools/wf/tests/requirements_t35_unmet.py (owner correction 2026-10-15, issue #13). P3 stays
+drift silently. A LIMIT test closes no requirement. No LIMIT test remains: the R3a export-folder LIMIT went when
+export.check began listing the export directory (A3, test_t35_stray_files.py), the R3b ledger LIMIT when the verify
+listing landed (A3), and the R1/R2 LIMITs when the changed-set baseline and the P4 coordination set landed (A1/A2,
+test_t35_changeset.py), since the limits they asserted no longer exist. The register
+tools/wf/tests/requirements_t35_unmet.py (owner correction 2026-10-15, issue #13) is now empty (WF-019 F11
+docstring correction). P3 stays
 fail-closed; 8.3 short names and NTFS behaviour are not touched here (lane D evidence).
 
 Fixtures: fresh scratch under WF_TEST_TMP (test_wf.Base), CONTRACT from test_wf (write jobs/j/work/**, read tools/wf/**,
