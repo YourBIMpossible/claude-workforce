@@ -1,7 +1,8 @@
 """PACKAGE FIX2 batch C, lane F2CP (WF-101; AMENDMENT FIX2-A3): the `wf backup` destination and source.
 
-  #3       BLOCKED (WF-101 DONE): reusing validate's device-name rule needs `.validate` in backup.py, which
-           INTERFACE-CONTRACT-S5 section 5 and test_t37_backup.test_imports_are_restricted forbid; no #3 test here.
+  #3       a destination named like a device (CON, nul.txt) or ending in a dot or a space is refused, on every
+           platform, by commands.backup_cmd before any filesystem access (AMENDMENT FIX2-A5: backup.py may not
+           import validate).
   #22+#31  the real ledger directory, dirname(realpath(db)), is protected too (W30-F1: a symlinked --db file).
   #23      the destination is compared and opened as realpath(dest), with no lexical abspath first (W30-F2), and the
            verification never leaks a raw sqlite3 error (no exit 4).
@@ -71,6 +72,18 @@ class _Backup(Base):
     def unc(path: str, host: str = "localhost", prefix: str = "\\\\") -> str:
         drive, rest = os.path.splitdrive(os.path.abspath(path))
         return f"{prefix}{host}\\{drive[0]}$" + rest
+
+
+class C3Names(_Backup):
+    def test_device_name_destination_is_refused(self):
+        for name in ("CON", "nul.txt", "Aux.db", "LPT1"):
+            with self.subTest(name=name):
+                self.assert_refused(os.path.join(self.out, name), "dest-device-name")
+
+    def test_trailing_dot_or_space_is_refused(self):
+        for name in ("name.", "name ", "b.db."):
+            with self.subTest(name=name):
+                self.assert_refused(os.path.join(self.out, name), "dest-trailing-dot-or-space")
 
 
 class C22RealLedgerDir(_Backup):
