@@ -67,23 +67,28 @@ class ContentEncodings(Adv):
         c, r = self.run_wf("verify", "j", role="coordinator", session="C1")
         self.assertTrue(r["clean"], r)
 
-    def test_duplicate_keys_last_one_wins_silently(self):
-        """json.loads keeps the last duplicate: `path` b is recorded, the first `path` a is dropped without notice.
-        NOT A DEFECT for a record-and-verify ledger that stores what it parsed, recorded so a reader knows."""
+    def test_duplicate_keys_are_refused(self):
+        """Was `test_duplicate_keys_last_one_wins_silently`, which pinned the pre-FIX2 behaviour (json.loads kept the
+        last duplicate and dropped the first without notice). FIX2 #2 (AMENDMENT FIX2-A2; flipped by the integrator
+        under AMENDMENT FIX2-A6): a duplicate key at any depth is refused `rejected(malformed)` and nothing is written."""
+        before = self.head_seq()
         c, r = self.append_intent('{"path":"jobs/j/work/a","path":"jobs/j/work/b","sha_before":"","note":"n"}')
-        self.assertEqual((c, r["outcome"]), (0, "COMMITTED"), r)
-        c, ev = self.run_wf("export", "j", role="coordinator", session="C1")
-        self.assertEqual(c, 0, ev)
-        with open(os.path.join(paths.export_dir(self.db, "j"), "events.jsonl"), encoding="utf-8") as fh:
-            last = json.loads(fh.read().splitlines()[-1])
-        self.assertEqual(json.loads(last["content"])["path"], "jobs/j/work/b")
+        self.assertEqual(c, 1, r)
+        self.assertIn("duplicate key", r.get("error", ""), r)
+        self.assertEqual(self.head_seq(), before)
 
-    def test_large_event_body_from_a_file_is_committed(self):
+    def test_large_event_body_from_a_file_is_refused(self):
+        """Was `test_large_event_body_from_a_file_is_committed`, which pinned the pre-FIX2 behaviour (a 2 MB body was
+        committed). FIX2 #2 (AMENDMENT FIX2-A2; flipped by the integrator under AMENDMENT FIX2-A6): JSON input over
+        1,048,576 bytes is refused `rejected(malformed)` before parsing, nothing is written, and the ledger verifies."""
         big = os.path.join(self.dir, "big.json")
         with open(big, "w", encoding="utf-8") as fh:
             json.dump(dict(BASE, note="x" * 2_000_000), fh)
+        before = self.head_seq()
         c, r = self.append_intent(big)
-        self.assertEqual((c, r["outcome"]), (0, "COMMITTED"), r)
+        self.assertEqual(c, 1, r)
+        self.assertIn("limited to 1048576 bytes", r.get("error", ""), r)
+        self.assertEqual(self.head_seq(), before)
         c, r = self.run_wf("verify", "j", role="coordinator", session="C1")
         self.assertTrue(r["clean"], r)
 
