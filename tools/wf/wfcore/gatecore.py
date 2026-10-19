@@ -46,6 +46,10 @@ Reading choices recorded for review (no signature change):
   spellings to the one file, plus the normcased names below it. So an alias of a gate file not yet written is caught
   through an aliased directory, and a hard link to a gate file is caught too. An identity that cannot be resolved (an
   OS error other than not-found, on the target or on a gate file) is treated as the gate file: `protected-path`.
+* Rule 1 does no network I/O (WF-106 review F1). A gate file is a local file, so a UNC spelling whose host is not this
+  machine, and a device path other than a drive form, is never stat'ed or realpath'ed: rule 1 passes it and rule 0
+  decides it as before (`unresolvable-path` across anchors). An admin share of this machine (`X$` on localhost,
+  127.0.0.1, ::1 or the host name, any case; no DNS) is mapped lexically to its drive and then resolved locally.
 * `job-closed` (AMENDMENT S4A-A6) is checked once recovery-open, cancelled and authority-<state> have been checked for
   every touched job, so those states win on any touched job, not only on an earlier-sorted one. It applies to every
   session that touches the closed job: the bound session (whatever its target, as authority-<state> does), an unbound
@@ -64,6 +68,7 @@ import json
 import os
 import pathlib
 import re
+import socket
 import sqlite3
 import stat
 from typing import Any
@@ -194,18 +199,65 @@ def _identity(path: str) -> tuple:
         return ("id", st.st_dev, st.st_ino, tuple(reversed(below)))
 
 
+_LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+_ADMIN_SHARE = re.compile(r"[A-Za-z]\$")
+_DRIVE_ONLY = re.compile(r"[A-Za-z]:")
+
+
+def _local_hosts() -> frozenset[str]:
+    """Names of this machine for UNC spellings, case-folded: the loopback names and socket.gethostname() (no DNS)."""
+    try:
+        return _LOCAL_HOSTS | {socket.gethostname().casefold()}
+    except OSError:
+        return _LOCAL_HOSTS
+
+
+def _local_form(path: str) -> str | None:
+    r"""WF-106 review F1: the spelling of `path` that rule 1 may resolve on this machine, decided without I/O.
+
+    On Windows, a UNC spelling (\\host\share\..., \\?\UNC\host\share\..., \\.\UNC\host\share\..., either separator)
+    whose host is this machine and whose share is a drive's admin share `X$` maps to `X:\...`. Any other UNC spelling,
+    and any device path other than \\?\X:\... or \\.\X:\..., is None: it is never resolved here. Every other path, and
+    every path on POSIX, is returned unchanged."""
+    if os.name != "nt":
+        return path
+    s = path.replace("/", "\\")
+    if not s.startswith("\\\\"):
+        return path
+    parts = s[2:].split("\\")
+    if parts[0] in ("?", "."):
+        if len(parts) > 1 and _DRIVE_ONLY.fullmatch(parts[1]):
+            return path
+        if len(parts) < 2 or parts[1].upper() != "UNC":
+            return None
+        parts = parts[2:]
+    host, share = (parts + ["", ""])[:2]
+    if _ADMIN_SHARE.fullmatch(share) and host.casefold() in _local_hosts():
+        return share[0].upper() + ":\\" + "\\".join(parts[2:])
+    return None
+
+
 def _is_gate_file(target: str, gate_files: list[str] | None) -> bool:
     """Rule 1 (FIX2 #4): the absolute `target` names a configured gate file by spelling, `realpath` or identity. An
-    identity that cannot be resolved is treated as the gate file (fail closed)."""
+    identity that cannot be resolved is treated as the gate file (fail closed). A target with no local form (a remote
+    UNC or device spelling, WF-106 review F1) is compared by spelling only, with no I/O."""
     gates = [g for g in gate_files or [] if isinstance(g, str)]
     if not gates:
         return False
     spelled = os.path.normcase(os.path.abspath(target))
     if any(os.path.normcase(os.path.abspath(g)) == spelled for g in gates):
         return True
+    local = _local_form(target)
+    if local is None:
+        return False
     try:
-        real, ident = os.path.normcase(os.path.realpath(target)), _identity(target)
-        return any(os.path.normcase(os.path.realpath(g)) == real or _identity(g) == ident for g in gates)
+        real, ident = os.path.normcase(os.path.realpath(local)), _identity(local)
+        for g in gates:
+            g_local = _local_form(g)
+            if g_local is not None and (os.path.normcase(os.path.realpath(g_local)) == real
+                                        or _identity(g_local) == ident):
+                return True
+        return False
     except (OSError, ValueError):
         return True
 

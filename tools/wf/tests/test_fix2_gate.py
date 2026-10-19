@@ -11,6 +11,9 @@
 * #56 (G-3, S4A-A6): a closed job (its ledger holds a `close` event) is `deny` `job-closed` on the preventable channel
   for every session that touches it; the shell channel is unchanged; `recovery-open`, `cancelled` and
   `authority-<state>` keep precedence, on every touched job, before rules 5-8.
+* WF-106 review F1 (coordinator, MUST-FIX): rule 1 never stats or realpaths a UNC target whose host is not this
+  machine (nor a device path other than a drive form); rule 0 decides it as before FIX2 (`unresolvable-path`). An
+  admin share of this machine is mapped lexically to its drive, so no SMB call is made for it either.
 
 Fixtures only: ledgers are built with the real `wf` CLI in a fresh WF_TEST_TMP scratch folder; `decide` is called
 in-process; no hook is registered or installed and nothing is written outside the scratch folder.
@@ -19,9 +22,12 @@ from __future__ import annotations
 
 import ctypes
 import os
+import re
 import shlex
+import socket
 import sys
 import unittest
+import uuid
 from typing import Any
 from unittest import mock
 
@@ -172,6 +178,70 @@ class F4GateFileIdentity(_Gate):
                     r = gatecore.decide(self.p("jobs/j/work/a.txt"), root=self.dir, db_path=self.db, now=NOW,
                                         gate_files=gate_files)
                     self.assertEqual((r["decision"], r["reason"]), ("allow", "allowed"))
+
+
+# ===================================================================================================== #4, review F1
+
+_UNC = re.compile(r"^[\\/]{2}(?![?.][\\/][A-Za-z]:)")   # a UNC or device spelling other than \\?\X: / \\.\X:
+
+
+class F1NoNetworkIO(_Gate):
+    """WF-106 review F1: no `os.stat`, `os.lstat` or `os.path.realpath` call on a remote target; a local-machine admin
+    share is resolved through its drive, never through SMB."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        if not WINDOWS:
+            self.skipTest("UNC and device-namespace paths exist on Windows only")
+        self.explicit()
+        os.makedirs(os.path.dirname(self.hook))
+        with open(self.hook, "w", encoding="utf-8") as fh:
+            fh.write("# fixture gate hook\n")
+
+    def watched(self, payload: dict) -> tuple[dict, list[str]]:
+        """decide() with os.stat, os.lstat and os.path.realpath recorded: (result, every path they were given)."""
+        seen: list[str] = []
+
+        def spy(real: Any) -> Any:
+            def call(path: Any, *a: Any, **k: Any) -> Any:
+                seen.append(str(path))
+                return real(path, *a, **k)
+            return call
+        with mock.patch.object(os, "stat", spy(os.stat)), mock.patch.object(os, "lstat", spy(os.lstat)), \
+                mock.patch.object(os.path, "realpath", spy(os.path.realpath)):
+            r = self.d(payload)
+        return r, seen
+
+    def check(self, path: str, reason: str, *, banned: str) -> None:
+        for session in ("B1", "U9"):
+            with self.subTest(path=path, session=session):
+                r, seen = self.watched(self.p(absolute=path, session=session))
+                self.assertEqual([s for s in seen if re.search(banned, s, re.IGNORECASE)], [])
+                self.assertEqual((r["decision"], r["reason"]), ("deny", reason), r)
+
+    def test_remote_unc_target_is_never_resolved(self):
+        host = f"wf-no-such-host-{uuid.uuid4().hex[:8]}"
+        for path in (f"\\\\{host}\\share\\x.txt", f"//{host}/share/x.txt", f"\\\\?\\UNC\\{host}\\share\\x.txt",
+                     f"\\\\.\\UNC\\{host}\\share\\x.txt", f"\\\\{host}\\C$\\x.txt",
+                     f"\\\\?\\GLOBALROOT\\Device\\Mup\\{host}\\share\\x.txt"):
+            self.check(path, "unresolvable-path", banned=re.escape(host))     # the pre-FIX2 decision, no I/O
+
+    def test_other_local_shares_and_device_paths_are_not_resolved(self):
+        for path in ("\\\\localhost\\wf-share\\x.txt", "\\\\.\\pipe\\wf-no-such-pipe",
+                     "\\\\?\\Volume{00000000-0000-0000-0000-000000000000}\\x.txt"):
+            self.check(path, "unresolvable-path", banned=re.escape(path[:12]))
+
+    def test_local_machine_admin_share_is_mapped_without_smb(self):
+        drive, rest = self.hook[0], self.hook[2:]
+        if self.hook[1:2] != ":":
+            self.skipTest("the fixture root is not on a drive letter")
+        names = ["localhost", "LocalHost", "127.0.0.1", "::1", socket.gethostname(), socket.gethostname().upper()]
+        forms = [f"\\\\{n}\\{drive}$" + rest for n in names]
+        forms += [f"\\\\?\\UNC\\localhost\\{drive.lower()}$" + rest, f"\\\\.\\UNC\\127.0.0.1\\{drive}$" + rest,
+                  f"//localhost/{drive}$" + rest.replace("\\", "/"),
+                  f"\\\\localhost\\{drive}$" + self.cfg[2:]]                    # a gate file not written yet
+        for path in forms:
+            self.check(path, "protected-path", banned=_UNC.pattern)
 
 
 # ===================================================================================================== #5
