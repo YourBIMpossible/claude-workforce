@@ -1,0 +1,89 @@
+{
+ "campaign": "concurrency",
+ "runs": [
+  {
+   "rep": 1,
+   "root": "/home/zetard/workspace/claude-workforce/.claude/worktrees/wf021b/fixtures/tmp/wf021-conc1-20261019T052717Z-48b18c",
+   "writers": 8,
+   "seconds": 300.0,
+   "wall_s": 300.5,
+   "attempts": 6946,
+   "committed": 6946,
+   "rejections": 0,
+   "rejection_pct": 0.0,
+   "rejections_by_code": {},
+   "lost": 0,
+   "duplicated": 0,
+   "unreported_rows": 0,
+   "unreported_ids": [],
+   "rows_added": 6946,
+   "seq_consecutive": true,
+   "committed_seq_matches_row": true,
+   "verify": {
+    "exit": 0,
+    "clean": true,
+    "chain_problems": [],
+    "ledger_problems": {
+     "integrity": [],
+     "schema": []
+    },
+    "pending_markers": [],
+    "export": []
+   },
+   "dt_median_s": 0.2348,
+   "failed_samples": [],
+   "oplog": true,
+   "contention": {
+    "attempts_with_oplog": 6946,
+    "attempts_without_oplog": 0,
+    "begin_immediate_waited": {
+     "n": 6519,
+     "of": 6946,
+     "pct": 93.853
+    },
+    "commit_retried": {
+     "n": 61,
+     "of": 6946,
+     "pct": 0.878
+    },
+    "begin_immediate_attempts": {
+     "max": 368,
+     "median": 13.0
+    },
+    "commit_attempts": {
+     "max": 3,
+     "median": 1.0
+    },
+    "committed_waited": {
+     "n": 6519,
+     "of": 6946,
+     "pct": 93.853
+    },
+    "rejected_waited": {
+     "n": 0,
+     "of": 0,
+     "pct": 0.0
+    },
+    "bi_giveups": 0
+   }
+  }
+ ],
+ "started_utc": "2026-10-19T05:27:17Z",
+ "finished_utc": "2026-10-19T05:32:19Z",
+ "head": "cce5793d627a58f05e8f6955f7989b54921edc10",
+ "python": "3.14.4",
+ "sqlite": "3.46.1",
+ "platform": "linux",
+ "argv": [
+  "concurrency",
+  "--writers",
+  "8",
+  "--seconds",
+  "300",
+  "--reps",
+  "1",
+  "--oplog",
+  "--out",
+  "fixtures/results/wf021-mybuddy/review-f1-concurrency-oplog.json"
+ ]
+}
