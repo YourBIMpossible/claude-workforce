@@ -8,6 +8,7 @@ import builtins
 import json
 import os
 import unittest
+from unittest import mock
 
 from test_wf import Base, CONTRACT, DECLARATIONS  # noqa: E402
 from wfcore import canon, commands, pathpolicy  # noqa: E402
@@ -128,6 +129,7 @@ class MalformedContract(Base):
         self.assertTrue(any("write_scope" in x and "matches nothing" in x for x in cl["contract_problems"]), cl)
         self.assertTrue(any("contract scopes malformed" in x for x in pathpolicy.violations(cl)))
 
+    @mock.patch.object(pathpolicy, "CASE_FOLDING", True)  # FIX1 A2.3: these assert the Windows (folding) rule
     def test_scope_globs_normalize_separators_case_and_trailing_separator(self):
         c = dict(CONTRACT, write_scope=["JOBS\\J\\Work\\"], exclusions=["01-project-brief.MD/"])
         cl = pathpolicy.classify(["jobs/j/work/sub/x", "01-PROJECT-BRIEF.md", "jobs/j/work"], c)
@@ -137,6 +139,7 @@ class MalformedContract(Base):
 
 
 class NormalizationBypass(Base):
+    @mock.patch.object(pathpolicy, "CASE_FOLDING", True)  # FIX1 A2.3: these assert the Windows (folding) rule
     def test_mixed_separators_and_case_in_both_path_and_glob(self):
         c = dict(CONTRACT, write_scope=["Jobs/J\\Work/**"], watch=["LEDGER\\**"])
         cl = pathpolicy.classify(["JOBS\\j/WORK\\A.txt", "jobs/j/./work//b", "Ledger\\L.DB"], c)

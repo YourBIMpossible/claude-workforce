@@ -10,6 +10,7 @@ import builtins
 import json
 import os
 import unittest
+from unittest import mock
 
 from test_wf import Base, CONTRACT, DECLARATIONS  # noqa: E402
 from wfcore import commands, pathpolicy  # noqa: E402
@@ -101,6 +102,7 @@ class T35Classes(Base):
         v = pathpolicy.violations(cl)
         self.assertTrue(any("../escaped.txt" in x and "outside the monitored boundary" in x for x in v), v)
 
+    @mock.patch.object(pathpolicy, "CASE_FOLDING", True)  # FIX1 A2.3: these assert the Windows (folding) rule
     def test_case_differences_resolve_to_the_same_class(self):
         cl = pathpolicy.classify(["JOBS/J/WORK/A.TXT", "Ledger/L.DB", "01-project-brief.MD"], CONTRACT)
         self.assertEqual((cl["P1"], cl["P3"], cl["P5"]), (["JOBS/J/WORK/A.TXT"], ["Ledger/L.DB"],

@@ -516,13 +516,27 @@ class PathsAndFailClosed(_Gate):
         self.explicit()
         p = self.p("jobs/j/work/a.txt")
         self.assertEqual(gatecore.target_paths(p, self.dir), (["jobs/j/work/a.txt"], None))
-        rel = dict(p, tool_input={"file_path": "jobs\\j\\work\\b.txt"})          # relative: joined to cwd
-        self.assertEqual(gatecore.target_paths(rel, self.dir), (["jobs/j/work/b.txt"], None))
         dotted = dict(p, tool_input={"file_path": os.path.join(self.dir, "jobs", "j", ".", "work", "c.txt")})
         self.assertEqual(gatecore.target_paths(dotted, self.dir), (["jobs/j/work/c.txt"], None))
         out = dict(p, tool_input={"file_path": os.path.join(os.path.dirname(self.dir), "x.txt")})
         self.assertEqual(gatecore.target_paths(out, self.dir), ([], "outside-boundary"))
         self.assertEqual(gatecore.target_paths(self.p(tool="Bash"), self.dir), ([], "malformed-payload"))
+
+    # AMENDMENT FIX1-A2 I8 (WF-021 F7): the relative-path case split by platform; its meaning on Windows is unchanged.
+    @unittest.skipUnless(os.sep == "\\", "Windows path form")
+    def test_target_paths_relative_windows(self):
+        self.explicit()
+        rel = dict(self.p("jobs/j/work/a.txt"), tool_input={"file_path": "jobs\\j\\work\\b.txt"})  # joined to cwd
+        self.assertEqual(gatecore.target_paths(rel, self.dir), (["jobs/j/work/b.txt"], None))
+
+    @unittest.skipIf(os.sep == "\\", "POSIX path form")
+    def test_target_paths_relative_posix(self):
+        self.explicit()
+        p = self.p("jobs/j/work/a.txt")
+        rel = dict(p, tool_input={"file_path": "jobs/j/work/b.txt"})
+        self.assertEqual(gatecore.target_paths(rel, self.dir), (["jobs/j/work/b.txt"], None))
+        back = dict(p, tool_input={"file_path": "jobs\\j\\work\\b.txt"})     # a backslash is a name character here
+        self.assertEqual(gatecore.target_paths(back, self.dir), ([], "unresolvable-path"))
 
     def test_unresolvable_paths(self):
         self.explicit()
@@ -579,7 +593,8 @@ class PathsAndFailClosed(_Gate):
                        "authority-none", "authority-proposed", "authority-expired", "authority-revoked",
                        "authority-voided", "authority-malformed", "stale-session", "not-current-binding",
                        "path-not-granted", "path-excluded", "unbound-session", "shell-not-preventable",
-                       "out-of-scope", "outside-boundary", "not-mediated", "gate-error", "allowed"):
+                       "out-of-scope", "outside-boundary", "not-mediated", "gate-error", "allowed",
+                       "gate-config", "gate-integrity", "audit-unavailable"):  # FIX1 I6: hook-only reasons
             self.assertIn(reason, gatecore.REASONS)
         self.assertEqual(len(set(gatecore.REASONS)), len(gatecore.REASONS))
 

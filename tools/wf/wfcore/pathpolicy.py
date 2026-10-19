@@ -62,7 +62,19 @@ rows and any contract problem. Glob `*` and `**` semantics are unchanged (fnmatc
 from __future__ import annotations
 
 import fnmatch
+import os
 import re
+
+#: FIX1 P1 (WF-021 F1/F2/F5): case is folded only where the platform folds it (os.path.normcase folds on Windows,
+#: not on POSIX). Before, every comparison form was lower-cased on every platform, so on a case-sensitive Linux
+#: filesystem `JOBS/J/WORK` matched `jobs/j/work/**` and a `Docs/**` scope was walked as `docs`.
+CASE_FOLDING: bool = os.path.normcase("A") == "a"
+
+
+def fold(s: str) -> str:
+    """The comparison form of a path or glob string under the platform case rule (`CASE_FOLDING`)."""
+    return s.lower() if CASE_FOLDING else s
+
 
 CLASSES = ("P1", "P2", "P3", "P4", "P5")
 UNCLASSIFIED = "unclassified"
@@ -157,15 +169,15 @@ def resolve(path: object) -> _Resolution:
     if not stack:
         return _Resolution(None, None, False, "path resolves to the boundary root itself")
     resolved = "\\".join(stack)
-    return _Resolution(resolved, resolved.lower(), False, None)
+    return _Resolution(resolved, fold(resolved), False, None)
 
 
 def _norm_glob(g: str) -> tuple[str | None, str | None]:
-    """(comparison-form glob, problem). Same normalization as a path: separators, case, "." dropped, ".."
+    """(comparison-form glob, problem). Same normalization as a path: separators, case (`fold`), "." dropped, ".."
     collapsed. A glob that climbs above the root, or that is empty after normalization, is a problem (hardening
     2026-10-15: a ".." glob matched nothing, so an exclusion written with ".." was silently ineffective)."""
     parts: list[str] = []
-    for c in g.replace("/", "\\").lower().split("\\"):
+    for c in fold(g.replace("/", "\\")).split("\\"):
         if c in ("", "."):
             continue
         if c == "..":

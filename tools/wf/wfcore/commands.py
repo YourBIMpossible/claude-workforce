@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import sqlite3
@@ -19,17 +20,49 @@ from .validate import (APPEND_TYPES, build_row, check_job_id, now_ts, validate_c
 _HEX = re.compile(r"^[0-9a-f]+$")
 
 
+class _NonFinite(ValueError):
+    pass
+
+
+def _no_constant(name: str) -> Any:
+    raise _NonFinite(f"non-finite number {name} is not JSON")
+
+
+def _check_values(obj: Any, where: str = "$") -> None:
+    """PACKAGE-FIX1 E2: everything later canonicalised and hashed must be finite and encodable as UTF-8. Refused at
+    input, before any write: an overflowing number (1e999 parses to inf) or a lone surrogate in a key or a string."""
+    if isinstance(obj, float) and not math.isfinite(obj):
+        raise WfRejected("malformed", f"{where}: non-finite number is not JSON")
+    if isinstance(obj, str):
+        try:
+            obj.encode("utf-8")
+        except UnicodeEncodeError:
+            raise WfRejected("malformed", f"{where}: string contains a lone surrogate (not encodable as UTF-8)")
+    elif isinstance(obj, dict):
+        for k, v in obj.items():
+            _check_values(k, f"{where} key")
+            _check_values(v, f"{where}.{k}" if isinstance(k, str) and k.isprintable() else f"{where}.?")
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            _check_values(v, f"{where}[{i}]")
+
+
 def _load_json(path_or_text: str) -> Any:
     if os.path.isfile(path_or_text):
         try:
             with open(path_or_text, "r", encoding="utf-8") as fh:
-                return json.load(fh)
+                obj = json.load(fh, parse_constant=_no_constant)
         except ValueError as exc:
             raise WfRejected("malformed", f"{path_or_text}: {exc}")
-    try:
-        return json.loads(path_or_text)
-    except ValueError as exc:
-        raise WfUsage(f"not a file and not JSON: {path_or_text[:80]!r} ({exc})")
+    else:
+        try:
+            obj = json.loads(path_or_text, parse_constant=_no_constant)
+        except _NonFinite as exc:  # valid JSON text apart from the constant: malformed input, not a usage error
+            raise WfRejected("malformed", str(exc))
+        except ValueError as exc:
+            raise WfUsage(f"not a file and not JSON: {path_or_text[:80]!r} ({exc})")
+    _check_values(obj)
+    return obj
 
 
 def _ctx(conn: sqlite3.Connection, job: str) -> tuple[str | None, dict | None]:
@@ -123,7 +156,12 @@ def _append(db: str, job: str, faults: Faults, oplog: OpLog, *, etype: str, cont
 
     def build(conn: sqlite3.Connection, head_seq: int, head_self: str) -> dict[str, Any]:
         csha, ccontent = _ctx(conn, job)
-        if etype == "contract":
+        if etype == "contract" and csha is not None:
+            # PACKAGE-FIX1 E6: the dedicated refusal, checked inside the reservation before build_row's
+            # contract-first rule (which would otherwise answer "contract event must be the first event")
+            raise WfRefused(f"job {job} already exists")
+        if etype == "contract":  # I1: case-insensitive clash with an existing id, decided inside the reservation
+            validate.check_new_job_id(job, dbm.jobs(conn))
             csha = sha256_obj(content["contract"])
             ccontent = content["contract"]
         rows = _guard(conn, job, etype=etype, role=role, session=session, generation=generation, msg_id=msg_id,
@@ -145,9 +183,59 @@ def _append(db: str, job: str, faults: Faults, oplog: OpLog, *, etype: str, cont
 
 # ---------------------------------------------------------------- job
 
+def _existing_jobs(db: str) -> list[str]:
+    """Job ids in the ledger (read-only); [] when there is no readable ledger yet (the reservation re-checks)."""
+    if not os.path.isfile(db):
+        return []
+    try:
+        conn = dbm.connect(db, create=False)
+    except (sqlite3.Error, dbm.WfError):
+        return []
+    try:
+        with dbm.read_snapshot(conn):
+            return dbm.jobs(conn)
+    except (sqlite3.Error, dbm.WfError):
+        return []
+    finally:
+        conn.close()
+
+
+def _scope_overlaps(read_scope: list, write_scope: list) -> list[str]:
+    """I4: pairs `<read> ~ <write>` whose static prefixes (the glob up to its first wildcard, cut at a path
+    component) nest, so one scope can name files of the other. A warning only: `job new` never refuses on it."""
+    def prefix(g: object) -> list[str] | None:
+        # the same normalisation pathpolicy applies to scope globs (separators, case, `.` dropped, `..` collapsed;
+        # review WF-027 S2); a glob pathpolicy rejects (climbs out, empty) names no files and is not compared
+        if not isinstance(g, str):
+            return None
+        norm, problem = pathpolicy._norm_glob(g)
+        if problem is not None or norm is None:
+            return None
+        parts = []
+        for c in norm.split("\\"):
+            if any(ch in c for ch in "*?["):
+                break
+            parts.append(c)
+        return parts
+
+    out = []
+    for r in read_scope:
+        for w in write_scope:
+            pr, pw = prefix(r), prefix(w)
+            if pr is None or pw is None:
+                continue
+            n = min(len(pr), len(pw))
+            if pr[:n] == pw[:n]:
+                out.append(f"{r} ~ {w}")
+    return out
+
+
 def job_new(db: str, job: str, contract_src: str, msg_id: str, role: str, session: str, generation: int,
             faults: Faults, oplog: OpLog) -> dict[str, Any]:
-    check_job_id(job)
+    # I1 name rules, and the case clash against the ids already in the ledger, read-only and BEFORE txn.write_event:
+    # its marker guard would otherwise act on the clashing job's markers first (`pending\JOB1` is `pending\job1` on
+    # NTFS; review WF-027 S1). The build re-checks the clash under the reservation for a concurrent `job new`.
+    validate.check_new_job_id(job, _existing_jobs(db))
     contract = _load_json(contract_src)
     validate_contract(contract)
     csha = sha256_obj(contract)
@@ -173,6 +261,9 @@ def job_new(db: str, job: str, contract_src: str, msg_id: str, role: str, sessio
                   allow_no_contract=True)
     res["contract_sha256"] = csha
     res["baseline_entries"] = len(base.get("entries", {}))
+    overlaps = _scope_overlaps(contract.get("read_scope", []), contract.get("write_scope", []))
+    if overlaps:
+        res["warnings"] = ["read_scope overlaps write_scope: " + ", ".join(overlaps)]
     return res
 
 

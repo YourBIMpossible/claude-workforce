@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import os
 import re
 import sqlite3
 import time
@@ -75,6 +76,26 @@ def check_job_id(job: str) -> None:
         raise WfRejected("malformed", f"job id {job!r} must match {_ID.pattern}")
 
 
+_DEVICE = re.compile(r"^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$", re.IGNORECASE)
+
+
+def check_new_job_id(job: str, existing: list[str]) -> None:
+    """PACKAGE-FIX1 I1, at `job new` only: a job id names directories (`jobs/<id>/`, `ledger/pending/<id>/`), so it is
+    refused when a filesystem would merge it with another name or a device, on every platform (fail closed, as spec
+    section 4.4 names scope paths): a trailing dot or space, `..` anywhere, a Windows device name with or without an
+    extension, or an existing id that differs only by case."""
+    check_job_id(job)
+    if job.endswith((".", " ")):
+        raise WfRejected("malformed", f"job id {job!r} must not end in a dot or a space")
+    if ".." in job:
+        raise WfRejected("malformed", f"job id {job!r} must not contain '..'")
+    if _DEVICE.match(job):
+        raise WfRejected("malformed", f"job id {job!r} is a Windows device name")
+    for other in existing:
+        if other != job and other.casefold() == job.casefold():
+            raise WfRejected("malformed", f"job id {job!r} equals existing job {other!r} case-insensitively")
+
+
 def validate_contract(c: Any) -> None:
     if not isinstance(c, dict):
         raise WfRejected("malformed", "contract must be a JSON object")
@@ -120,10 +141,19 @@ def _req(content: dict, key: str, typ: type | tuple[type, ...], nonempty: bool =
     return v
 
 
+#: Review WF-027 S5: fold case only where the platform folds it (Windows), as FIX1 P1 does in pathpolicy
+#: (`CASE_FOLDING`/`fold` there, lane FXM). The same rule, kept here so lane FXL needs no FXM file; tests patch it.
+CASE_FOLDING = os.path.normcase("A") == "a"
+
+
+def _fold(s: str) -> str:
+    return s.lower() if CASE_FOLDING else s
+
+
 def _path_in_scope(path: str, scope: list[str]) -> bool:
-    p = path.replace("/", "\\").lower()
+    p = _fold(path.replace("/", "\\"))
     for g in scope:
-        gg = g.replace("/", "\\").lower()
+        gg = _fold(g.replace("/", "\\"))
         if fnmatch.fnmatchcase(p, gg) or p == gg or p.startswith(gg.rstrip("*\\") + "\\"):
             return True
     return False

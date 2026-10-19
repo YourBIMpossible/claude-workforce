@@ -9,6 +9,7 @@ from .canon import sha256_file
 
 SEP = "  "
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
+_DIGITS = re.compile(r"[0-9]+")
 
 
 class ManifestMalformed(Exception):
@@ -50,7 +51,7 @@ def parse_line(line_no: int, line: str) -> Entry:
     sha, size, rel = fields
     if not _HEX64.match(sha):
         raise ManifestMalformed(line_no, "field 1 is not a 64-hex sha256", text)
-    if not size.isdigit():
+    if not _DIGITS.fullmatch(size):  # PACKAGE-FIX1 E4: ASCII digits only (str.isdigit accepts e.g. U+00B2)
         raise ManifestMalformed(line_no, "field 2 is not a non-negative integer", text)
     if not rel or rel != rel.strip():
         raise ManifestMalformed(line_no, "field 3 is empty or has surrounding whitespace", text)

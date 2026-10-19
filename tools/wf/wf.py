@@ -14,11 +14,12 @@ from wfcore.db import OpLog, WfError, WfUsage  # noqa: E402
 from wfcore.faults import FaultsNotAllowed, load as load_faults  # noqa: E402
 
 EXIT_OK, EXIT_ERR, EXIT_USAGE = 0, 1, 2
+EXIT_INTERNAL = 4  # PACKAGE-FIX1 E1 / A1.1: an unexpected exception; not a refusal (1, 2) nor the fault-seam kill (3)
 
 
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="wf", description="Workforce ledger: record events, verify the chain.")
-    p.add_argument("--db", help=f"ledger path (default {paths.DEFAULT_DB})")
+    p.add_argument("--db", help="ledger path (required: give --db <path> or set WF_DB; there is no default)")
     p.add_argument("--session", default=os.environ.get("WF_SESSION", ""), help="session id (or WF_SESSION)")
     p.add_argument("--role", default=os.environ.get("WF_ROLE", ""), help="author role (or WF_ROLE)")
     p.add_argument("--generation", type=int, default=1)
@@ -131,7 +132,13 @@ def run(argv: list[str]) -> tuple[int, dict]:
         extra = glob.parse_args(rest)
         for k, v in vars(extra).items():
             setattr(args, k, v)
-    db = paths.db_path(args.db)
+    # PACKAGE-FIX1 I3: no implicit default ledger. A command without --db and without WF_DB would otherwise read or
+    # write <repo>/ledger/ledger.db silently.
+    db_arg = args.db or os.environ.get("WF_DB") or None
+    if not db_arg or not db_arg.strip():
+        return EXIT_USAGE, {"ok": False, "code": "usage",
+                            "error": "rejected(usage): --db required (give --db <path> or set WF_DB)"}
+    db = paths.db_path(db_arg)
     oplog = OpLog()
     msg_id = args.msg_id or uuid.uuid4().hex
     common = dict(msg_id=msg_id, role=args.role, session=args.session, generation=args.generation, oplog=oplog)
@@ -278,6 +285,8 @@ def main() -> int:
         code, res = run(argv)
     except SystemExit as exc:  # argparse
         return int(exc.code or 0) if isinstance(exc.code, int) else EXIT_USAGE
+    except Exception as exc:  # noqa: BLE001 -- E1: a crash is reported as one result, never a traceback
+        code, res = EXIT_INTERNAL, {"ok": False, "code": "internal-error", "error": f"{type(exc).__name__}: {exc}"}
     if want_json:
         sys.stdout.write(json.dumps(res, indent=2, sort_keys=True, default=str) + "\n")
     else:

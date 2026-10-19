@@ -2,10 +2,12 @@
 
 Restore is an **owner procedure**. There is no `wf restore`, and `wf` never overwrites, repairs or deletes a ledger file. `wf` only checks copies, read-only.
 
+Every `wf` command needs `--db <ledger file>` (or the `WF_DB` environment variable); without it `wf` refuses with exit 2 (FIX1 I3). In the commands below `--db` names the live ledger; `verify --restored` checks the copy it is given and does not open the live ledger.
+
 ## Before you need it
 1. **Take backups with `wf backup`.**
    ```
-   python -I tools\wf\wf.py --role owner backup --all --to <new file outside the ledger directory>
+   python -I tools\wf\wf.py --db <live ledger file> --role owner backup --all --to <new file outside the ledger directory>
    ```
    - The command refuses an existing destination, a missing parent directory, or a destination inside the ledger directory. A refusal writes nothing.
    - Add `--writer-stopped` only when every `wf` process and session is stopped. Head equality with the live ledger is asserted only then.
@@ -19,7 +21,7 @@ Restore is an **owner procedure**. There is no `wf restore`, and `wf` never over
 3. **Restore into a separate location.** Copy the chosen backup to a new path outside the live ledger directory.
 4. **Verify the restored copy with the retained checkpoint.**
    ```
-   python -I tools\wf\wf.py verify --restored <restored copy> --job <job> --checkpoint <seq:self>
+   python -I tools\wf\wf.py --db <live ledger file> verify --restored <restored copy> --job <job> --checkpoint <seq:self>
    ```
    Accept it only when **all** of these hold:
    - `clean` is true;

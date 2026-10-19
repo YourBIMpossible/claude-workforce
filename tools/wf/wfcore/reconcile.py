@@ -47,7 +47,7 @@ import stat
 from datetime import datetime, timezone
 from typing import Any
 
-from . import changeset, export
+from . import changeset, export, pathpolicy
 from .canon import sha256_file
 from .db import WfRefused, WfRejected, integrity, verify_chain
 
@@ -122,7 +122,9 @@ def _nonempty_str(v: object) -> bool:
 
 def _relate(path: str) -> str | None:
     """Relate a ledger path to the boundary root with stdlib normalisation only: forward slashes, no drive, no
-    root, no escape above the root; the result is the comparison form (forward slash, lower). None = cannot."""
+    root, no escape above the root; the result keeps the written case (forward slash) and is used for I/O; compare
+    it with `pathpolicy.fold` (FIX1 P1, WF-021 F2: lower-casing it hid `New.txt` on a case-sensitive filesystem).
+    None = cannot."""
     if not isinstance(path, str) or not path.strip() or "\x00" in path:
         return None
     p = path.replace("\\", "/")
@@ -131,7 +133,7 @@ def _relate(path: str) -> str | None:
     norm = posixpath.normpath(p)
     if norm in (".", "") or norm == ".." or norm.startswith("../"):
         return None
-    return norm.lower()
+    return norm
 
 
 def _is_link(abs_path: str) -> bool:
@@ -320,7 +322,8 @@ def compute_report(root: str, contract: dict, baseline_manifest: dict, rows: lis
         sha_now = _sha_now(root, rel)
         base = entries.get(path) if isinstance(entries, dict) else None
         if base is None:   # baseline keys are repo-relative forward-slash strings
-            base = next((e for k, e in entries.items() if isinstance(k, str) and k.lower() == rel), None)
+            base = next((e for k, e in entries.items()
+                         if isinstance(k, str) and pathpolicy.fold(k) == pathpolicy.fold(rel)), None)
         in_baseline = isinstance(base, dict)
         sha_baseline = base.get("sha256") if in_baseline else None
         if (intent_seq is not None and (receipt_seq is None or receipt_seq < intent_seq)) or path in gate_open:
