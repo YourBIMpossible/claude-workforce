@@ -79,6 +79,7 @@ def write_event(db_path: str, job: str, faults: Faults, oplog: OpLog, *,
     conn = dbm.connect(db_path, bound=acq_bound)
     attempt_id = ""
     ref: markers.MarkerRef | None = None
+    marker: dict[str, Any] | None = None
     try:
         t_begin = begin_immediate(conn, oplog, _remaining(t_start, acq_bound, oplog))
         attempt_id = markers.new_attempt_id()
@@ -293,12 +294,23 @@ def write_event(db_path: str, job: str, faults: Faults, oplog: OpLog, *,
         undeleted: OSError | None = None
         if conn is not None:
             try:
+                # Review WF-109 M1: our claimant-conflict marker is never deleted without its row (FB1.4-A4 §3). As the
+                # conflict give-up path does, it is kept as `conflict-pending` (best effort) and `wf resolve` re-records
+                # the row. `ref` is set only after `conflict` is, so the check below never reads an unbound name.
+                keep = ref is not None and conflict is not None
+                if keep and marker is not None:
+                    try:
+                        marker.update(state="conflict-pending", rev=2)
+                        markers.write_atomic(ref, marker)
+                        oplog.add("marker_conflict_pending", path=ref.path, rev=2)
+                    except OSError as mexc:
+                        oplog.add("marker_conflict_pending_failed", error=str(mexc))  # the committing marker stands
                 try:
                     dbm.rollback(conn)
                     oplog.add("rollback")
                 except sqlite3.Error as rexc:
                     oplog.add("rollback_error", error=str(rexc))
-                if ref is not None:
+                if ref is not None and not keep:
                     try:  # FIX2 #46: a failing delete of our own marker is reported, never an exit 4
                         markers.delete(ref)
                         oplog.add("marker_delete", path=ref.path, removed=True)

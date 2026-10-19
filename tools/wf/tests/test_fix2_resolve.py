@@ -302,5 +302,58 @@ class F2BaseException(Ledger):
                 self.assertLess(took, 2.0, "no lock is left")
 
 
+class F2ConflictInterrupt(Ledger):
+    """Review WF-109 M1, with probe B (pre-existing at the base): an exception of any kind after our claimant-conflict
+    marker is written never deletes that marker (FB1.4-A4 §3). It is kept as `conflict-pending` (rev 2), as the conflict
+    give-up path keeps it, and `wf resolve` re-records the blocker row, so the role block stands. #48's ordinary case
+    (no marker left) is `F2BaseException`, unchanged."""
+
+    def claim(self, session: str, note: str):
+        return self.run_wf("append", "j", "--type", "intent", "--content",
+                           json.dumps({"path": "jobs/j/work/a.txt", "sha_before": "", "note": note}),
+                           "--generation", "1", session=session)
+
+    def kept_after(self, exc: BaseException) -> None:
+        self.assertEqual(self.claim("B1", "first")[0], 0)  # B1 becomes the implicit builder
+        real = markers.write_atomic
+
+        def write_then_raise(ref, data, _exc=exc):
+            real(ref, data)
+            if isinstance(data, dict) and "conflict" in data and data.get("state") == "committing":
+                raise _exc
+
+        with mock.patch.object(txn.markers, "write_atomic", side_effect=write_then_raise):
+            with self.assertRaises(type(exc)) as cm:
+                self.claim("B2", "second claimant")
+        self.assertIs(cm.exception, exc, "re-raised unchanged")
+        exc.__traceback__ = None
+        del cm
+        left = markers.list_markers(self.db, "j")
+        self.assertEqual(len(left), 1, "the conflict marker is kept")
+        m = markers.read(left[0])
+        self.assertEqual((m.get("state"), m.get("rev"), "conflict" in m), ("conflict-pending", 2, True), m)
+        self.assertTrue(self.lock_free(), "the connection was closed")
+        c, r = self.coord("resolve", "j", str(left[0].seq))
+        self.assertEqual((c, r.get("outcome"), bool(r.get("re_recorded"))), (0, "NOT-COMMITTED", True), r)
+        conn = dbm.connect(self.db, create=False)
+        try:
+            blockers = [row["seq"] for row in dbm.rows(conn, "j") if row["type"] == "blocker"]
+        finally:
+            conn.close()
+        self.assertEqual(blockers, [left[0].seq])
+        c, st = self.coord("status", "j")
+        self.assertEqual(st["axes"].get("blocked_roles"), ["builder"], st)
+
+    def test_keyboard_interrupt_keeps_conflict_marker(self):
+        self.kept_after(KeyboardInterrupt("injected"))
+
+    def test_system_exit_keeps_conflict_marker(self):
+        self.kept_after(SystemExit("injected"))
+
+    def test_runtime_error_keeps_conflict_marker(self):
+        """Probe B: an ordinary exception at the same point deleted the conflict marker at the base too (exit 4)."""
+        self.kept_after(RuntimeError("injected"))
+
+
 if __name__ == "__main__":
     unittest.main()
