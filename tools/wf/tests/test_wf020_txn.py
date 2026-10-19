@@ -238,12 +238,12 @@ class JobAbandonCommit(Fixture):
 
     def test_abandon_then_abandon_again(self):
         """W39-S4: the second abandon is pinned. It is refused and changes nothing (the UPDATE matches only a row with
-        `abandoned_ts IS NULL`), so the first reason is kept. Its text is `job j not found` although the job exists
-        (abandoned): an already-abandoned job is reported as missing (observation, wording only)."""
+        `abandoned_ts IS NULL`), so the first reason is kept. Its text was `job j not found` although the job exists;
+        FIX2 #39/#53 (batch H, AMENDMENT FIX2-A15) makes it `job j already abandoned`."""
         c, r = self.run_wf("job", "abandon", "j", "--reason", "r", role="coordinator", session="C1")
         self.assertEqual(c, 0, r)
         c2, r2 = self.run_wf("job", "abandon", "j", "--reason", "again", role="coordinator", session="C1")
-        self.assertEqual((c2, r2["code"], r2["error"]), (1, "refused", "job j not found"), r2)
+        self.assertEqual((c2, r2["code"], r2["error"]), (1, "refused", "job j already abandoned"), r2)
         conn = dbm.connect(self.db, create=False)
         try:
             self.assertEqual(dbm.contract(conn, "j")["abandon_reason"], "r")
