@@ -17,7 +17,11 @@ from .faults import Faults
 from . import validate
 from .validate import (APPEND_TYPES, build_row, check_job_id, now_ts, validate_contract)
 
-_HEX = re.compile(r"^[0-9a-f]+$")
+_HEX = re.compile(r"^[0-9a-f]+\Z")  # FIX2 #20: `\Z`, as `$` also matches before a trailing newline
+
+#: FIX2 #2 (WF-020 F17; AMENDMENT FIX2-A2): every JSON input wf parses from the user, file or inline, is bounded in
+#: UTF-8 bytes, measured before parsing.
+MAX_JSON_INPUT_BYTES = 1_048_576
 
 
 class _NonFinite(ValueError):
@@ -47,20 +51,48 @@ def _check_values(obj: Any, where: str = "$") -> None:
             _check_values(v, f"{where}[{i}]")
 
 
+class _Pairs(list):
+    """An object's (key, value) pairs in input order, kept by the parser so duplicate keys can be named with a path."""
+
+
+def _unique_keys(obj: Any, where: str = "$") -> Any:
+    """FIX2 #2: refuse a duplicate key at any depth (the parser would keep only the last), and build the dicts."""
+    if isinstance(obj, _Pairs):
+        out: dict[str, Any] = {}
+        for k, v in obj:
+            if k in out:
+                raise WfRejected("malformed", f"{where}: duplicate key {k!r}")
+            out[k] = _unique_keys(v, f"{where}.{k}" if k.isprintable() else f"{where}.?")
+        return out
+    if isinstance(obj, list):
+        return [_unique_keys(v, f"{where}[{i}]") for i, v in enumerate(obj)]
+    return obj
+
+
+def _check_size(size: int, what: str) -> None:
+    if size > MAX_JSON_INPUT_BYTES:
+        raise WfRejected("malformed", f"{what}: {size} bytes; JSON input is limited to {MAX_JSON_INPUT_BYTES} bytes")
+
+
 def _load_json(path_or_text: str) -> Any:
     if os.path.isfile(path_or_text):
+        _check_size(os.path.getsize(path_or_text), path_or_text)
         try:
-            with open(path_or_text, "r", encoding="utf-8") as fh:
-                obj = json.load(fh, parse_constant=_no_constant)
-        except ValueError as exc:
+            with open(path_or_text, "rb") as fh:
+                data = fh.read(MAX_JSON_INPUT_BYTES + 1)
+            _check_size(len(data), path_or_text)  # the file may have grown since getsize
+            obj = json.loads(data.decode("utf-8"), parse_constant=_no_constant, object_pairs_hook=_Pairs)
+        except ValueError as exc:  # UnicodeDecodeError, JSONDecodeError and _NonFinite are ValueErrors
             raise WfRejected("malformed", f"{path_or_text}: {exc}")
     else:
+        _check_size(len(path_or_text.encode("utf-8", "surrogatepass")), "inline JSON")
         try:
-            obj = json.loads(path_or_text, parse_constant=_no_constant)
+            obj = json.loads(path_or_text, parse_constant=_no_constant, object_pairs_hook=_Pairs)
         except _NonFinite as exc:  # valid JSON text apart from the constant: malformed input, not a usage error
             raise WfRejected("malformed", str(exc))
         except ValueError as exc:
             raise WfUsage(f"not a file and not JSON: {path_or_text[:80]!r} ({exc})")
+    obj = _unique_keys(obj)
     _check_values(obj)
     return obj
 

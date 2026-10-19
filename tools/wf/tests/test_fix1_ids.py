@@ -281,18 +281,18 @@ class ReviewS5PathInScopeFolding(unittest.TestCase):
     """WF-027 S5: validate._path_in_scope folds case only where the platform folds it (same rule as P1)."""
 
     def test_folding_follows_the_platform_rule(self):
-        from wfcore import validate
+        from wfcore import pathpolicy, validate  # FIX2 #30: validate folds by pathpolicy's rule, its one patch point
         scope = ["jobs/j/work/**"]
-        with mock.patch.object(validate, "CASE_FOLDING", True):
+        with mock.patch.object(pathpolicy, "CASE_FOLDING", True):
             self.assertTrue(validate._path_in_scope("JOBS/J/WORK/a.txt", scope))
-        with mock.patch.object(validate, "CASE_FOLDING", False):
+        with mock.patch.object(pathpolicy, "CASE_FOLDING", False):
             self.assertFalse(validate._path_in_scope("JOBS/J/WORK/a.txt", scope))
             self.assertFalse(validate._path_in_scope("jobs/j/work/a.txt", ["Jobs/J/Work/**"]))
             self.assertTrue(validate._path_in_scope("jobs/j/work/a.txt", scope))
 
     def test_default_rule_is_os_path_normcase(self):
-        from wfcore import validate
-        self.assertEqual(validate.CASE_FOLDING, os.path.normcase("A") == "a")
+        from wfcore import pathpolicy
+        self.assertEqual(pathpolicy.CASE_FOLDING, os.path.normcase("A") == "a")
 
 
 class ReviewS3S4Readme(I5Readme):

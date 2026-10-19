@@ -118,7 +118,20 @@ def _need(args: argparse.Namespace, *fields: str) -> None:
             raise WfUsage(f"--{f} is required for this command")
 
 
+def _undecodable_arg(argv: list[str]) -> int | None:
+    """FIX2 #19: the 1-based position of the first argument holding a lone surrogate, which is how Python carries
+    POSIX argv bytes that do not decode; None when every argument is valid text."""
+    for i, arg in enumerate(argv, 1):
+        if any("\ud800" <= ch <= "\udfff" for ch in arg):
+            return i
+    return None
+
+
 def run(argv: list[str]) -> tuple[int, dict]:
+    bad = _undecodable_arg(argv)
+    if bad is not None:  # refused before any command runs; the argument itself is not echoed
+        return EXIT_USAGE, {"ok": False, "code": "usage",
+                            "error": f"rejected(usage): argument {bad} holds undecodable bytes (a lone surrogate)"}
     parser = _parser()
     args, rest = parser.parse_known_args(argv)
     if rest:
@@ -278,7 +291,17 @@ def run(argv: list[str]) -> tuple[int, dict]:
     return EXIT_OK, res
 
 
+def _tolerant_output() -> None:
+    """FIX2 #33: write plain text in each stream's own encoding with errors="backslashreplace", so no command exits
+    non-zero because of output encoding, above all after a commit. `--json` output is ASCII already (json.dumps)."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(errors="backslashreplace")
+
+
 def main() -> int:
+    _tolerant_output()
     argv = sys.argv[1:]
     want_json = "--json" in argv
     try:
