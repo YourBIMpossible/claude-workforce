@@ -14,6 +14,9 @@
 * WF-106 review F1 (coordinator, MUST-FIX): rule 1 never stats or realpaths a UNC target whose host is not this
   machine (nor a device path other than a drive form); rule 0 decides it as before FIX2 (`unresolvable-path`). An
   admin share of this machine is mapped lexically to its drive, so no SMB call is made for it either.
+* WF-106 review F2 (AMENDMENT FIX2-A9 section 2): rule 1 resolves a target only on the boundary root's anchor (after
+  that mapping); a target on any other drive, a mapped network drive included, gets no I/O and rule 0's
+  `unresolvable-path`.
 
 Fixtures only: ledgers are built with the real `wf` CLI in a fresh WF_TEST_TMP scratch folder; `decide` is called
 in-process; no hook is registered or installed and nothing is written outside the scratch folder.
@@ -185,9 +188,8 @@ class F4GateFileIdentity(_Gate):
 _UNC = re.compile(r"^[\\/]{2}(?![?.][\\/][A-Za-z]:)")   # a UNC or device spelling other than \\?\X: / \\.\X:
 
 
-class F1NoNetworkIO(_Gate):
-    """WF-106 review F1: no `os.stat`, `os.lstat` or `os.path.realpath` call on a remote target; a local-machine admin
-    share is resolved through its drive, never through SMB."""
+class _NoIO(_Gate):
+    """Helpers for the review F1 / F2 tests (Windows): decisions with the filesystem calls of rule 1 recorded."""
 
     def setUp(self) -> None:
         super().setUp()
@@ -219,6 +221,11 @@ class F1NoNetworkIO(_Gate):
                 self.assertEqual([s for s in seen if re.search(banned, s, re.IGNORECASE)], [])
                 self.assertEqual((r["decision"], r["reason"]), ("deny", reason), r)
 
+
+class F1NoNetworkIO(_NoIO):
+    """WF-106 review F1: no `os.stat`, `os.lstat` or `os.path.realpath` call on a remote target; a local-machine admin
+    share is resolved through its drive, never through SMB."""
+
     def test_remote_unc_target_is_never_resolved(self):
         host = f"wf-no-such-host-{uuid.uuid4().hex[:8]}"
         for path in (f"\\\\{host}\\share\\x.txt", f"//{host}/share/x.txt", f"\\\\?\\UNC\\{host}\\share\\x.txt",
@@ -242,6 +249,60 @@ class F1NoNetworkIO(_Gate):
                   f"\\\\localhost\\{drive}$" + self.cfg[2:]]                    # a gate file not written yet
         for path in forms:
             self.check(path, "protected-path", banned=_UNC.pattern)
+
+
+class F2CrossAnchor(_NoIO):
+    """WF-106 review F2 (AMENDMENT FIX2-A9 section 2): rule 1 does identity I/O only for a target on the boundary
+    root's anchor, the only targets rule 0 lets through. A target on another drive gets no `os.stat`, `os.lstat` or
+    `os.path.realpath` call and is rule 0's `unresolvable-path`, whatever that drive is: the decision is lexical and
+    never asks for a drive's type, so a mapped network drive is covered by the same path as a letter that is mapped
+    nowhere (the simulated one here)."""
+
+    def other_drives(self) -> list[str]:
+        root = self.dir[0].upper()
+        present = sorted({d[0].upper() for d in os.listdrives()}) if hasattr(os, "listdrives") else []
+        simulated = next(c for c in "QRSTUVWXYZ" if c not in present and c != root)
+        return [d for d in present if d != root] + [simulated]
+
+    def test_cross_drive_target_is_not_resolved(self):
+        if self.dir[1:2] != ":":
+            self.skipTest("the fixture root is not on a drive letter")
+        for letter in self.other_drives():
+            for path in (f"{letter}:\\share\\x.txt", f"{letter}:/share/x.txt", f"\\\\?\\{letter}:\\share\\x.txt",
+                         f"\\\\.\\{letter}:\\share\\x.txt", f"{letter}:\\a*b.txt"):
+                self.check(path, "unresolvable-path", banned=rf"^(?:[\\/]{{2}}[?.][\\/])?{letter}:")
+
+    def test_root_drive_targets_are_still_resolved(self):
+        """On the root's anchor rule 1 still resolves: an alias of a gate file there is `protected-path`, and the
+        identity step is seen running."""
+        if self.dir[1:2] != ":":
+            self.skipTest("the fixture root is not on a drive letter")
+        drive = self.hook[0]
+        for path in (self.hook, "\\\\?\\" + self.hook, f"\\\\localhost\\{drive}$" + self.hook[2:]):
+            with self.subTest(path=path):
+                r, seen = self.watched(self.p(absolute=path, session="U9"))
+                self.assertEqual((r["decision"], r["reason"]), ("deny", "protected-path"))
+        r, seen = self.watched(self.p(absolute="\\\\?\\" + self.hook, session="U9"))
+        self.assertTrue(seen, "the identity step ran for a target on the root's anchor")
+
+    def test_root_spelled_as_an_admin_share(self):
+        """The root goes through the same local-form mapping as the target: with the root spelled
+        `\\\\localhost\\C$\\...`, an alias of a gate file on that share is still resolved (rule 0 would let it through
+        as outside-boundary) and is `protected-path`."""
+        if self.dir[1:2] != ":":
+            self.skipTest("the fixture root is not on a drive letter")
+        import _winapi
+        alias = os.path.join(os.path.dirname(self.dir), f"{self.scratch}-alias")
+        os.makedirs(alias)
+        junction = os.path.join(alias, "hooks-junction")
+        _winapi.CreateJunction(os.path.dirname(self.hook), junction)
+        share = f"\\\\localhost\\{self.dir[0]}$"
+        target = share + os.path.join(junction, "wf_gate_hook.py")[2:]
+        for root in (share + self.dir[2:], self.dir):
+            with self.subTest(root=root):
+                r = gatecore.decide(self.p(absolute=target, session="U9"), root=root, db_path=self.db, now=NOW,
+                                    gate_files=[self.hook, self.cfg])
+                self.assertEqual((r["decision"], r["reason"]), ("deny", "protected-path"), r)
 
 
 # ===================================================================================================== #5

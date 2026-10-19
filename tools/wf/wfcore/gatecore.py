@@ -50,6 +50,11 @@ Reading choices recorded for review (no signature change):
   machine, and a device path other than a drive form, is never stat'ed or realpath'ed: rule 1 passes it and rule 0
   decides it as before (`unresolvable-path` across anchors). An admin share of this machine (`X$` on localhost,
   127.0.0.1, ::1 or the host name, any case; no DNS) is mapped lexically to its drive and then resolved locally.
+* Rule 1 resolves only where rule 0 would let a target through (WF-106 review F2, AMENDMENT FIX2-A9 section 2): after
+  that mapping, a target whose drive or anchor is not the boundary root's (another drive letter, a mapped network
+  drive, a subst drive, the device form of another drive) is compared by spelling only, with no I/O, and rule 0
+  denies it `unresolvable-path`. The extended-length and device forms of a drive count as that drive, and the root
+  goes through the same mapping (a root spelled as this machine's admin share is on that drive).
 * `job-closed` (AMENDMENT S4A-A6) is checked once recovery-open, cancelled and authority-<state> have been checked for
   every touched job, so those states win on any touched job, not only on an earlier-sorted one. It applies to every
   session that touches the closed job: the bound session (whatever its target, as authority-<state> does), an unbound
@@ -237,10 +242,23 @@ def _local_form(path: str) -> str | None:
     return None
 
 
-def _is_gate_file(target: str, gate_files: list[str] | None) -> bool:
+def _anchor(path: str) -> str | None:
+    r"""The case-folded drive or anchor of an absolute path, lexically: "x:" for X:\..., \\?\X:\... and \\.\X:\...,
+    "\\host\share" for a UNC path, "/" on POSIX; None for a path that is not absolute."""
+    split = _split_abs(path)
+    if split is None:
+        return None
+    anchor = split[0]
+    if re.fullmatch(r"\\\\[?.]\\[A-Za-z]:", anchor):
+        anchor = anchor[-2:]
+    return anchor.casefold()
+
+
+def _is_gate_file(target: str, gate_files: list[str] | None, root: str) -> bool:
     """Rule 1 (FIX2 #4): the absolute `target` names a configured gate file by spelling, `realpath` or identity. An
     identity that cannot be resolved is treated as the gate file (fail closed). A target with no local form (a remote
-    UNC or device spelling, WF-106 review F1) is compared by spelling only, with no I/O."""
+    UNC or device spelling, WF-106 review F1) or whose local form is not on the boundary root's anchor (WF-106 review
+    F2, AMENDMENT FIX2-A9 section 2: rule 0 denies it) is compared by spelling only, with no I/O."""
     gates = [g for g in gate_files or [] if isinstance(g, str)]
     if not gates:
         return False
@@ -249,6 +267,9 @@ def _is_gate_file(target: str, gate_files: list[str] | None) -> bool:
         return True
     local = _local_form(target)
     if local is None:
+        return False
+    root_abs = root if _split_abs(root) is not None else os.path.abspath(root)
+    if _anchor(local) != _anchor(_local_form(root_abs) or root_abs):
         return False
     try:
         real, ident = os.path.normcase(os.path.realpath(local)), _identity(local)
@@ -442,8 +463,9 @@ def _decide(payload: dict, out: dict, *, root: str, db_path: str, now: str, gate
         if not isinstance(raw, str) or not raw.strip():
             raise _Deny("malformed-payload")
         # rule 1 (gate files): compared before any boundary classification, by spelling (`..`, case, separators),
-        # realpath and file identity (FIX2 #4: any alias of a gate file), failing closed
-        if _is_gate_file(_absolute(raw, payload["cwd"]), gate_files):
+        # realpath and file identity (FIX2 #4: any alias of a gate file), failing closed; identity I/O only on the
+        # boundary root's anchor (WF-106 review F1/F2)
+        if _is_gate_file(_absolute(raw, payload["cwd"]), gate_files, root):
             raise _Deny("protected-path")
         targets, problem = target_paths(payload, root)
         if problem == "malformed-payload":
