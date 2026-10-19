@@ -183,24 +183,47 @@ def _append(db: str, job: str, faults: Faults, oplog: OpLog, *, etype: str, cont
 
 # ---------------------------------------------------------------- job
 
+def _existing_jobs(db: str) -> list[str]:
+    """Job ids in the ledger (read-only); [] when there is no readable ledger yet (the reservation re-checks)."""
+    if not os.path.isfile(db):
+        return []
+    try:
+        conn = dbm.connect(db, create=False)
+    except (sqlite3.Error, dbm.WfError):
+        return []
+    try:
+        with dbm.read_snapshot(conn):
+            return dbm.jobs(conn)
+    except (sqlite3.Error, dbm.WfError):
+        return []
+    finally:
+        conn.close()
+
+
 def _scope_overlaps(read_scope: list, write_scope: list) -> list[str]:
     """I4: pairs `<read> ~ <write>` whose static prefixes (the glob up to its first wildcard, cut at a path
     component) nest, so one scope can name files of the other. A warning only: `job new` never refuses on it."""
-    def prefix(g: str) -> list[str]:
+    def prefix(g: object) -> list[str] | None:
+        # the same normalisation pathpolicy applies to scope globs (separators, case, `.` dropped, `..` collapsed;
+        # review WF-027 S2); a glob pathpolicy rejects (climbs out, empty) names no files and is not compared
+        if not isinstance(g, str):
+            return None
+        norm, problem = pathpolicy._norm_glob(g)
+        if problem is not None or norm is None:
+            return None
         parts = []
-        for c in g.replace("\\", "/").split("/"):
+        for c in norm.split("\\"):
             if any(ch in c for ch in "*?["):
                 break
-            if c:
-                parts.append(os.path.normcase(c))
+            parts.append(c)
         return parts
 
     out = []
     for r in read_scope:
         for w in write_scope:
-            if not (isinstance(r, str) and isinstance(w, str)):
-                continue
             pr, pw = prefix(r), prefix(w)
+            if pr is None or pw is None:
+                continue
             n = min(len(pr), len(pw))
             if pr[:n] == pw[:n]:
                 out.append(f"{r} ~ {w}")
@@ -209,7 +232,10 @@ def _scope_overlaps(read_scope: list, write_scope: list) -> list[str]:
 
 def job_new(db: str, job: str, contract_src: str, msg_id: str, role: str, session: str, generation: int,
             faults: Faults, oplog: OpLog) -> dict[str, Any]:
-    validate.check_new_job_id(job, [])  # I1 name rules first; the case clash is re-checked under the reservation
+    # I1 name rules, and the case clash against the ids already in the ledger, read-only and BEFORE txn.write_event:
+    # its marker guard would otherwise act on the clashing job's markers first (`pending\JOB1` is `pending\job1` on
+    # NTFS; review WF-027 S1). The build re-checks the clash under the reservation for a concurrent `job new`.
+    validate.check_new_job_id(job, _existing_jobs(db))
     contract = _load_json(contract_src)
     validate_contract(contract)
     csha = sha256_obj(contract)

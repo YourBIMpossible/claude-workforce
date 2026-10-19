@@ -201,3 +201,108 @@ class I7DrivelessRootedPath(Base):
         # a UNC path keeps its existing answer (fail closed), as at the base
         self.assertEqual(gatecore.target_paths(self._payload("\\\\server\\share\\x.txt"), self.dir),
                          ([], "unresolvable-path"))
+
+
+# ------------------------------------------------------------------------------------------------ review R (WF-027)
+
+@unittest.skipUnless(sys.platform == "win32", "two-separator prefixes are a Windows UNC form")
+class ReviewR1TwoSeparatorPrefixes(Base):
+    """WF-027 R1: Windows treats any two leading separators as UNC; I7's drive-rooting must not apply to them."""
+
+    def _payload(self, raw: str) -> dict:
+        return {"session_id": "B1", "hook_event_name": "PreToolUse", "tool_name": "Write",
+                "tool_input": {"file_path": raw, "content": "x"}, "cwd": self.dir, "transcript_path": "t"}
+
+    def test_every_two_separator_form_keeps_the_base_outcome(self):
+        tail = os.path.splitdrive(self.dir)[1].strip("\/").replace("\\", "/") + "/jobs/j/work/a.txt"
+        for lead in ("\\\\", "//", "/\\", "\/"):
+            with self.subTest(lead=lead):
+                raw = lead + tail
+                self.assertEqual(gatecore.target_paths(self._payload(raw), self.dir), ([], "unresolvable-path"))
+                self.assertEqual(gatecore.target_paths(self._payload(raw.replace("/", "\\")[:2] + raw[2:]), self.dir),
+                                 ([], "unresolvable-path"))
+
+
+@unittest.skipUnless(sys.platform == "win32", "pending\JOB1 and pending\job1 are one directory only on NTFS")
+class ReviewS1ClashBeforeMarkerGuard(Base):
+    """WF-027 S1: the case-insensitive clash is refused before markers.guard can act on the other job's markers."""
+
+    def _marker(self, state: str) -> str:
+        from wfcore import markers, paths
+        ref = markers.MarkerRef(paths.pending_dir(self.db, "job1"), 9, "ab" * 16)
+        markers.write_atomic(ref, markers.make("job1", 9, ref.attempt_id, "f" * 64, "e" * 64, state, 1, "s", self.db,
+                                               "c"))
+        return ref.path
+
+    def _new(self, job: str):
+        return self.run_wf("job", "new", job, "--contract", self.cpath, role="coordinator", session="C1")
+
+    def test_clash_with_a_committing_marker_present_is_malformed_not_uncertain(self):
+        self.assertEqual(self._new("job1")[0], 0)
+        path = self._marker("committing")
+        c, r = self._new("JOB1")
+        self.assertEqual((c, r["code"]), (1, "rejected"), r)
+        self.assertIn("equals existing job 'job1' case-insensitively", r["error"])
+        self.assertTrue(os.path.exists(path))
+
+    def test_clash_does_not_delete_the_other_jobs_aborting_marker(self):
+        self.assertEqual(self._new("job1")[0], 0)
+        path = self._marker("aborting")
+        c, r = self._new("JOB1")
+        self.assertEqual((c, r["code"]), (1, "rejected"), r)
+        self.assertTrue(os.path.exists(path), "job1's marker must survive a refused `job new JOB1`")
+
+
+class ReviewS2OverlapNormalisesDots(Base):
+    """WF-027 S2: `.` and `..` are resolved (pathpolicy._norm_glob) before prefixes are compared."""
+
+    def _new_with(self, read_scope):
+        c = json.loads(json.dumps(CONTRACT))
+        c.update(read_scope=read_scope, write_scope=["jobs/j/work/**"])
+        return self.run_wf("job", "new", "j", "--contract", json.dumps(c), role="coordinator", session="C1")
+
+    def test_dot_and_dotdot_globs_warn(self):
+        for g in ("./jobs/j/**", "tools/../jobs/j/**", "jobs/./j/work/x/../**"):
+            with self.subTest(glob=g):
+                from wfcore import commands
+                self.assertEqual(commands._scope_overlaps([g], ["jobs/j/work/**"]), [f"{g} ~ jobs/j/work/**"])
+
+    def test_job_new_reports_it(self):
+        c, r = self._new_with(["tools/../jobs/j/**"])
+        self.assertEqual(c, 0, r)
+        self.assertEqual(r["warnings"], ["read_scope overlaps write_scope: tools/../jobs/j/** ~ jobs/j/work/**"])
+
+    def test_a_glob_climbing_out_of_the_boundary_does_not_warn(self):
+        from wfcore import commands
+        self.assertEqual(commands._scope_overlaps(["../jobs/j/**"], ["jobs/j/work/**"]), [])
+
+
+class ReviewS5PathInScopeFolding(unittest.TestCase):
+    """WF-027 S5: validate._path_in_scope folds case only where the platform folds it (same rule as P1)."""
+
+    def test_folding_follows_the_platform_rule(self):
+        from wfcore import validate
+        scope = ["jobs/j/work/**"]
+        with mock.patch.object(validate, "CASE_FOLDING", True):
+            self.assertTrue(validate._path_in_scope("JOBS/J/WORK/a.txt", scope))
+        with mock.patch.object(validate, "CASE_FOLDING", False):
+            self.assertFalse(validate._path_in_scope("JOBS/J/WORK/a.txt", scope))
+            self.assertFalse(validate._path_in_scope("jobs/j/work/a.txt", ["Jobs/J/Work/**"]))
+            self.assertTrue(validate._path_in_scope("jobs/j/work/a.txt", scope))
+
+    def test_default_rule_is_os_path_normcase(self):
+        from wfcore import validate
+        self.assertEqual(validate.CASE_FOLDING, os.path.normcase("A") == "a")
+
+
+class ReviewS3S4Readme(I5Readme):
+    def test_db_shown_as_required_in_the_usage_line(self):
+        usage = [ln for ln in self.text.splitlines() if "wf.py" in ln and "<command>" in ln]
+        self.assertTrue(usage, "usage line present")
+        self.assertNotIn("[--db PATH]", usage[0])
+        self.assertIn("--db PATH", usage[0])
+
+    def test_case_folding_limitation_line(self):
+        self.assertIn("Case folding follows `os.path.normcase`: Windows folds case; POSIX hosts, including "
+                      "case-insensitive volumes such as default macOS APFS, compare case-sensitively. R1 supports "
+                      "Windows and Linux.", " ".join(self.text.split()))
