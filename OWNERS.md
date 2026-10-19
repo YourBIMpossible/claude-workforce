@@ -7,14 +7,14 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 
 | Path | Owner |
 |---|---|
-| tools/wf/wfcore/validate.py | A |
+| tools/wf/wfcore/validate.py | FXL |
 | tools/wf/tests/test_t24_accept_declarations.py | A |
-| tools/wf/wfcore/pathpolicy.py | B |
+| tools/wf/wfcore/pathpolicy.py | FXM |
 | tools/wf/tests/test_t35_path_policy.py | B |
 | tools/wf/tests/test_pathpolicy_hardening.py | B |
 | tools/wf/tests/test_t35_remaining_requirements.py | B |
 | tools/wf/tests/requirements_t35_unmet.py | B |
-| tools/wf/wfcore/changeset.py | S2B |
+| tools/wf/wfcore/changeset.py | FXM |
 | tools/wf/tests/test_t35_changeset.py | S2B |
 | tools/wf/tests/test_t35_stray_files.py | A |
 | tools/wf/tests/test_transaction_sequence_requirements.py | C |
@@ -31,30 +31,46 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/wfcore/bind.py | S2B |
 | tools/wf/tests/test_t32_bind.py | S2B |
 | tools/wf/tests/test_t33_replacement.py | S2B |
-| tools/wf/wfcore/reconcile.py | S4L |
+| tools/wf/wfcore/reconcile.py | FXM |
 | tools/wf/tests/test_t06_reconcile.py | S4L |
 | tools/wf/tests/test_t16a_recover_begin.py | S2R |
 | tools/wf/tests/test_t30_recover_close.py | S2R |
 | tools/wf/tests/test_t30_recovery_faults.py | S2C |
-| tools/wf/wfcore/grant.py | S4G |
+| tools/wf/wfcore/grant.py | FXM |
 | tools/wf/tests/test_t34_grant_lifecycle.py | S4G |
 | tools/wf/tests/test_grant_check_corpus.py | S3G |
 | tools/wf/tests/data/grant_check_corpus.json | S3G |
 | tools/wf/wfcore/observe.py | S4L |
 | tools/wf/tests/test_t14_observe.py | S4L |
 | tools/wf/tests/test_t34_cli_matrix.py | S3M |
-| tools/wf/wfcore/gatecore.py | S4G |
-| tools/wf/tests/test_gate_decide.py | S4G |
+| tools/wf/wfcore/gatecore.py | FXL |
+| tools/wf/tests/test_gate_decide.py | FXL |
 | tools/wf/tests/test_gate_corpus_replay.py | S4G |
 | tools/wf/wfcore/gatelog.py | S4L |
 | tools/wf/gate/wf_gate_hook.py | S4L |
 | tools/wf/tests/test_gatelog.py | S4L |
 | tools/wf/tests/test_gate_hook_deployed.py | S4L |
 | tools/wf/tests/test_t19_gate_faults.py | S4M |
-| tools/wf/wfcore/backup.py | S5B |
+| tools/wf/wfcore/backup.py | FXM |
 | tools/wf/tests/test_t37_backup.py | S5B |
 | tools/wf/tests/test_t30_race_secondwriter_identity.py | S5R |
 | tools/wf/tests/test_t37_t36_matrix.py | S5M |
+| tools/wf/wf.py | FXL |
+| tools/wf/wfcore/commands.py | FXL |
+| tools/wf/wfcore/canon.py | FXL |
+| tools/wf/wfcore/markers.py | FXL |
+| tools/wf/wfcore/manifest.py | FXL |
+| tools/wf/wfcore/txn.py | FXL |
+| tools/wf/README.md | FXL |
+| .gitattributes | FXL |
+| tools/wf/tests/test_fix1_errors.py | FXL |
+| tools/wf/tests/test_fix1_ids.py | FXL |
+| tools/wf/tests/test_fix1_paths.py | FXM |
+| tools/wf/tests/test_wf020_*.py | W20 |
+| fixtures/results/wf020-lazy/** | W20 |
+| tools/wf/tests/test_wf021_*.py | W21 |
+| fixtures/results/wf021-mybuddy/** | W21 |
+| fixtures/results/wf022-zen/** | W22 |
 | ** | D |
 
 Lane A owns only the body of `accept_declarations` inside validate.py; other functions in that file are frozen
@@ -171,3 +187,15 @@ Build-7 Q1b showed Claude Code rejecting the hook's allow stdout (`"decision": "
 |---|---|---|---|
 | S4M | MyBuddy | `sprint/mybuddy-wf014-gate-stdout` (PR #55, head ad9dbc8) | `tools/wf/gate/wf_gate_hook.py` (`_emit`), `tools/wf/tests/test_gate_hook_deployed.py` (A6 conformance on every run + named test), `tools/wf/tests/test_t19_gate_faults.py` (record read from stderr) |
 | S4bW | White | main | OWNERS.md, MANIFEST.sha256 |
+
+## Registration 2026-10-19 (owner grant "fix batch approved", package FIX1; coordinator Zen "Workforce Dev" while White is out)
+
+Package text: WorkForce collab `contracts/b2fix1/PACKAGE-FIX1.md` (frozen with SHA256SUMS). Base: main 2dedc94 plus this registration commit.
+
+| Lane | Worker | Branch | Scope |
+|---|---|---|---|
+| FXL | Lazy | `fix1/lazy-errors` (WF-023), then `fix1/lazy-ids` stacked on it (WF-025) | the FXL rows above; relabelled from A (validate.py), S4G (gatecore.py, test_gate_decide.py) and D (wf.py, commands.py, canon.py, markers.py, manifest.py, txn.py, README.md, .gitattributes) for this package only |
+| FXM | MyBuddy | `fix1/mybuddy-paths` (WF-024) | the FXM rows above; relabelled from B (pathpolicy.py), S4L (reconcile.py), S4G (grant.py), S5B (backup.py), S2B (changeset.py) for this package only |
+| W20 / W21 / W22 | Lazy / MyBuddy / Zen | `wf020/lazy`, `wf021/mybuddy`, `wf022/zen` (existing evidence branches) | registers the long-run evidence files (WF-020 F20) |
+
+Rows are restored to their previous owners when FIX1 is integrated, in the same commit that updates MANIFEST.sha256.
