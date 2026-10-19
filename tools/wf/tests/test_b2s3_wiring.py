@@ -174,7 +174,7 @@ class B2S3(Base):
         self.assertFalse(o["gate_log"]["available"])
         self.assertTrue(any("recorded events only" in u for u in o["uncertainty"]))
         self.assertEqual(self.events(), n)                                        # no ledger row
-        self.assertTrue(o["log"].replace("\\", "/").endswith("jobs/j/observe/observe.log"), o["log"])
+        self.assertTrue(o["log"].replace("\\", "/").endswith("runtime/observe/j.log"), o["log"])  # S3-A3 (FIX2 #36)
         self.assertTrue(os.path.isfile(o["log"]))
         c, r = self.run_wf("append", "j", "--type", "blocker", "--content", '{"reason":"stuck"}')
         self.assertEqual(c, 0, r)

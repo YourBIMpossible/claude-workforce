@@ -157,6 +157,19 @@ def _path_in_scope(path: str, scope: list[str]) -> bool:
     return False
 
 
+def _check_receipt(content: dict, intent_sha_before: dict[str, Any]) -> None:
+    """FIX2 #35 (A, owner decision): a receipt's `sha_before` is 64 lower-case hex or "", and when the job has an
+    intent for the same path it equals the latest such intent's `sha_before`; otherwise `rejected(receipt-mismatch)`,
+    raised inside the write transaction, so nothing is written. Paths compare as reconcile pairs intents and
+    receipts: the exact `path` string. A receipt whose path has no intent is not compared."""
+    sha_before, path = content["sha_before"], content["path"]
+    if sha_before != "" and not _HEX64.match(sha_before):
+        raise WfRejected("receipt-mismatch", f"receipt sha_before {sha_before!r} is not 64 lower-case hex or empty")
+    if path in intent_sha_before and sha_before != intent_sha_before[path]:
+        raise WfRejected("receipt-mismatch", f"receipt sha_before {sha_before!r} differs from the latest intent's "
+                                             f"{intent_sha_before[path]!r} for {path!r}")
+
+
 def validate_content(etype: str, content: dict, contract: dict, grant_state: dict | None) -> None:
     """Event-type schema checks. `grant_state` = latest grant content (or None)."""
     if etype == "contract":
@@ -262,7 +275,7 @@ def existing_state(conn: sqlite3.Connection, job: str) -> dict[str, Any]:
     blocked roles (conflict rows feed neither bind nor builder_session)."""
     st: dict[str, Any] = {"msg": {}, "bind": {}, "gen": {}, "grant": None, "closed": False,
                           "builder_session": None, "accept": None, "delivered": False, "blocked_roles": set(),
-                          "msg_seq": {}}
+                          "msg_seq": {}, "intent_sha_before": {}}
     for r in rows(conn, job):
         st["msg"][r["msg_id"]] = r["content_sha256"]
         st["msg_seq"][r["msg_id"]] = r["seq"]
@@ -276,6 +289,10 @@ def existing_state(conn: sqlite3.Connection, job: str) -> dict[str, Any]:
             st["grant"] = json.loads(r["content"])
         if r["type"] == "close":
             st["closed"] = True
+        if r["type"] == "intent":  # FIX2 #35: rows come in seq order, so the latest intent per path wins
+            c = json.loads(r["content"])
+            if isinstance(c.get("path"), str):
+                st["intent_sha_before"][c["path"]] = c.get("sha_before")
         if r["author_role"] == "builder":
             st["builder_session"] = r["session_id"]
         if r["type"] == "accept":
@@ -402,6 +419,8 @@ def build_row(conn: sqlite3.Connection, job: str, head_seq: int, head_self: str,
                                  claimant_session=session_id, attempted_type=etype, attempted_msg_id=msg_id,
                                  contract_sha=content["contract_sha256"])
     validate_content(etype, content, contract_content or content.get("contract", {}), st["grant"])
+    if etype == "receipt":
+        _check_receipt(content, st["intent_sha_before"])
     row = {
         "job": job, "seq": head_seq + 1, "type": etype, "msg_id": msg_id, "author_role": author_role,
         "session_id": session_id, "generation": generation, "reply_to": reply_to, "grant_ref": grant_ref,
