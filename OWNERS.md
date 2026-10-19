@@ -9,8 +9,6 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 |---|---|
 | tools/wf/wfcore/validate.py | A |
 | tools/wf/tests/test_fix2_validation.py | F2BP |
-| tools/wf/wfcore/txn.py | F2GL |
-| tools/wf/tests/test_b1_gaps.py | F2GL |
 | tools/wf/tests/test_fix2_export.py | F2GL |
 | tools/wf/tests/test_t24_accept_declarations.py | A |
 | tools/wf/wfcore/pathpolicy.py | B |
@@ -26,7 +24,7 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/wfcore/checkpointcmp.py | C |
 | tools/wf/tests/test_t36_verify_checkpoint.py | C |
 | tools/wf/tests/test_checkpoint_clarity.py | C |
-| tools/wf/wfcore/export.py | F2GL |
+| tools/wf/wfcore/export.py | A |
 | tools/wf/tests/test_export_tmp_preserve.py | A |
 | tools/wf/tests/test_t35_windows_resolution.py | D |
 | fixtures/filesystem_qualification/** | FQ |
@@ -66,7 +64,6 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_fix1_ids.py | FXL |
 | tools/wf/tests/test_fix1_paths.py | FXM |
 | tools/wf/tests/test_fix2_scratch_names.py | F2TL |
-| tools/wf/tests/test_wf020_adversarial.py | F2GL |
 | tools/wf/tests/test_wf020_*.py | W20 |
 | fixtures/results/wf020-lazy/** | W20 |
 | tools/wf/tests/test_wf021_*.py | W21 |
@@ -308,3 +305,7 @@ Package text: WorkForce collab `contracts/b2fix2/` (PACKAGE-FIX2.md with AMENDME
 | F2GL | Lazy | `fix2/lazy-g-export` | the F2GL rows above (FIX2 #45 option (b), #51, #54, and #61's export.py `_STAGING` anchor); relabelled from A (export.py), D (txn.py, for the export refresh call only; test_b1_gaps.py, for #54 only) and W20 (test_wf020_adversarial.py, for the ExportRefreshRace expected-failure decorators and the WF-064 S1 one-line change only) for this batch only |
 
 Rows go back to their previous owners when batch G is integrated.
+
+## Integration 2026-10-19 (FIX2 batch G into `fix2/integration`, merge window 2; coordinator Zen "Workforce Dev", lane D)
+
+`fix2/integration` merges `fix2/lazy-g-export` `c6d0dc7` (F2GL: #45 option (b), #51, #54, #61's `_STAGING` anchor, and R5 under AMENDMENT FIX2-A11/A12), reviewed (independent review Plexy WF-114 PASS; Windows Zen 907 OK, Windows Plexy 907 OK). Linux at `c6d0dc7` waits for MyBuddy and is required before the window-2 PR (Foreman decision (a)). The relabels are restored: export.py A; the txn.py, test_b1_gaps.py and test_wf020_adversarial.py rows are removed (back to D, D and W20). The new test file `test_fix2_export.py` stays registered to F2GL. Recorded outside-lane exception: `tools/wf/tests/test_transaction_sequence_requirements.py` (owner C) changed inside `Tracked` and at :350-351 only, as AMENDMENT FIX2-A11/A12 allow.
