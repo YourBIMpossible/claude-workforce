@@ -27,7 +27,9 @@ as `added` - correct and honest; a fixture that needs the new form regenerates t
 An unreadable file is a `problem` (fail closed), never skipped. Paths are repo-relative forward-slash strings.
 A file name that is not valid UTF-8 (POSIX byte names; `os.walk` yields it surrogate-escaped) in a recorded scope is
 a `problem` naming the escaped bytes (`\\xff`), never an entry (FIX1 P4, WF-021 F6: the surrogate key made the
-canonical hash raise UnicodeEncodeError, a traceback instead of a refusal).
+canonical hash raise UnicodeEncodeError, a traceback instead of a refusal). Every text the walk records (problem or
+limitation: skipped link, unresolvable, unreadable) names such a path in that escaped form (`_shown`, review R2), so
+no recorded text holds a surrogate.
 
 `compare`: the same walk now against `baseline["entries"]`: added = now and not in baseline, deleted = baseline and
 not now, modified = in both with a different sha256 or size (presence-only entries are never "modified"). A
@@ -89,8 +91,18 @@ def _non_utf8(rel: str) -> str | None:
     try:
         rel.encode("utf-8")
     except UnicodeEncodeError:
-        return os.fsencode(rel).decode("utf-8", "backslashreplace")
+        try:
+            return os.fsencode(rel).decode("utf-8", "backslashreplace")
+        except UnicodeEncodeError:   # a lone surrogate that is no escaped byte: `\\udNNN`
+            return rel.encode("utf-8", "backslashreplace").decode("utf-8")
     return None
+
+
+def _shown(rel: str) -> str:
+    """The form of a walked name used in every recorded text: the name itself, or its escaped form when it is not
+    valid UTF-8 (review R2: a raw surrogate in a limitation made canon.canonical raise in `job new`)."""
+    escaped = _non_utf8(rel)
+    return rel if escaped is None else escaped
 
 
 def _static_prefix(glob: str) -> str:
@@ -144,19 +156,19 @@ def walk_entries(root: str, contract: dict) -> tuple[dict[str, dict], list[str],
         if rel in seen or _coordination_prefix(rel):
             return
         seen.add(rel)
+        shown = _shown(rel)
         if _is_link(abs_path):
-            limitations.append(f"skipped link or reparse point: {rel}")
+            limitations.append(f"skipped link or reparse point: {shown}")
             return
         r = pathpolicy.resolve(rel)
         if r.problem is not None or r.outside or r.cmp is None:
-            problems.append(f"unresolvable path inside the boundary: {rel} ({r.problem or 'outside'})")
+            problems.append(f"unresolvable path inside the boundary: {shown} ({r.problem or 'outside'})")
             return
         is_presence = pathpolicy._match(r.cmp, presence)
         if not is_presence and not pathpolicy._match(r.cmp, hashed):
             return
-        escaped = _non_utf8(rel)
-        if escaped is not None:
-            problems.append(f"file name is not valid UTF-8 inside the boundary: {escaped}")
+        if shown != rel:
+            problems.append(f"file name is not valid UTF-8 inside the boundary: {shown}")
             return
         if is_presence:
             entries[rel] = {"present": True}  # never opened
@@ -164,14 +176,14 @@ def walk_entries(root: str, contract: dict) -> tuple[dict[str, dict], list[str],
         try:
             entries[rel] = {"sha256": sha256_file(abs_path), "size": os.path.getsize(abs_path)}
         except OSError as exc:
-            problems.append(f"unreadable: {rel} ({type(exc).__name__})")
+            problems.append(f"unreadable: {shown} ({type(exc).__name__})")
 
     for prefix in prefixes:
         abs_prefix = os.path.join(root_abs, *prefix.split("/"))
         if not os.path.lexists(abs_prefix):
             continue
         if _is_link(abs_prefix):
-            limitations.append(f"skipped link or reparse point: {prefix}")
+            limitations.append(f"skipped link or reparse point: {_shown(prefix)}")
             continue
         if os.path.isfile(abs_prefix):
             record(abs_prefix, prefix)
@@ -184,7 +196,7 @@ def walk_entries(root: str, contract: dict) -> tuple[dict[str, dict], list[str],
                 if _coordination_prefix(rel_d):
                     continue
                 if _is_link(os.path.join(dirpath, d)):
-                    limitations.append(f"skipped link or reparse point: {rel_d}")
+                    limitations.append(f"skipped link or reparse point: {_shown(rel_d)}")
                     continue
                 keep.append(d)
             dirnames[:] = keep

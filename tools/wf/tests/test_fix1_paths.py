@@ -232,6 +232,79 @@ class P4NonUtf8Names(Base):
         self.assertTrue(any("\\xfe.txt" in p for p in c["problems"]), c["problems"])
 
 
+@unittest.skipUnless(LINUX, SKIP_LINUX)
+class P4NonUtf8EveryMessage(Base):
+    """Review R2 (WF-027): every text the walk records names a non-UTF-8 path in its escaped form, so the baseline
+    (stored with canon.canonical, ensure_ascii=False) never holds a surrogate and `job new` never crashes."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        os.makedirs(os.path.join(self.dir, "ledger"))
+        self.work = os.path.join(self.dir, "jobs", "j", "work")
+        os.makedirs(self.work)
+        self.bwork = os.fsencode(self.work)
+        target = os.path.join(self.dir, "elsewhere")
+        os.makedirs(target)
+        with open(os.path.join(target, "t.txt"), "x", encoding="utf-8") as fh:
+            fh.write("t")
+        self.btarget = os.fsencode(target)
+
+    def _job_new(self) -> tuple[int, dict]:
+        return self.run_wf("job", "new", "j", "--contract", self.cpath, role="coordinator", session="C1")
+
+    def _baseline_is_canonical(self) -> dict:
+        from wfcore import canon  # noqa: PLC0415
+        b = changeset.baseline(self.dir, dict(CONTRACT))
+        canon.canonical(b).encode("utf-8")  # raised UnicodeEncodeError before R2
+        return b
+
+    def test_r2_non_utf8_file_symlink_is_a_limitation_with_its_escaped_name(self):
+        os.symlink(os.path.join(self.btarget, b"t.txt"), os.path.join(self.bwork, b"\xfe-link"))
+        b = self._baseline_is_canonical()
+        self.assertIn("skipped link or reparse point: jobs/j/work/\\xfe-link", b["limitations"])
+        code, res = self._job_new()
+        self.assertEqual(code, 0, res)
+
+    def test_r2_non_utf8_directory_symlink_is_a_limitation_with_its_escaped_name(self):
+        os.symlink(self.btarget, os.path.join(self.bwork, b"\xfd-dir"))
+        b = self._baseline_is_canonical()
+        self.assertIn("skipped link or reparse point: jobs/j/work/\\xfd-dir", b["limitations"])
+        code, res = self._job_new()
+        self.assertEqual(code, 0, res)
+
+    def test_r2_non_utf8_unresolvable_name_is_refused_with_its_escaped_name(self):
+        """A name that is both non-UTF-8 and unresolvable (trailing dot) is a problem naming `\\xfc.`."""
+        os.close(os.open(os.path.join(self.bwork, b"\xfc."), os.O_WRONLY | os.O_CREAT | os.O_EXCL))
+        b = self._baseline_is_canonical()
+        self.assertTrue(any("jobs/j/work/\\xfc." in p for p in b["problems"]), b["problems"])
+        code, res = self._job_new()
+        self.assertEqual((code, res.get("code")), (1, "refused"), res)
+        self.assertIn("\\xfc.", res["error"])
+        self.assertNotIn("\udcfc", res["error"])
+
+    def test_r2_file_under_a_non_utf8_directory_is_refused_with_its_escaped_name(self):
+        sub = os.path.join(self.bwork, b"\xfb")
+        os.makedirs(sub)
+        os.close(os.open(os.path.join(sub, b"a.txt"), os.O_WRONLY | os.O_CREAT | os.O_EXCL))
+        self._baseline_is_canonical()
+        code, res = self._job_new()
+        self.assertEqual((code, res.get("code")), (1, "refused"), res)
+        self.assertIn("jobs/j/work/\\xfb/a.txt", res["error"])
+
+
+class P4ShownNameStrings(unittest.TestCase):
+    """String level (any platform): the escaped form of a walked name."""
+
+    def test_r2_shown_name_escapes_bytes_and_lone_surrogates(self):
+        self.assertEqual(changeset._shown("jobs/j/a.txt"), "jobs/j/a.txt")
+        self.assertEqual(changeset._shown("jobs/j/café.txt"), "jobs/j/café.txt")
+        self.assertEqual(changeset._shown("jobs/j/\udcff.txt"), "jobs/j/\\xff.txt")      # POSIX byte name
+        shown = changeset._shown("jobs/j/\ud800.txt")                                    # lone UTF-16 surrogate
+        shown.encode("utf-8")
+        self.assertNotIn("\ud800", shown)
+        self.assertIn("jobs/j/", shown)
+
+
 # ---------------------------------------------------------------------------------------------------------- P5
 
 @unittest.skipUnless(POSIX, SKIP_POSIX)
