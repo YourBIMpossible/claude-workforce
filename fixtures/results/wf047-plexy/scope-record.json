@@ -1,0 +1,59 @@
+{
+ "repo_files": {
+  "tools/wf/README.md": "34176bd887938f26f829ca2b46905920995ab68085e1674e80876fccfe095969",
+  "protocol/PROTOCOL.md": "7d10f02709cd548002a9992b9787301555491590c943d8fbf656d498c2a118d2",
+  "tools/wf/docs/RESTORE-RUNBOOK.md": "0e33470dc86d29525e4d125b3ebbee7eed5be15da1a206397f4c863a59f6a9df"
+ },
+ "pristine": {
+  "README.md": "34176bd887938f26f829ca2b46905920995ab68085e1674e80876fccfe095969",
+  "PROTOCOL.md": "7d10f02709cd548002a9992b9787301555491590c943d8fbf656d498c2a118d2",
+  "RESTORE-RUNBOOK.md": "0e33470dc86d29525e4d125b3ebbee7eed5be15da1a206397f4c863a59f6a9df"
+ },
+ "injections": [
+  {
+   "id": "I1",
+   "file": "scope/README.md",
+   "line": 79,
+   "kind": "wrong file name",
+   "correct": "`wfcore\\db.py`",
+   "injected": "`wfcore\\dbase.py`"
+  },
+  {
+   "id": "I2",
+   "file": "scope/README.md",
+   "line": 34,
+   "kind": "wrong command name",
+   "correct": "| `resolve <job> <seq>",
+   "injected": "| `settle <job> <seq>"
+  },
+  {
+   "id": "I3",
+   "file": "scope/PROTOCOL.md",
+   "line": 86,
+   "kind": "stale heading reference",
+   "correct": "README, \"Attempt ids and pending-write\n  markers\"",
+   "injected": "README, \"Attempt identifiers and pending\n  markers\""
+  },
+  {
+   "id": "I4",
+   "file": "scope/RESTORE-RUNBOOK.md",
+   "line": 24,
+   "kind": "wrong option name",
+   "correct": "verify --restored <restored copy>",
+   "injected": "verify --restore <restored copy>"
+  },
+  {
+   "id": "I5",
+   "file": "scope/PROTOCOL.md",
+   "line": 5,
+   "kind": "wrong file name",
+   "correct": "`tools/wf/README.md`",
+   "injected": "`tools/wf/READ-ME.md`"
+  }
+ ],
+ "scope_after_injection": {
+  "README.md": "f16af38600607149aa0714f271be9101c5aa15b3d02c781c318c1ed6d1bdcf39",
+  "PROTOCOL.md": "589ce65564f5f930e0e55a8d60284160e2aa2c5c5c84911872f2ea8fc6938b50",
+  "RESTORE-RUNBOOK.md": "6d6ae02d36ba844660189800e2ebacb8197ffbbd73d3e4a3c2c93aa048a5021d"
+ }
+}
