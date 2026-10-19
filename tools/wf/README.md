@@ -173,11 +173,13 @@ Auto-resolve is skipped for injected COMMIT errors so fixtures can resolve expli
 - A claimant conflict blocks a role on typed values; it is a recorded fact, not an authenticated one. The conflict
   record is guaranteed only when at least one durable write (row or marker) succeeds in the attempt; the double
   failure `conflict-unrecorded` is reported and leaves the holder unblocked (A4 §13a, accepted).
-- Gate limit for unbound sessions (G-4, documented): a session never bound to a job is denied only targets inside some
-  job's write scope or `jobs\<job>\` (`unbound-session`); other in-root paths are allowed. Grant `exclusions` are
-  applied by `grant.check` (`grant.py:297`), which only bound sessions reach, so an excluded path outside every write
-  scope and `jobs\<job>\` stays writable for unbound sessions: keep protected files (for example a pilot's
-  `pristine\**`) under `jobs\<job>\`. A replaced or stop-confirmed session is denied every preventable target (D-027).
+- Gate limit for unbound sessions (G-4, documented): a session never bound to a job is denied the protected paths every
+  session is denied (`ledger\**`, `jobs\*\export\**`, `runtime\**` and the gate files, rule 1) and targets inside some
+  job's write scope or `jobs\<job>\` (`unbound-session`, or the job's state, for example `job-closed`); other in-root
+  paths are allowed. Grant `exclusions` are applied by `grant.check` (`grant.py:297`), which only bound sessions reach,
+  so an excluded path outside every write scope and `jobs\<job>\` stays writable for unbound sessions: keep protected
+  files (for example a pilot's `pristine\**`) under `jobs\<job>\`. A replaced or stop-confirmed session is denied every
+  preventable target (D-027).
 
 ## Tests
 
