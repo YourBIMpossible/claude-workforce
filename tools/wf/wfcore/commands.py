@@ -1221,14 +1221,16 @@ def backup_cmd(db: str, job: str | None, *, all_jobs: bool, dest: str, writer_st
         check_job_id(job)
         if not os.path.isfile(db):
             raise WfRefused(f"ledger not found: {db}")
-        conn = sqlite3.connect(f"{_file_uri(db)}?mode=ro", uri=True, timeout=0, isolation_level=None)
-        try:
+        conn = None
+        try:  # FIX2 #50: opened inside the try, so a ledger the engine cannot open (a UNC --db) is refused, not exit 4
+            conn = sqlite3.connect(f"{_file_uri(db)}?mode=ro", uri=True, timeout=0, isolation_level=None)
             with dbm.read_snapshot(conn):
                 known = job in dbm.jobs(conn)
         except sqlite3.Error as exc:
-            raise WfRefused(f"ledger not readable ({type(exc).__name__}: {exc})") from exc
+            raise WfRefused(f"ledger not readable ({type(exc).__name__}: {exc}); the read-only open failed") from exc
         finally:
-            conn.close()
+            if conn is not None:
+                conn.close()
         if not known:
             raise WfRefused(f"job {job} is not in the ledger; nothing written", job=job)
     res = backup.backup(db, dest, writer_stopped=writer_stopped)
