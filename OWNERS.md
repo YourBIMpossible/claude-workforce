@@ -9,6 +9,7 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 |---|---|
 | tools/wf/wfcore/validate.py | A |
 | tools/wf/tests/test_fix2_validation.py | F2BP |
+| tools/wf/wfcore/commands.py | F2SP |
 | tools/wf/tests/test_t24_accept_declarations.py | A |
 | tools/wf/wfcore/pathpolicy.py | B |
 | tools/wf/tests/test_t35_path_policy.py | B |
@@ -44,8 +45,9 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/wfcore/observe.py | S4L |
 | tools/wf/tests/test_t14_observe.py | S4L |
 | tools/wf/tests/test_t34_cli_matrix.py | S3M |
-| tools/wf/wfcore/gatecore.py | S4G |
-| tools/wf/tests/test_gate_decide.py | S4G |
+| tools/wf/wfcore/gatecore.py | F2SP |
+| tools/wf/tests/test_gate_decide.py | F2SP |
+| tools/wf/tests/test_fix2_gate.py | F2SP |
 | tools/wf/tests/test_gate_corpus_replay.py | S4G |
 | tools/wf/wfcore/gatelog.py | S4L |
 | tools/wf/gate/wf_gate_hook.py | S4L |
@@ -260,3 +262,13 @@ Rows go back to their previous owners when batch C is integrated.
 ## Integration 2026-10-19 (FIX2 batch C into `fix2/integration`, merge window 2; coordinator Zen "Workforce Dev", lane D)
 
 `fix2/integration` merges `fix2/plexy-c-backup` `8b91192` (F2CP), VERIFIED (independent review MyBuddy WF-105 and delta WF-108, Linux 658 OK, Windows Zen 658 OK). AMENDMENT FIX2-A5 widened F2CP's commands.py scope from #50 only to #50 and #3, both in `backup_cmd` (review WF-105 N3). The relabels are restored: backup.py S5B; the commands.py row is removed (back to D). The new test file `test_fix2_backup.py` stays registered to F2CP. Integrator edits under A5 section 3 (lanes W30/W29, recorded here): the expected-failure decorators of `test_wf030_backup_edges` `test_1c_…` (W30-F1), `test_3a_…` (W30-F3) and `test_2b_…` (W30-F2, its flip shown on Linux by WF-105) and of `test_wf029_store` `test_busy_copy_check_is_a_lock_timeout_refusal` (W29-F1) are removed, and the pin `test_busy_copy_check_today_is_an_internal_error` (today's exit 4, superseded by #28) is removed. `test_5b_…` (W30-F4) stays an expected failure.
+
+## Registration 2026-10-19 (package FIX2 batch S, AMENDMENT FIX2-A7; decided by the Foreman under the owner's delegation; coordinator Zen "Workforce Dev" while White is out)
+
+Package text: WorkForce collab `contracts/b2fix2/` (PACKAGE-FIX2.md with AMENDMENT-FIX2-A7.md) and `contracts/b2s4a/AMENDMENTS.md` S4A-A6 (frozen with SHA256SUMS). Base: `fix2/integration` `7d76863` (main `52253dc` plus FIX2 batches T and B) plus this registration commit.
+
+| Lane | Worker | Branch | Scope |
+|---|---|---|---|
+| F2SP | Plexy | `fix2/plexy-s-gate` | the F2SP rows above (FIX2 #4, #5, #56; test_gate_decide.py :40/:559 to `self.scratch`); relabelled from S4G (gatecore.py, test_gate_decide.py) and D (commands.py, for #5's `gate_print_install` only) for this batch only |
+
+Rows go back to their previous owners when batch S is integrated.

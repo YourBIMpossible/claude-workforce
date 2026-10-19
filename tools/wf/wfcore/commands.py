@@ -1639,7 +1639,15 @@ PRINT_ONLY_NOTE = ("printed only: not installed, not qualified; installation and
 
 def gate_print_install(*, hooks_dir: str, root: str, db: str, wf_dir: str | None = None) -> dict[str, Any]:
     """`wf gate print-install` (INTERFACE-CONTRACT-S4A section 5). Computes and prints the install record; writes
-    nothing anywhere. The snippet is not an installation and not a qualification."""
+    nothing anywhere. The snippet is not an installation and not a qualification.
+
+    FIX2 #5: the hook command names the running interpreter (`sys.executable`) and quotes it and the hook path for
+    the platform's command-line parser (CommandLineToArgvW rules on Windows, POSIX shell words elsewhere)."""
+    import shlex
+    import subprocess
+    import sys
+    if not sys.executable:
+        raise WfRefused("sys.executable is empty: the interpreter for the hook command is unknown")
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     wf_dir = os.path.abspath(wf_dir or here)
     hook_src = os.path.join(wf_dir, "gate", "wf_gate_hook.py")
@@ -1653,10 +1661,12 @@ def gate_print_install(*, hooks_dir: str, root: str, db: str, wf_dir: str | None
     wfcore_sha = sha256_text("".join(lines))
     hook_sha = sha256_file(hook_src)
     hook_dst = os.path.join(hooks_dir, "wf_gate_hook.py")
+    argv = [sys.executable, "-I", hook_dst]
+    command = subprocess.list2cmdline(argv) if os.name == "nt" else shlex.join(argv)
     config = {"root": os.path.abspath(root), "db": os.path.abspath(db), "wf_dir": wf_dir,
               "wfcore_sha256": wfcore_sha, "read_timeout_s": 2.0, "hook_sha256": hook_sha}
     snippet = {"hooks": {"PreToolUse": [{"matcher": "Write|Edit|NotebookEdit|Bash|PowerShell", "hooks": [
-        {"type": "command", "command": f"python -I {hook_dst}", "timeout": 10, "onFailure": "block"}]}]}}
+        {"type": "command", "command": command, "timeout": 10, "onFailure": "block"}]}]}}
     return {"ok": True, "hook_source": hook_src, "hook_sha256": hook_sha, "hook_destination": hook_dst,
             "config_destination": os.path.join(hooks_dir, "wf_gate.json"), "config": config,
             "settings_snippet": snippet, "note": PRINT_ONLY_NOTE, "written": []}

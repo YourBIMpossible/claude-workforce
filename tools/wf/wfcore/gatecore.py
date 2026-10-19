@@ -10,9 +10,10 @@ written; nothing else on disk is written. It reuses the slice 1-3 decision logic
 Any exception inside `decide` becomes `deny` / `gate-error` (fail closed).
 
 Rules, first match decides (§2): 0 payload shape (and unresolvable target) -> 1 protected paths (preventable
-channel, everyone) -> 2 ledger health (unreadable, locked, identity, chain tail over the last 50 rows of every touched
-job; D-S4-4) -> 3 job resolution -> 4 per-job state for every touched job (recovery-open, cancelled, authority-<state>;
-`none`/`proposed` deny only for a job the session is bound to, D-S4-1) -> 5 preventable: a session with no current
+channel, everyone; a configured gate file by identity, FIX2 #4) -> 2 ledger health (unreadable, locked, identity, chain
+tail over the last 50 rows of every touched job; D-S4-4) -> 3 job resolution -> 4 per-job state for every touched job
+(recovery-open, cancelled, authority-<state>; `none`/`proposed` deny only for a job the session is bound to, D-S4-1;
+then, on the preventable channel only, job-closed, AMENDMENT S4A-A6) -> 5 preventable: a session with no current
 binding but a replaced or stopped one (stale-session / not-current-binding, any target, T13), then for a bound
 session `grant.check(action="write")` -> 6 preventable, unbound session into a
 job's write scope or `jobs/<job>/` (unbound-session) -> 7 shell channel: allow `shell-not-preventable` with
@@ -39,6 +40,26 @@ Reading choices recorded for review (no signature change):
   some job is decided by rules 5/8 as before, whatever it holds elsewhere.
 * A drive mismatch, a `..` that leaves the root, a link / reparse-point component inside the root, or a pathpolicy
   problem (device name, stream syntax, trailing dot) is `unresolvable-path`.
+* Rule 1 gate files (FIX2 #4): a target is a gate file when its normalised absolute path, its normcased `realpath` or
+  its file identity equals a configured gate file's. The identity is (st_dev, st_ino) of the deepest existing ancestor
+  by `os.stat`, which follows symlinks, junctions, 8.3 short names, the extended-length prefix and UNC admin-share
+  spellings to the one file, plus the normcased names below it. So an alias of a gate file not yet written is caught
+  through an aliased directory, and a hard link to a gate file is caught too. An identity that cannot be resolved (an
+  OS error other than not-found, on the target or on a gate file) is treated as the gate file: `protected-path`.
+* Rule 1 does no network I/O (WF-106 review F1). A gate file is a local file, so a UNC spelling whose host is not this
+  machine, and a device path other than a drive form, is never stat'ed or realpath'ed: rule 1 passes it and rule 0
+  decides it as before (`unresolvable-path` across anchors). An admin share of this machine (`X$` on localhost,
+  127.0.0.1, ::1 or the host name, any case; no DNS) is mapped lexically to its drive and then resolved locally.
+* Rule 1 resolves only where rule 0 would let a target through (WF-106 review F2, AMENDMENT FIX2-A9 section 2): after
+  that mapping, a target whose drive or anchor is not the boundary root's (another drive letter, a mapped network
+  drive, a subst drive, the device form of another drive) is compared by spelling only, with no I/O, and rule 0
+  denies it `unresolvable-path`. The extended-length and device forms of a drive count as that drive, and the root
+  goes through the same mapping (a root spelled as this machine's admin share is on that drive).
+* `job-closed` (AMENDMENT S4A-A6) is checked once recovery-open, cancelled and authority-<state> have been checked for
+  every touched job, so those states win on any touched job, not only on an earlier-sorted one. It applies to every
+  session that touches the closed job: the bound session (whatever its target, as authority-<state> does), an unbound
+  session writing in the job's scope or `jobs/<job>/`, and a session that holds only a replaced or stopped binding
+  there (formerly stale-session / not-current-binding).
 
 Claim limits: decisions on fixture payloads and fixture ledgers only. Nothing here registers or invokes a hook, and
 no write is claimed to be prevented in Claude Code (that needs slice 4b). Shell commands are recorded as invocations
@@ -52,6 +73,7 @@ import json
 import os
 import pathlib
 import re
+import socket
 import sqlite3
 import stat
 from typing import Any
@@ -78,7 +100,7 @@ REASONS: tuple[str, ...] = (
     "malformed-payload", "unresolvable-path", "protected-path",
     "ledger-unreadable", "ledger-locked", "ledger-identity", "chain-tail",
     "recovery-open", "cancelled", "authority-none", "authority-proposed", "authority-expired", "authority-revoked",
-    "authority-voided", "authority-malformed",
+    "authority-voided", "authority-malformed", "job-closed",  # AMENDMENT S4A-A6
     "stale-session", "not-current-binding", *_GRANT_CHECK_REASONS,
     "unbound-session", "shell-not-preventable", "out-of-scope", "outside-boundary", "not-mediated", "gate-error",
     # PACKAGE-FIX1 I6: reasons only the hook emits (config and integrity checks, audit write failure); listed here so
@@ -154,6 +176,111 @@ def _link_component(root: str, rel_parts: list[str]) -> bool:
         if getattr(st, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400):
             return True
     return False
+
+
+_NOT_FOUND = (FileNotFoundError, NotADirectoryError)
+
+
+def _identity(path: str) -> tuple:
+    """The file identity of `path` for rule 1: ("id", st_dev, st_ino, normcased names below) of its deepest existing
+    ancestor, by `os.stat` (it follows links, so every alias of one file or directory gives one identity); ("path",
+    normcased absolute path) when no ancestor exists or the filesystem reports no file id. Raises OSError / ValueError
+    when the path cannot be resolved; the caller fails closed."""
+    cur = path
+    below: list[str] = []
+    while True:
+        try:
+            st = os.stat(cur)
+        except _NOT_FOUND:
+            head, name = os.path.split(cur)
+            if head == cur or not head:
+                return ("path", os.path.normcase(os.path.abspath(path)))
+            if name:
+                below.append(os.path.normcase(name))
+            cur = head
+            continue
+        if not st.st_ino:
+            return ("path", os.path.normcase(os.path.abspath(path)))
+        return ("id", st.st_dev, st.st_ino, tuple(reversed(below)))
+
+
+_LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+_ADMIN_SHARE = re.compile(r"[A-Za-z]\$")
+_DRIVE_ONLY = re.compile(r"[A-Za-z]:")
+
+
+def _local_hosts() -> frozenset[str]:
+    """Names of this machine for UNC spellings, case-folded: the loopback names and socket.gethostname() (no DNS)."""
+    try:
+        return _LOCAL_HOSTS | {socket.gethostname().casefold()}
+    except OSError:
+        return _LOCAL_HOSTS
+
+
+def _local_form(path: str) -> str | None:
+    r"""WF-106 review F1: the spelling of `path` that rule 1 may resolve on this machine, decided without I/O.
+
+    On Windows, a UNC spelling (\\host\share\..., \\?\UNC\host\share\..., \\.\UNC\host\share\..., either separator)
+    whose host is this machine and whose share is a drive's admin share `X$` maps to `X:\...`. Any other UNC spelling,
+    and any device path other than \\?\X:\... or \\.\X:\..., is None: it is never resolved here. Every other path, and
+    every path on POSIX, is returned unchanged."""
+    if os.name != "nt":
+        return path
+    s = path.replace("/", "\\")
+    if not s.startswith("\\\\"):
+        return path
+    parts = s[2:].split("\\")
+    if parts[0] in ("?", "."):
+        if len(parts) > 1 and _DRIVE_ONLY.fullmatch(parts[1]):
+            return path
+        if len(parts) < 2 or parts[1].upper() != "UNC":
+            return None
+        parts = parts[2:]
+    host, share = (parts + ["", ""])[:2]
+    if _ADMIN_SHARE.fullmatch(share) and host.casefold() in _local_hosts():
+        return share[0].upper() + ":\\" + "\\".join(parts[2:])
+    return None
+
+
+def _anchor(path: str) -> str | None:
+    r"""The case-folded drive or anchor of an absolute path, lexically: "x:" for X:\..., \\?\X:\... and \\.\X:\...,
+    "\\host\share" for a UNC path, "/" on POSIX; None for a path that is not absolute."""
+    split = _split_abs(path)
+    if split is None:
+        return None
+    anchor = split[0]
+    if re.fullmatch(r"\\\\[?.]\\[A-Za-z]:", anchor):
+        anchor = anchor[-2:]
+    return anchor.casefold()
+
+
+def _is_gate_file(target: str, gate_files: list[str] | None, root: str) -> bool:
+    """Rule 1 (FIX2 #4): the absolute `target` names a configured gate file by spelling, `realpath` or identity. An
+    identity that cannot be resolved is treated as the gate file (fail closed). A target with no local form (a remote
+    UNC or device spelling, WF-106 review F1) or whose local form is not on the boundary root's anchor (WF-106 review
+    F2, AMENDMENT FIX2-A9 section 2: rule 0 denies it) is compared by spelling only, with no I/O."""
+    gates = [g for g in gate_files or [] if isinstance(g, str)]
+    if not gates:
+        return False
+    spelled = os.path.normcase(os.path.abspath(target))
+    if any(os.path.normcase(os.path.abspath(g)) == spelled for g in gates):
+        return True
+    local = _local_form(target)
+    if local is None:
+        return False
+    root_abs = root if _split_abs(root) is not None else os.path.abspath(root)
+    if _anchor(local) != _anchor(_local_form(root_abs) or root_abs):
+        return False
+    try:
+        real, ident = os.path.normcase(os.path.realpath(local)), _identity(local)
+        for g in gates:
+            g_local = _local_form(g)
+            if g_local is not None and (os.path.normcase(os.path.realpath(g_local)) == real
+                                        or _identity(g_local) == ident):
+                return True
+        return False
+    except (OSError, ValueError):
+        return True
 
 
 def _to_root_relative(target: str, root: str) -> tuple[str | None, str | None]:
@@ -335,10 +462,10 @@ def _decide(payload: dict, out: dict, *, root: str, db_path: str, now: str, gate
         raw = payload["tool_input"].get(_PATH_KEY[payload["tool_name"]])
         if not isinstance(raw, str) or not raw.strip():
             raise _Deny("malformed-payload")
-        # rule 1 (gate files): compared on the normalised absolute path before any boundary classification, so a
-        # configured gate file is protected however its path is spelled (`..`, case, separators)
-        absolute = os.path.normcase(os.path.abspath(_absolute(raw, payload["cwd"])))
-        if any(isinstance(g, str) and os.path.normcase(os.path.abspath(g)) == absolute for g in gate_files or []):
+        # rule 1 (gate files): compared before any boundary classification, by spelling (`..`, case, separators),
+        # realpath and file identity (FIX2 #4: any alias of a gate file), failing closed; identity I/O only on the
+        # boundary root's anchor (WF-106 review F1/F2)
+        if _is_gate_file(_absolute(raw, payload["cwd"]), gate_files, root):
             raise _Deny("protected-path")
         targets, problem = target_paths(payload, root)
         if problem == "malformed-payload":
@@ -399,6 +526,9 @@ def _decide(payload: dict, out: dict, *, root: str, db_path: str, now: str, gate
                 raise _Deny(f"authority-{state}", touched)
             if state in ("none", "proposed") and j in bound:
                 raise _Deny(f"authority-{state}", touched)
+        # rule 4 (AMENDMENT S4A-A6): a closed job, preventable channel only; the shell channel is unchanged (rule 7)
+        if channel == "preventable" and any(r["type"] == "close" for j in touched for r in ledger[j][0]):
+            raise _Deny("job-closed", touched)
         # rule 7: shell channel (rule 4 has applied to the session's bound jobs)
         if channel == "shell":
             out.update(decision="allow", reason="shell-not-preventable")
