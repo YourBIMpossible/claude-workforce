@@ -107,7 +107,9 @@ def backup(db_path: str, dest_path: str, *, writer_stopped: bool = False) -> dic
     src = _open_ro(db_path)
     try:
         try:
-            fd = os.open(dest_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0))
+            # 0o600: owner read/write only on POSIX (FIX1 P5, WF-021 F9: the default 0o777 & ~umask gave the copy
+            # execute bits and world read). Windows honours only the read-only bit, which 0o600 leaves clear.
+            fd = os.open(dest_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o600)
         except FileExistsError:                                          # created between the check and now
             raise db.WfRefused("dest-exists", dest=dest_path) from None
         except FileNotFoundError:                                        # parent removed between the check and now
