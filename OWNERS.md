@@ -58,6 +58,7 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_fix1_errors.py | FXL |
 | tools/wf/wfcore/markers.py | F2AL |
 | tools/wf/wfcore/txn.py | F2AL |
+| tools/wf/wf.py | F2AL |
 | tools/wf/tests/test_fix2_resolve.py | F2AL |
 | tools/wf/tests/test_fix1_ids.py | FXL |
 | tools/wf/tests/test_fix1_paths.py | FXM |
@@ -208,6 +209,6 @@ Package text: WorkForce collab `contracts/b2fix2/` (PACKAGE-FIX2.md with AMENDME
 
 | Lane | Worker | Branch | Scope |
 |---|---|---|---|
-| F2AL | Lazy | `fix2/lazy-a-resolve` | the F2AL rows above (FIX2 #1, #18, #21, #46, #47, #48); relabelled from D (markers.py, txn.py) for this batch only |
+| F2AL | Lazy | `fix2/lazy-a-resolve` | the F2AL rows above (FIX2 #1, #18, #21, #46, #47, #48); relabelled from D (markers.py, txn.py; wf.py for #21's auto-resolve handler at about :257-261 only, AMENDMENT FIX2-A9) for this batch only |
 
 Rows go back to their previous owners when batch A is integrated.
