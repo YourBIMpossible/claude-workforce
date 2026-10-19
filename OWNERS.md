@@ -63,6 +63,14 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_wf021_*.py | W21 |
 | fixtures/results/wf021-mybuddy/** | W21 |
 | fixtures/results/wf022-zen/** | W22 |
+| tools/wf/tests/test_wf019_*.py | W19 |
+| tools/wf/tests/test_wf026_*.py | W19 |
+| fixtures/results/wf019-plexy/** | W19 |
+| tools/wf/tests/test_wf029_*.py | W29 |
+| fixtures/results/wf029-lazy/** | W29 |
+| tools/wf/tests/test_wf030_*.py | W30 |
+| tools/wf/tests/test_wf034_*.py | W34 |
+| fixtures/results/wf047-plexy/** | W47 |
 | ** | D |
 
 Lane A owns only the body of `accept_declarations` inside validate.py; other functions in that file are frozen
