@@ -62,7 +62,9 @@ class JobNewAndGrant(Base):
         self.assertIn("changed-set baseline could not be captured (fail closed, no event recorded): injected walk problem",
                       r["error"])
         c, r = self.run_wf("status", "j", role="coordinator", session="C1")
-        self.assertEqual(c, 1, r)
+        self.assertEqual((c, r["code"]), (1, "refused"), r)
+        self.assertIn("ledger not found", r["error"])                 # the refusal created nothing, not even a ledger
+        self.assertFalse(os.path.exists(self.db))
 
     def test_proposed_grant_row_not_readable_after_commit(self):
         """commands.py:310 (row 3, `pragma: no cover`): the just-committed grant row reads back as missing."""

@@ -100,9 +100,9 @@ class Fixture(Base):
         seq, head_self = self.head()
         return self.put_marker(seq + 1, "committing", "f" * 64, head_self)
 
-    def conflict(self, **kw):
+    def conflict(self, *extra: str, **kw):
         return self.run_wf("append", "j", "--type", "intent", "--content", json.dumps(dict(INTENT, note="second")),
-                           session="B2", **kw)
+                           *extra, session="B2", **kw)
 
 
 # ----------------------------------------------------------------------------------------- write_event COMMIT
@@ -189,8 +189,12 @@ class ConflictCommitFailures(Fixture):
             return real(ref, data)
 
         with mock.patch.object(markers, "write_atomic", side_effect=flaky), self.held_reader():
-            c, r = self.conflict(**{})
+            c, r = self.conflict("--oplog")
         self.assertEqual((c, r["code"], r["conflict_outcome"]), (1, "commit-timeout", "conflict-pending"), r)
+        failed = [o for o in r["ops"] if o.get("op") == "marker_conflict_pending_failed"]
+        self.assertEqual(len(failed), 1, r["ops"])
+        self.assertIn("injected rewrite failure", failed[0]["error"])
+        self.assertFalse(any(o.get("op") == "marker_conflict_pending" for o in r["ops"]), r["ops"])
         (ref,) = markers.list_markers(self.db, "j")
         self.assertEqual(markers.read(ref)["state"], "committing")
 
@@ -202,6 +206,10 @@ class ConflictCommitFailures(Fixture):
         self.assertEqual((c, r["code"]), (1, "commit-uncertain"), r)
         self.assertIn("give-up: ROLLBACK raised", r["error"])
         self.assertEqual(r["conflict_outcome"], "conflict-pending")
+        (ref,) = markers.list_markers(self.db, "j")                        # the conflict-pending marker is kept
+        m = markers.read(ref)
+        self.assertEqual((m["state"], m["rev"]), ("conflict-pending", 2))
+        self.assertIn("conflict", m)
 
 
 # ----------------------------------------------------------------------------------------- resolve
@@ -234,6 +242,9 @@ class ResolveFailures(Fixture):
             holder.execute("ROLLBACK")
             holder.close()
         self.assertEqual((c, r["outcome"]), (1, "RESERVATION-NOT-OBTAINED"), r)
+        # txn.py:395, not :387 (which says "connection setup stayed busy"): the BEGIN IMMEDIATE wait gave up
+        self.assertEqual(r["note"], "no change; an originator still holding the reservation looks like this")
+        self.assertIn("reservation not obtained within", r["detail"])
         self.assertTrue(os.path.exists(ref.path))
 
     def test_marker_vanishing_between_m0_and_m1_is_already_cleared(self):
@@ -327,7 +338,7 @@ class ResolveConflictMarker(Fixture):
 
 class FaultSeamArgument(Fixture):
     def test_non_integer_delay_argument_is_an_internal_error(self):
-        """faults.py:34 (row 76): `delay-precommit:abc` raises ValueError from int(); test seam only (fixtures-tmp
+        """faults.py:41 (row 76; the WF-020 inventory cited the 2dedc94 line 34): `delay-precommit:abc` raises ValueError from int(); test seam only (fixtures-tmp
         ledgers). Since FIX1 E1 the CLI reports it as `internal-error`, exit 4, instead of a traceback."""
         with mock.patch.dict(os.environ, {"WF_TEST_FAULTS": "delay-precommit:abc"}):
             with self.assertRaises(ValueError):

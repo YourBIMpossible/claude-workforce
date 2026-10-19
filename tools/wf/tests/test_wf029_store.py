@@ -5,6 +5,8 @@ docstring names the observation (a FINDING). Injection only on fixtures/tmp ledg
 from __future__ import annotations
 
 import builtins
+import contextlib
+import io
 import json
 import os
 import sqlite3
@@ -15,6 +17,8 @@ from unittest import mock
 
 import test_wf
 from test_wf import Base
+
+import wf
 
 from wfcore import backup, changeset, export, manifest, markers, paths, pathpolicy
 from wfcore import db as dbm
@@ -79,15 +83,29 @@ class BackupFailures(Fixture):
         self.assertIn("engine backup failed (OperationalError: injected backup failure)", r["error"])
         self.assertTrue(os.path.exists(self.dest()), "the partial destination is left in place (documented)")
 
+    def _main_backup(self) -> tuple[int, dict]:
+        """`wf backup` through wf.main (where the FIX1 E1 handler lives), with --json; returns (exit, result)."""
+        out = io.StringIO()
+        argv = ["wf.py", "--db", self.db, "--role", "coordinator", "--session", "C1", "--json", "backup", "j", "--to",
+                self.dest()]
+        with mock.patch.object(backup.db, "integrity", side_effect=sqlite3.OperationalError("database is locked")),                 mock.patch.object(sys, "argv", argv), contextlib.redirect_stdout(out):
+            code = wf.main()
+        return code, json.loads(out.getvalue())
+
     @unittest.expectedFailure
     def test_busy_copy_check_is_a_lock_timeout_refusal(self):
-        """FINDING (backup.py:87, row 50): backup._check documents that a busy/lock error "still raises
-        (db.WfLockTimeout)", but it re-raises the raw sqlite3.OperationalError, which is not a WfError: `wf backup`
-        then ends as an unexpected exception (since FIX1 E1: `internal-error`, exit 4) instead of the `lock-timeout`
-        refusal (exit 1). Observed: OperationalError escapes wf.run."""
-        with mock.patch.object(backup.db, "integrity", side_effect=sqlite3.OperationalError("database is locked")):
-            c, r = self.coord("backup", "j", "--to", self.dest())
-        self.assertEqual((c, r["code"]), (1, "lock-timeout"), r)
+        """FINDING W29-F1 (backup.py:87, row 50): backup._check documents that a busy/lock error "still raises
+        (db.WfLockTimeout)", but it re-raises the raw sqlite3.OperationalError, which is not a WfError. `wf backup`
+        then ends as an unexpected exception: `internal-error`, exit 4 (FIX1 E1), instead of the `lock-timeout`
+        refusal (exit 1). This test asserts the documented outcome and fails on that assertion (review W29-R2)."""
+        code, res = self._main_backup()
+        self.assertEqual((code, res["code"]), (1, "lock-timeout"), res)
+
+    def test_busy_copy_check_observed_today_is_an_internal_error(self):
+        """The observation behind W29-F1, pinned: exit 4, `internal-error`, the raw engine error named."""
+        code, res = self._main_backup()
+        self.assertEqual((code, res["code"]), (4, "internal-error"), res)
+        self.assertEqual(res["error"], "OperationalError: database is locked")
 
 
 # ------------------------------------------------------------------------------------------- export.py
@@ -154,7 +172,7 @@ class ExportChecks(Fixture):
 
 # ------------------------------------------------------------------------------------------- manifest.py
 
-class ManifestRows(unittest.TestCase):
+class ManifestRows(Base):
     def test_format_line_refuses_a_bad_sha(self):
         """manifest.py format_line (row 63)."""
         with self.assertRaises(ValueError) as cm:
@@ -163,9 +181,7 @@ class ManifestRows(unittest.TestCase):
 
     def test_read_refuses_a_whitespace_only_line(self):
         """manifest.py read (row 64)."""
-        d = os.path.join(test_wf.TMP, "wf029-manifest")
-        os.makedirs(d, exist_ok=True)
-        path = os.path.join(d, "manifest.txt")
+        path = os.path.join(self.dir, "manifest.txt")   # the harness's fresh per-test folder (review W29-R5)
         with open(path, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(f"{SHA}  1  a\n \t \n")
         with self.assertRaises(manifest.ManifestMalformed) as cm:
@@ -225,8 +241,12 @@ class MarkerRows(Fixture):
         self.assertIn("PermissionError", entry["problem"])
 
     def test_marker_vanished_between_list_and_read_is_unreadable(self):
-        """markers.py:211 (row 74): listed, then gone before read -> state `unreadable`."""
-        markers.write_atomic(self.ref, {"attempt_id": self.ref.attempt_id, "seq": 7})
+        """markers.py:211 (row 74): listed, then gone before read -> state `unreadable`. The marker has a real state, so
+        only the injected read -> None produces `unreadable` (review W29-R1: the earlier version had no state and
+        passed with or without the injection)."""
+        markers.write_atomic(self.ref, {"attempt_id": self.ref.attempt_id, "seq": 7, "state": "committing", "rev": 1})
+        (before,) = markers.describe(self.db, "j")
+        self.assertEqual(before["state"], "committing")
         with mock.patch.object(markers, "read", return_value=None):
             (entry,) = markers.describe(self.db, "j")
         self.assertEqual(entry["state"], "unreadable")
