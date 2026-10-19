@@ -2,8 +2,7 @@
 
 Ports the WF-021 characterization tests (branch wf021/mybuddy, not merged) as ordinary tests of the fixed behaviour:
   P1  WF-021 F1/F2/F5  case is folded only where the platform folds it (pathpolicy.CASE_FOLDING, os.path.normcase).
-  P2  WF-021 F3        drive-less rooted Windows path: the fix lives in gatecore.py (lane FXL) - BLOCKED; pinned here
-                       as an expected failure so the fix is noticed.
+  P2  WF-021 F3        drive-less rooted Windows path: moved to lane FXL (AMENDMENT FIX1-A2.1, WF-025 item I7).
   P3  WF-021 F4        grant exclusions use the same per-platform case rule as P1 (deny side only).
   P4  WF-021 F6        a non-UTF-8 file name in a scope is a baseline problem with its escaped name, not a traceback.
   P5  WF-021 F9        backup files are created with mode 0o600 on POSIX.
@@ -24,7 +23,7 @@ import unittest
 from unittest import mock
 
 from test_wf import CONTRACT, GRANT, Base  # noqa: E402  (sets sys.path; fresh WF_TEST_TMP)
-from wfcore import backup, changeset, gatecore, grant, pathpolicy, reconcile  # noqa: E402
+from wfcore import backup, changeset, grant, pathpolicy, reconcile  # noqa: E402
 
 LINUX = sys.platform.startswith("linux")
 WINDOWS = os.name == "nt"
@@ -142,31 +141,16 @@ class P1CaseRuleStrings(unittest.TestCase):
 @unittest.skipUnless(WINDOWS, SKIP_WINDOWS)
 class P1CaseOnWindows(Base):
     def test_p1_upper_case_scope_glob_still_walks_the_directory(self):
+        """NTFS keys stay folded (unchanged from the base): the walk starts at the folded prefix `docs`, so the
+        recorded key is `docs/a.txt` although the directory on disk is `Docs/` (review F1-1)."""
         os.makedirs(os.path.join(self.dir, "ledger"))
         _write(os.path.join(self.dir, "Docs", "a.txt"))
         b = changeset.baseline(self.dir, _contract(read_scope=["Docs/**"]))
-        self.assertEqual((list(b["entries"]), b["problems"]), (["Docs/a.txt"], []))
+        self.assertEqual((list(b["entries"]), b["problems"]), (["docs/a.txt"], []))
 
     def test_p1_case_variant_directory_is_still_the_write_scope(self):
         classes = pathpolicy.classify(["JOBS/J/WORK/a.txt"], dict(CONTRACT))
         self.assertEqual(classes["P1"], ["JOBS/J/WORK/a.txt"])
-
-
-# ---------------------------------------------------------------------------------------------------------- P2
-
-def _payload(path: str, cwd: str) -> dict:
-    return {"tool_name": "Write", "tool_input": {"file_path": path}, "cwd": cwd}
-
-
-class P2DrivelessRootedPath(unittest.TestCase):
-    @unittest.expectedFailure
-    def test_p2_driveless_rooted_windows_path_is_outside_the_boundary(self):
-        """F3 (row 3), BLOCKED in lane FXM: the fix belongs in gatecore._absolute / _to_root_relative (lane FXL).
-        `\\jobs\\j\\work\\a.txt` with cwd and root `C:\\root` names `C:\\jobs\\...` (outside); today it resolves
-        in-root. When FXL fixes it this expected failure turns into an unexpected success: drop the decorator."""
-        rel, problem = gatecore.target_paths(_payload("\\jobs\\j\\work\\a.txt", "C:\\root"), "C:\\root")
-        self.assertEqual(rel, [])
-        self.assertIn(problem, ("outside-boundary", "unresolvable-path"))
 
 
 # ---------------------------------------------------------------------------------------------------------- P3
