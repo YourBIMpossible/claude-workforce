@@ -290,3 +290,7 @@ Rows go back to their previous owners when batch A is integrated.
 ## Integration 2026-10-19 (FIX2 batch A into `fix2/integration`, merge window 2; coordinator Zen "Workforce Dev", lane D)
 
 `fix2/integration` merges `fix2/lazy-a-resolve` `52f7e64` (F2AL: #1, #18, #21 in wf.py per A9, #46, #47, #48, and the WF-109 M1 conflict-marker fix including probe B), VERIFIED (independent review Plexy WF-109 and its delta review, Linux MyBuddy WF-111 663 OK, Windows Zen 663 OK). The relabels are restored: the markers.py, txn.py and wf.py rows are removed (back to D). The new test file `test_fix2_resolve.py` stays registered to F2AL.
+
+## Integrator edit 2026-10-19 (AMENDMENT FIX2-A13: W20 tests meeting FIX2 batch A #1; coordinator Zen "Workforce Dev", lane D)
+
+The cumulative Windows suite at `d2f4579` (window 2: C+S+A) failed `test_wf020_txn.ResolveOutcomes.test_incomplete_conflict_marker_stays_uncertain` (it pinned the pre-FIX2 reason text "conflict marker incomplete: 'attempted_msg_id'"; batch A #1 unified the reason to "conflict marker malformed: … attempted_msg_id …", the behaviour, STILL-UNCERTAIN with the marker kept, unchanged) and reported an unexpected success for `test_empty_conflict_payload_marker_not_dropped` (lane W20 finding F8, fixed by batch A #1). Under A13 the integrator asserts the new reason wording while still requiring the missing field to be named, and removes the F8 expected-failure decorator. These are the only edits to that W20 file.

@@ -88,11 +88,13 @@ class ResolveOutcomes(Fixture):
         ref = self.put_marker(seq + 1, "conflict-pending", "f" * 64, head_self, {"conflict": {"role": "builder"}})
         c, r = self.resolve(seq + 1)
         self.assertEqual((c, r["outcome"]), (1, "STILL-UNCERTAIN"), r)
-        self.assertIn("conflict marker incomplete: 'attempted_msg_id'", r["reason"])
+        # FIX2 #1 (batch A) unified the reason for an incomplete or malformed conflict payload; it still names the
+        # missing field (integrator edit, AMENDMENT FIX2-A13).
+        self.assertIn("conflict marker malformed", r["reason"])
+        self.assertIn("attempted_msg_id", r["reason"])
         self.assertTrue(__import__("os").path.exists(ref.path))
 
-    @unittest.expectedFailure
-    def test_empty_conflict_payload_marker_not_dropped(self):
+    def test_empty_conflict_payload_marker_not_dropped(self):  # F8 fixed by FIX2 #1 (batch A); decorator removed (A13)
         """FINDING F8 (low; needs a tampered or truncated marker): a `conflict-pending` marker whose `conflict` object
         is empty is treated as an ordinary attempt: resolve answers NOT-COMMITTED and deletes it, so no conflict row is
         re-recorded and the claimant-conflict block is lost. markers.guard states that a conflict marker is never
