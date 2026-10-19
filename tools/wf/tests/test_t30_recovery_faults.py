@@ -17,8 +17,9 @@ Subcases (spec T30, reported by letter):
       contract's: the same final state as an unkilled run, exactly one `recovery-opened`, each listed exception id
       acknowledged exactly once, exactly one `recovery-closed`, chain valid, no partial row.
   (c), (d), (e), (g), (i) belong to S2R / S2W (test_t30_recover_close.py, test_b2s2_wiring.py); not here.
-  (f) recovery helper opening a second write connection and (h) database replaced between commands: NOT RUN
-      (excluded by the contract; listed so the closeout can say so).
+  (f) recovery helper opening a second write connection and (h) database replaced between commands: not in this
+      file (excluded by the S2 contract); covered since B2 slice 5 by test_t30_race_secondwriter_identity.py
+      (T30fSecondWriter, T30hReplacement) and test_b2s5_wiring.py (WF-019 F11 docstring correction).
 
 Wiring dependency: the `recover reconcile | close` verbs and the fault names land on White's
 `sprint/white-b2s2-wiring`. On a tree without them every test here is skipped with the reason "wiring not present
