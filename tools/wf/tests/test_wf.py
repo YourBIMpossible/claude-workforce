@@ -3,7 +3,27 @@ Logs go to WF_TEST_LOGDIR (default tools\\wf\\tests\\logs). Ledgers live under W
 fixtures\\tmp\\unittest, must be under fixtures\\tmp) so the fault seam is honoured. Test ids T01.. follow
 FB1.4 §4.6 / D2–D7 numbering where a mechanism exists in this
 slice; ids that name out-of-scope mechanisms (gate, replay, recovery, bind) are documented as record-and-verify
-readings in the docstring and not claimed."""
+readings in the docstring and not claimed.
+
+Map from these FB1.4 ids to FIRST-RELEASE-SPEC Rev 5.3 §8 cases (WF-019 finding F7, WF-026; behaviour, not name).
+The `test_spec_Txx` methods below already use spec numbering.
+  test_T01_canonical_and_self_hash ............. no spec case (canonical JSON / self hash; basis of T23, T36 level 1)
+  test_T02_schema_constraints_and_immutability . no spec case of its own (schema, triggers, journal mode; supports T23, T31)
+  test_T03_contract_required_fields ............ spec T03 (contract source turn) and T09 (contract missing-field label)
+  test_T04_message_rules ....................... spec T01, T02, T04, T05, T08, T10
+  test_T05_grant_ordering ...................... spec T03 (no-provenance) and T29 (unbound-approval, wrong owner hash)
+  test_T05b_block_hash_repeatable_on_fresh_ledger  no spec case (block-hash determinism)
+  test_T07_grant_resource_widening ............. spec T10
+  test_T08_full_flow_status_accept_close ....... spec T20 (close before accept), T24 (same session), T35 (P-classes)
+  test_T09_abandon_then_close .................. no spec case (abandon flow)
+  test_T10_verify_detects_tamper ............... spec T23 (row edit) and the `wf` half of T19 (append refused on a bad chain)
+  test_T27_guard_cases ......................... spec T28 (uncertain-write markers, §4.4a)
+  test_T28_resolve_selection ................... no spec case (marker resolution)
+  test_T29_commit_timeout_give_up .............. spec T27 (commit-timeout result)
+  test_T29b_reads_wait_for_write_lock .......... spec T27 (bounded reader)
+  test_T30_commit_error_fault_and_resolve ...... spec T28(b), by proxy (IOERR during commit)
+  test_T31_faults_not_allowed_on_product_path .. no spec case (fault-seam guard)
+  test_T31b_export_refresh_failure_keeps_commit  spec T28(c)"""
 from __future__ import annotations
 
 import hashlib

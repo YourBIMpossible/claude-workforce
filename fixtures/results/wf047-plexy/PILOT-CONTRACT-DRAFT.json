@@ -1,0 +1,51 @@
+{
+ "_status": "DRAFT, NOT ACTIVATED. Planning document for slice 6 (WF-044). Not a contract: do not pass this file to `wf job new`. The coordinator builds the real contract.json from the `contract` object below after the owner's choices are filled in, with every <OWNER: ...> placeholder replaced.",
+ "_based_on": "WF-022 rehearsal contract shape (wf022/zen c92340c, fixtures/results/wf022-zen/run_flow.py:89-102), FIRST-RELEASE-SPEC §12 candidate (b), ACCEPTANCE-LIST-DRAFT.md (from-zen/WF-022), updated for FIX1 (PR #56, dfd6e85).",
+ "_fix1_notes": [
+  "I3: every wf call names the ledger explicitly: --db <boundary root>\\ledger\\wf.db (or WF_DB). There is no default ledger; without it wf exits 2 rejected(usage).",
+  "I1: the job id must match ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ and must not end in '.' or a space, contain '..', be a Windows device name (CON, PRN, AUX, NUL, COM1-9, LPT1-9, any case, any extension), or equal an existing job id case-insensitively.",
+  "I4: read_scope and write_scope below do not overlap (pristine/** vs scope/**), so `job new` returns no `warnings` key; if the owner changes either, a returned `warnings` entry is advisory, not a refusal, and should be resolved before activation.",
+  "Required contract keys at dfd6e85 (validate.CONTRACT_REQUIRED): owner_request, interpretation, baseline, outcome, acceptance_criteria, read_scope, write_scope, watch, presence_only, allowed_tools, limits, exclusions, evidence, closeout_rules, recovery_rules, observe_thresholds, environment. All are present below.",
+  "Do not run `wf observe` during the pilot until WF-042 item 2 (FIX2 #37) is fixed: its log path is outside the P4 coordination set."
+ ],
+ "_owner_must_choose": {
+  "job_id": "the pilot job id (see FIX1 I1 rules), e.g. pilot-docfix-1",
+  "boundary_root": "a disposable local folder outside every repository, AIEP and BIMpossible path, e.g. %LOCALAPPDATA%\\wf-pilot\\",
+  "owner_request.quote": "the owner's request in the owner's own words (verbatim)",
+  "owner_request.source_turn": "the reference of the owner turn that contains that quote",
+  "acceptance_criteria": "approve AC1-AC7 as drafted, or change them; especially AC6 (byte identity with pristine) vs a looser 'only the five lines changed'",
+  "pristine_visibility": "whether the builder may read pristine/ (if not: keep it out of the builder's binding paths; it is already excluded from write)",
+  "observe_thresholds": "slow_s / silent_s placeholders (spec §7: contract parameters, unmeasured)",
+  "limits": "the stated stance/posture line (P-SUPERVISED, E1) and any time limit"
+ },
+ "contract": {
+  "owner_request": {
+   "quote": "<OWNER: verbatim request, e.g. 'Repair the five documentation inconsistencies in the copied folder (job <job_id>)'>",
+   "source_turn": "<OWNER: owner turn reference>"
+  },
+  "interpretation": "restore each planted inconsistency I1-I5 in scope/** to its pristine text; change nothing else",
+  "baseline": {"manifest": [], "git_revision": null, "uncommitted_state": null},
+  "outcome": "scope/** equals pristine/** byte for byte; AC1-AC7 pass",
+  "acceptance_criteria": [
+   {"id": "AC1", "check": "check-acceptance.ps1 AC1", "expected": "True"},
+   {"id": "AC2", "check": "check-acceptance.ps1 AC2", "expected": "True"},
+   {"id": "AC3", "check": "check-acceptance.ps1 AC3", "expected": "True"},
+   {"id": "AC4", "check": "check-acceptance.ps1 AC4", "expected": "True"},
+   {"id": "AC5", "check": "check-acceptance.ps1 AC5", "expected": "True"},
+   {"id": "AC6", "check": "check-acceptance.ps1 AC6", "expected": "True"},
+   {"id": "AC7", "check": "wf accept changeset: only scope/** changed and undeclared is empty", "expected": "True"}
+  ],
+  "read_scope": ["pristine/**"],
+  "write_scope": ["scope/**"],
+  "watch": ["ledger/**"],
+  "presence_only": [],
+  "allowed_tools": {"builder": ["Write", "Edit"], "reviewer": ["Read"]},
+  "limits": "<OWNER: e.g. 'pilot: disposable local copy only; stance P-SUPERVISED; posture E1; owner present for the live run'>",
+  "exclusions": ["pristine/**"],
+  "evidence": ["ledger", "check-acceptance.ps1 output", "wf verify --checkpoint output with the owner-retained checkpoint"],
+  "closeout_rules": "close after accept; intervention declaration with real minutes or unknown (T21)",
+  "recovery_rules": "owner-present manual recovery (spec 3B, 6.2): stop-confirmed by the owner, reconcile, recover decide, replacement bind at generation+1, ack-reconcile",
+  "observe_thresholds": {"slow_s": 600, "silent_s": 1800},
+  "environment": "disposable local scope"
+ }
+}

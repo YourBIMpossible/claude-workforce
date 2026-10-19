@@ -1,0 +1,35 @@
+{
+ "_status": "DRAFT, NOT ACTIVATED. Planning document for slice 6 (WF-044). Not a grant: do not pass this file to `wf grant propose`. No Grant Confirmation Block exists for it; the block hash is printed only by `grant propose` on the pilot ledger, and authority begins only at the owner's confirmation of that block (spec §3 steps 1-4).",
+ "_based_on": "WF-022 rehearsal grant shape (wf022/zen c92340c, fixtures/results/wf022-zen/run_flow.py:104-109), updated for FIX1 (PR #56, dfd6e85) and for the WF-037 review finding L37-M1 (a replacement block must carry exactly allowed, max and expiry).",
+ "_notes": [
+  "The live run needs one replacement (slice 6 item 3: staged kill -> stop-confirmed -> reconcile -> decide -> replacement bind at generation 2), so replacement.allowed must be true and max at least 1. bind.validate_bind refuses a block missing any of allowed/max/expiry (bind.py:179-195) and a replacement wider than the replaced binding (bind.py:434-437).",
+  "Bind order learned in the rehearsal: the coordinator binds itself with an explicit --path scope/** (WF022-F3: the default contract read_scope exceeds this ARS role); the reviewer is bound only after `delivered` (WF022-F4).",
+  "Grant confirmation format (owner action (c)): the owner replies with the grant id and the first 8 hex of the printed block hash; the coordinator passes them as `grant activate <job> --owner-hash <8 hex> --quote \"approve <grant_id> <8 hex>\" --turn <owner turn reference>`. T29/D-022: the code checks only --owner-hash, so the quote must itself carry the grant id and hash prefix.",
+  "FIX1 I3: every grant command also carries --db <boundary root>\\ledger\\wf.db."
+ ],
+ "_owner_must_choose": {
+  "grant_id": "e.g. G-pilot-docfix",
+  "expiry": "an absolute UTC instant YYYY-MM-DDTHH:MM:SSZ covering the pilot window only (not open-ended)",
+  "replacement.max": "1 is enough for one staged kill; more allows further replacements",
+  "replacement.expiry": "UTC instant, at or before the grant expiry",
+  "reviewer_paths": "whether the reviewer role may read pristine/** (needed for AC6 comparison by eye; the check script reads it regardless)",
+  "revocation_rule": "who may revoke (default: owner)"
+ },
+ "grant": {
+  "grant_id": "<OWNER: grant id>",
+  "actions": ["write"],
+  "resources": ["scope/**"],
+  "exclusions": [],
+  "ars": {
+   "roles": {
+    "coordinator": {"tools": ["Read"], "actions": ["bind"], "paths": ["scope/**"]},
+    "builder": {"tools": ["Write", "Edit"], "actions": ["write"], "paths": ["scope/**"]},
+    "reviewer": {"tools": ["Read"], "actions": ["review"], "paths": ["scope/**", "pristine/**"]}
+   },
+   "replacement": {"allowed": true, "max": 1, "expiry": "<OWNER: YYYY-MM-DDTHH:MM:SSZ>"}
+  },
+  "delegation": {},
+  "expiry": "<OWNER: YYYY-MM-DDTHH:MM:SSZ>",
+  "revocation_rule": "owner"
+ }
+}

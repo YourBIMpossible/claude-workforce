@@ -1,0 +1,57 @@
+{
+ "grant_id": "G-pilot-docfix",
+ "actions": [
+  "write"
+ ],
+ "resources": [
+  "scope/**"
+ ],
+ "exclusions": [],
+ "ars": {
+  "roles": {
+   "coordinator": {
+    "tools": [
+     "Read"
+    ],
+    "actions": [
+     "bind"
+    ],
+    "paths": [
+     "scope/**"
+    ]
+   },
+   "builder": {
+    "tools": [
+     "Write",
+     "Edit"
+    ],
+    "actions": [
+     "write"
+    ],
+    "paths": [
+     "scope/**"
+    ]
+   },
+   "reviewer": {
+    "tools": [
+     "Read"
+    ],
+    "actions": [
+     "review"
+    ],
+    "paths": [
+     "scope/**",
+     "pristine/**"
+    ]
+   }
+  },
+  "replacement": {
+   "allowed": true,
+   "max": 1,
+   "expiry": "2026-12-31T00:00:00Z"
+  }
+ },
+ "delegation": {},
+ "expiry": "2026-12-31T00:00:00Z",
+ "revocation_rule": "owner"
+}
