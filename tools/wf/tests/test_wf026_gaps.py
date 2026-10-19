@@ -21,6 +21,12 @@ NOW = "2026-10-19T00:00:00Z"
 DELIVERED = '{"claims":[{"claim":"c","evidence":["e"]}]}'
 GRANT_REPL = json.loads(json.dumps(GRANT_ARS))
 GRANT_REPL["ars"]["replacement"] = {"allowed": True, "max": 1, "expiry": "2030-01-01T00:00:00Z"}
+# Well-formed blocks with all of bind.REPLACEMENT_KEYS (review L37-M1: GRANT_ARS's block has no `expiry`, so a bind
+# against it is refused by bind.parse_replacement's schema check, not by the delegation rule under test).
+GRANT_NO_REPL = json.loads(json.dumps(GRANT_ARS))
+GRANT_NO_REPL["ars"]["replacement"] = {"allowed": False, "max": 1, "expiry": "2030-01-01T00:00:00Z"}
+GRANT_MAX0 = json.loads(json.dumps(GRANT_ARS))
+GRANT_MAX0["ars"]["replacement"] = {"allowed": True, "max": 0, "expiry": "2030-01-01T00:00:00Z"}
 
 
 class _Wf026(Base):
@@ -45,10 +51,14 @@ class _Wf026(Base):
     def bind(self, brole: str, bsession: str, *extra: str):
         return self.coord("bind", "j", "--bind-role", brole, "--bind-session", bsession, *extra)
 
-    def assert_rejected(self, code_res, reason: str):
+    def assert_rejected(self, code_res, reason: str, text: str | None = None):
+        """Exit 1 with `rejected(<reason>)`; with `text`, also the branch's own message (review L37-S2: several
+        branches share one reason label)."""
         code, res = code_res
         self.assertEqual(code, 1, res)
         self.assertIn(f"rejected({reason})", res.get("error", ""), res)
+        if text is not None:
+            self.assertIn(text, res.get("error", ""), res)
 
     def head(self) -> int:
         c, r = self.run_wf("status", "j")
@@ -82,7 +92,8 @@ class Wf026Validation(_Wf026):
         self.new_job(); self.activate()                                   # GRANT actions ["write"]
         n = self.head()
         bad = {"to_role": "reviewer", "write_scope": ["jobs/j/work/**"], "actions": ["deploy"], "note": "n"}
-        self.assert_rejected(self.run_wf("append", "j", "--type", "handoff", "--content", json.dumps(bad)), "widening")
+        self.assert_rejected(self.run_wf("append", "j", "--type", "handoff", "--content", json.dumps(bad)), "widening",
+                             "handoff action 'deploy' is not in the activated grant")
         self.assertEqual(self.head(), n)
         ok = dict(bad, actions=["write"])
         c, r = self.run_wf("append", "j", "--type", "handoff", "--content", json.dumps(ok))
@@ -94,7 +105,8 @@ class Wf026Validation(_Wf026):
         self.new_job(); self.activate(); self.intent()
         n = self.head()
         self.assert_rejected(self.run_wf("append", "j", "--type", "delivered",
-                                         "--content", '{"claims":[{"claim":"c","evidence":[]}]}'), "malformed")
+                                         "--content", '{"claims":[{"claim":"c","evidence":[]}]}'), "malformed",
+                             "claim 'c' has no evidence refs")
         self.assertEqual(self.head(), n)
 
     def test_wf026_T20_accept_with_nothing_delivered_refused(self):
@@ -107,6 +119,7 @@ class Wf026Validation(_Wf026):
         c, r = self.run_wf("accept", "j", "--results", json.dumps(results), role="reviewer", session="R1")
         self.assertNotEqual(c, 0, r)
         self.assertEqual(r.get("code"), "refused", r)
+        self.assertIn("nothing delivered yet", r.get("error", ""), r)
         self.assertEqual(self.head(), n)
 
     def test_wf026_T03_rejected_activation_leaves_no_authority(self):
@@ -180,7 +193,7 @@ class Wf026Authority(_Wf026):
         c, r = self.run_wf("append", "j", "--type", "delivered", "--content", DELIVERED)
         self.assertEqual(c, 0, r)
         n = self.head()
-        self.assert_rejected(self.bind("reviewer", "R1", "--tool", "Bash"), "ars")
+        self.assert_rejected(self.bind("reviewer", "R1", "--tool", "Bash"), "ars", "tool 'Bash' is not in the ARS tools")
         self.assertEqual(self.head(), n)
         payload = {"session_id": "R1", "hook_event_name": "PreToolUse", "tool_name": "Write",
                    "tool_input": {"file_path": os.path.join(self.dir, "jobs", "j", "work", "r.txt"), "content": "x"},
@@ -188,35 +201,75 @@ class Wf026Authority(_Wf026):
         d = gatecore.decide(payload, root=self.dir, db_path=self.db, now=NOW, gate_files=[])
         self.assertEqual((d["decision"], d["reason"]), ("deny", "unbound-session"), d)
 
-    def test_wf026_T33bcd_renewed_block_then_replacement_allowed(self):
-        """T33(b): replacement refused under a delegation rule that disallows it; after a renewed block whose ARS
-        permits replacement is confirmed, the same replacement succeeds at generation 2 (spec: "(b),(c),(d) refused
-        and need a renewed block")."""
-        self.explicit(self.write_grant("grant_ars.json", GRANT_ARS))   # replacement allowed False
-        c, r = self.intent(); self.assertEqual(c, 0, r)
-        self.write_work("jobs/j/work/a.txt", "changed")
+    def ready_for_replacement(self, gpath: str, *builder_extra: str) -> None:
+        """Explicit job under `gpath`, builder B1 (optionally narrowed by `builder_extra`), then the replacement
+        preconditions of bind.validate_bind: stop-confirmed, a post-stop reconcile report and a `resume` decision."""
+        self.new_job()
+        c, r = self.activate_hash(self.propose(gpath)); self.assertEqual(c, 0, r)
+        c, r = self.bind("coordinator", "C1"); self.assertEqual(c, 0, r)
+        c, r = self.bind("builder", "B1", *builder_extra); self.assertEqual(c, 0, r)
         self.stop_builder()
         c, rep = self.coord("reconcile", "j"); self.assertEqual(c, 0, rep)
         c, r = self.coord("recover", "decide", "j", "--decision", "resume", "--turn", "owner: resume j")
         self.assertEqual(c, 0, r)
-        self.assert_rejected(self.bind("builder", "B2", "--bind-generation", "2"), "delegation")
+
+    def test_wf026_T33b_disallowed_replacement_refused_then_allowed_after_renewal(self):
+        """T33(b) (spec:308 "(b),(c),(d) refused and need a renewed block"): a well-formed delegation block with
+        `allowed: false` refuses the generation-2 replacement with bind.py:427's own text, writing nothing; after a
+        renewed block that permits replacement is confirmed, the same replacement succeeds at generation 2."""
+        self.ready_for_replacement(self.write_grant("grant_no_repl.json", GRANT_NO_REPL))
+        n = self.head()
+        self.assert_rejected(self.bind("builder", "B2", "--bind-generation", "2"), "delegation",
+                             "the grant's ARS does not allow replacement (allowed: false)")
+        self.assertEqual(self.head(), n)
         c, r = self.activate_hash(self.propose(self.write_grant("grant_repl.json", GRANT_REPL)))
         self.assertEqual(c, 0, r)
         c, r = self.bind("builder", "B2", "--bind-generation", "2")
         self.assertEqual(c, 0, r)
         self.assertEqual(r["binding"], {"role": "builder", "session": "B2", "generation": 2})
 
+    def test_wf026_T33c_replacement_count_at_max_refused_then_allowed_after_renewal(self):
+        """T33(c): with `max: 0` the replacement is refused by the count rule (bind.py:429-430, "has reached max 0"),
+        writing nothing; a renewed block with `max: 1` lets the same replacement through at generation 2."""
+        self.ready_for_replacement(self.write_grant("grant_max0.json", GRANT_MAX0))
+        n = self.head()
+        self.assert_rejected(self.bind("builder", "B2", "--bind-generation", "2"), "delegation",
+                             "replacement count 0 for builder has reached max 0")
+        self.assertEqual(self.head(), n)
+        c, r = self.activate_hash(self.propose(self.write_grant("grant_repl.json", GRANT_REPL)))
+        self.assertEqual(c, 0, r)
+        c, r = self.bind("builder", "B2", "--bind-generation", "2")
+        self.assertEqual(c, 0, r)
+        self.assertEqual(r["binding"], {"role": "builder", "session": "B2", "generation": 2})
+
+    def test_wf026_T33d_replacement_wider_than_the_replaced_binding_is_refused(self):
+        """T33(d): B1 is bound to the narrower path `jobs/j/work/sub/**`; a generation-2 replacement declaring the
+        wider `jobs/j/work/**` is refused (bind.py:434-437, "may not widen the replaced binding"), writing nothing,
+        while a replacement inside B1's paths succeeds. Observed, not asserted as spec: the widening check compares
+        with the replaced binding, so a renewed block alone does not admit a wider replacement; the spec's "need a
+        renewed block" is read here as a necessary condition only."""
+        self.ready_for_replacement(self.write_grant("grant_repl.json", GRANT_REPL), "--path", "jobs/j/work/sub/**")
+        n = self.head()
+        self.assert_rejected(self.bind("builder", "B2", "--bind-generation", "2", "--path", "jobs/j/work/**"),
+                             "delegation", "replacement may not widen the replaced binding: path 'jobs/j/work/**'")
+        self.assertEqual(self.head(), n)
+        c, r = self.bind("builder", "B2", "--bind-generation", "2", "--path", "jobs/j/work/sub/**")
+        self.assertEqual(c, 0, r)
+        self.assertEqual(r["binding"], {"role": "builder", "session": "B2", "generation": 2})
+
     def test_wf026_T34_old_block_hash_rejected_after_amendment(self):
-        """T34 ("a quote that predates the current block hash never carries over"): after the grant is amended by a
-        new proposal, activation citing the previous block hash is `rejected(unbound-approval)`; the new hash
-        activates."""
+        """T34, owner-hash half: after the grant is amended by a new proposal, `--owner-hash` naming the previous block
+        is `rejected(unbound-approval)` (owner hash does not match block hash) and writes nothing; the new hash
+        activates. The quote text itself is not checked (spec T34 "a quote that predates the current block hash
+        never carries over" holds only through `--owner-hash`): that is the retained T29 quote gap, owner decision
+        D-022, pinned by test_wf019_gaps.T29QuoteContent (review L37-S1)."""
         self.new_job()
         h1 = self.propose(self.gpath)
         c, r = self.activate_hash(h1); self.assertEqual(c, 0, r)
         h2 = self.propose(self.write_grant("grant2.json", dict(GRANT, expiry="2026-12-30T00:00:00Z")))
         self.assertNotEqual(h1, h2)
         n = self.head()
-        self.assert_rejected(self.activate_hash(h1), "unbound-approval")
+        self.assert_rejected(self.activate_hash(h1), "unbound-approval", f"owner hash {h1[:8]} does not match block hash")
         self.assertEqual(self.head(), n)
         c, r = self.activate_hash(h2); self.assertEqual(c, 0, r)
         c, st = self.run_wf("status", "j")
