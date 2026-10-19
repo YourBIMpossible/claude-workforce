@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import sqlite3
@@ -19,17 +20,49 @@ from .validate import (APPEND_TYPES, build_row, check_job_id, now_ts, validate_c
 _HEX = re.compile(r"^[0-9a-f]+$")
 
 
+class _NonFinite(ValueError):
+    pass
+
+
+def _no_constant(name: str) -> Any:
+    raise _NonFinite(f"non-finite number {name} is not JSON")
+
+
+def _check_values(obj: Any, where: str = "$") -> None:
+    """PACKAGE-FIX1 E2: everything later canonicalised and hashed must be finite and encodable as UTF-8. Refused at
+    input, before any write: an overflowing number (1e999 parses to inf) or a lone surrogate in a key or a string."""
+    if isinstance(obj, float) and not math.isfinite(obj):
+        raise WfRejected("malformed", f"{where}: non-finite number is not JSON")
+    if isinstance(obj, str):
+        try:
+            obj.encode("utf-8")
+        except UnicodeEncodeError:
+            raise WfRejected("malformed", f"{where}: string contains a lone surrogate (not encodable as UTF-8)")
+    elif isinstance(obj, dict):
+        for k, v in obj.items():
+            _check_values(k, f"{where} key")
+            _check_values(v, f"{where}.{k}" if isinstance(k, str) and k.isprintable() else f"{where}.?")
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            _check_values(v, f"{where}[{i}]")
+
+
 def _load_json(path_or_text: str) -> Any:
     if os.path.isfile(path_or_text):
         try:
             with open(path_or_text, "r", encoding="utf-8") as fh:
-                return json.load(fh)
+                obj = json.load(fh, parse_constant=_no_constant)
         except ValueError as exc:
             raise WfRejected("malformed", f"{path_or_text}: {exc}")
-    try:
-        return json.loads(path_or_text)
-    except ValueError as exc:
-        raise WfUsage(f"not a file and not JSON: {path_or_text[:80]!r} ({exc})")
+    else:
+        try:
+            obj = json.loads(path_or_text, parse_constant=_no_constant)
+        except _NonFinite as exc:  # valid JSON text apart from the constant: malformed input, not a usage error
+            raise WfRejected("malformed", str(exc))
+        except ValueError as exc:
+            raise WfUsage(f"not a file and not JSON: {path_or_text[:80]!r} ({exc})")
+    _check_values(obj)
+    return obj
 
 
 def _ctx(conn: sqlite3.Connection, job: str) -> tuple[str | None, dict | None]:
@@ -123,6 +156,10 @@ def _append(db: str, job: str, faults: Faults, oplog: OpLog, *, etype: str, cont
 
     def build(conn: sqlite3.Connection, head_seq: int, head_self: str) -> dict[str, Any]:
         csha, ccontent = _ctx(conn, job)
+        if etype == "contract" and csha is not None:
+            # PACKAGE-FIX1 E6: the dedicated refusal, checked inside the reservation before build_row's
+            # contract-first rule (which would otherwise answer "contract event must be the first event")
+            raise WfRefused(f"job {job} already exists")
         if etype == "contract":
             csha = sha256_obj(content["contract"])
             ccontent = content["contract"]

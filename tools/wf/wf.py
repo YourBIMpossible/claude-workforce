@@ -14,6 +14,7 @@ from wfcore.db import OpLog, WfError, WfUsage  # noqa: E402
 from wfcore.faults import FaultsNotAllowed, load as load_faults  # noqa: E402
 
 EXIT_OK, EXIT_ERR, EXIT_USAGE = 0, 1, 2
+EXIT_INTERNAL = 3  # PACKAGE-FIX1 E1: an unexpected exception; never a refusal (refusals keep 1 and 2)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -278,6 +279,8 @@ def main() -> int:
         code, res = run(argv)
     except SystemExit as exc:  # argparse
         return int(exc.code or 0) if isinstance(exc.code, int) else EXIT_USAGE
+    except Exception as exc:  # noqa: BLE001 -- E1: a crash is reported as one result, never a traceback
+        code, res = EXIT_INTERNAL, {"ok": False, "code": "internal-error", "error": f"{type(exc).__name__}: {exc}"}
     if want_json:
         sys.stdout.write(json.dumps(res, indent=2, sort_keys=True, default=str) + "\n")
     else:

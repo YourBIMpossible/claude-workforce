@@ -173,11 +173,41 @@ def guard(conn: sqlite3.Connection, db: str, job: str, oplog: OpLog, bypass: str
     return cleared
 
 
+class MarkerCorrupt(WfRefused):
+    """PACKAGE-FIX1 E3: a marker file that cannot be read, is not JSON, or is not a JSON object."""
+
+
+def _corrupt_reason(ref: MarkerRef) -> tuple[dict[str, Any] | None, str | None]:
+    """(marker, None) for a readable JSON object or a vanished file (None, None); (None, why) when corrupt."""
+    try:
+        m = read(ref)
+    except (OSError, ValueError) as exc:
+        return None, f"{type(exc).__name__}: {exc}"
+    if m is not None and not isinstance(m, dict):
+        return None, f"not a JSON object ({type(m).__name__})"
+    return m, None
+
+
+def read_checked(ref: MarkerRef) -> dict[str, Any] | None:
+    """`read` for callers that decide on the marker (`wf resolve`): a corrupt marker refuses with MarkerCorrupt."""
+    m, why = _corrupt_reason(ref)
+    if why is not None:
+        raise MarkerCorrupt(f"marker-corrupt: {ref.path}: {why}", path=ref.path, seq=ref.seq, attempt_id=ref.attempt_id)
+    return m
+
+
 def describe(db: str, job: str) -> list[dict[str, Any]]:
-    """Read-only listing for status/digest/verify: attempt id, seq, state, rev."""
+    """Read-only listing for status/digest/verify: attempt id, seq, state, rev. A corrupt marker is listed with state
+    `marker-corrupt` and a `problem` naming its path (E3); it never raises."""
     out = []
     for ref in list_markers(db, job):
-        m = read(ref) or {}
+        m, why = _corrupt_reason(ref)
+        if why is not None:
+            out.append({"seq": ref.seq, "attempt_id": ref.attempt_id, "state": "marker-corrupt", "rev": None,
+                        "self": None, "path": ref.path, "conflict": False,
+                        "problem": f"marker-corrupt: {ref.path}: {why}"})
+            continue
+        m = m or {}
         out.append({"seq": ref.seq, "attempt_id": ref.attempt_id, "state": m.get("state", "unreadable"),
                     "rev": m.get("rev"), "self": m.get("self"), "path": ref.path, "conflict": "conflict" in m})
     return out

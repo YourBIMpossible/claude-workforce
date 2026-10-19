@@ -357,12 +357,13 @@ def resolve(db_path: str, job: str, seq: int, attempt_id: str | None, oplog: OpL
     if status != "ok":
         result["outcome"] = status
         if status == "AMBIGUOUS":
-            result["candidates"] = [{"attempt_id": r.attempt_id, **{k: (markers.read(r) or {}).get(k) for k in ("state", "rev")}} for r in at_seq]
+            result["candidates"] = [{"attempt_id": d["attempt_id"], "state": d["state"], "rev": d["rev"]}
+                                    for d in markers.describe(db_path, job) if d["seq"] == seq]
         result["ops"] = oplog.ops
         return result
     assert ref is not None
     if disposition is not None:
-        m = markers.read(ref)
+        m = markers.read_checked(ref)
         if m is None:
             result["outcome"] = "ALREADY-CLEARED"
             result["ops"] = oplog.ops
@@ -373,7 +374,7 @@ def resolve(db_path: str, job: str, seq: int, attempt_id: str | None, oplog: OpL
         markers.append_log(ref, {"outcome": "DISPOSITION", "text": disposition, "rev": m["rev"]})
         result.update(outcome="DISPOSITION", rev=m["rev"], ops=oplog.ops)
         return result
-    m0 = markers.read(ref)
+    m0 = markers.read_checked(ref)
     if m0 is None:
         result["outcome"] = "ALREADY-CLEARED"
         result["ops"] = oplog.ops
@@ -395,7 +396,7 @@ def resolve(db_path: str, job: str, seq: int, attempt_id: str | None, oplog: OpL
                           note="no change; an originator still holding the reservation looks like this", ops=oplog.ops)
             markers.append_log(ref, {"outcome": "RESERVATION-NOT-OBTAINED"})
             return result
-        m1 = markers.read(ref)
+        m1 = markers.read_checked(ref)
         if m1 is None:
             dbm.rollback(conn)
             result.update(outcome="ALREADY-CLEARED", ops=oplog.ops)
@@ -481,8 +482,13 @@ def resolve(db_path: str, job: str, seq: int, attempt_id: str | None, oplog: OpL
                 outcome = "STILL-UNCERTAIN"
                 result["reason"] = f"delete failed: {exc}"
         if not re_recorded:
-            dbm.rollback(conn)
-            oplog.add("rollback")
+            try:  # PACKAGE-FIX1 E5: guarded like every other ROLLBACK here; a failure is an uncertain outcome
+                dbm.rollback(conn)
+                oplog.add("rollback")
+            except sqlite3.Error as rexc:
+                oplog.add("rollback_error", error=str(rexc))
+                outcome = "STILL-UNCERTAIN"
+                result["reason"] = f"ROLLBACK raised {getattr(rexc, 'sqlite_errorname', type(rexc).__name__)}: {rexc}"
         result["outcome"] = outcome
         markers.append_log(ref, {"outcome": outcome, "m0": result.get("m0"), "m1": result.get("m1"),
                                  "head_seq": head_seq, "reason": result.get("reason"),
@@ -499,6 +505,9 @@ def resolve(db_path: str, job: str, seq: int, attempt_id: str | None, oplog: OpL
         if conn is not None:
             try:
                 dbm.rollback(conn)
+            except sqlite3.Error:
+                pass
+            try:  # E5: a failed ROLLBACK must not leave the connection (and its reservation) open
                 conn.close()
             except sqlite3.Error:
                 pass
