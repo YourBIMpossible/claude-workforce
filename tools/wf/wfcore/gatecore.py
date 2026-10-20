@@ -266,8 +266,9 @@ def _anchor(path: str) -> str | None:
     return anchor.casefold()
 
 
-#: Z6: the longest chain of links the walk follows; a longer one is a loop (the usual SYMLOOP_MAX).
-_MAX_LINK_HOPS = 40
+#: Z6: the longest chain of links the walk follows; a longer one is unresolvable (fail closed). Windows' own limit: it
+#: traverses 63 links in one path and fails the 64th (WinError 1921), as the base's `os.stat` does (AMENDMENT FIX2-A21).
+_MAX_LINK_HOPS = 63
 _MUP = "GLOBALROOT\\DEVICE\\MUP\\"
 
 

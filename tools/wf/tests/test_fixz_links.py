@@ -266,6 +266,37 @@ class Z6LocalTargetsUnchanged(_Links):
         self.assertEqual((r["decision"], r["reason"]), ("deny", "protected-path"), r)
 
 
+class Z6LinkHopLimit(_Links):
+    """AMENDMENT FIX2-A21 (Lazy WF-135 S1): the walk fails closed exactly where Windows does. Windows traverses 63
+    chained links in one path and fails the 64th (WinError 1921), where the base's `os.stat` fails closed."""
+
+    def chain(self, n: int) -> str:
+        """n junctions, link_1 -> link_2 -> ... -> link_n -> a real dir outside the root; returns link_1."""
+        import _winapi
+        end = os.path.join(self.alias, f"chain{n}-end")
+        os.makedirs(end)
+        nxt = end
+        for k in range(n, 0, -1):
+            link = os.path.join(self.alias, f"chain{n}-{k}")
+            _winapi.CreateJunction(nxt, link)
+            nxt = link
+        return nxt
+
+    def test_63_links_are_followed_as_at_the_base(self):
+        first = self.chain(63)
+        for session, decision in (("U9", ("allow", "outside-boundary")), ("B1", ("deny", "out-of-scope"))):
+            with self.subTest(session=session):
+                r = self.d(self.p(absolute=os.path.join(first, "x.txt"), session=session))
+                self.assertEqual((r["decision"], r["reason"]), decision, r)
+
+    def test_64_links_fail_closed_as_at_the_base(self):
+        first = self.chain(64)
+        for session in ("U9", "B1"):
+            with self.subTest(session=session):
+                r = self.d(self.p(absolute=os.path.join(first, "x.txt"), session=session))
+                self.assertEqual((r["decision"], r["reason"]), ("deny", "protected-path"), r)
+
+
 class Z6KnownLimitDriveLetters(_Links):
     """A19: a link to a drive letter is followed as today, even if that letter were a mapped network drive (telling
     one from a local drive needs a drive-type query, which Z6 does not add). Pinned with local stand-ins."""
