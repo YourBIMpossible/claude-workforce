@@ -254,15 +254,15 @@ class ProcessLevel(Adv):
 
 class ExportRefreshRace(Adv):
     """FIX2 #45, deterministic (WF-020 review F2). `txn.write_event` releases the write lock and only then calls
-    `export.refresh` (txn.py:246-248). `refresh` reads a snapshot and rewrites events.jsonl, head.json, contract.json
-    and manifest.txt one at a time under no lock (export.py:133-161), so an older snapshot can land after a newer one.
-    Spec row 113 and 04-DECISIONS:70 accept a stale export as a recoverable exception, so these strict checks are
-    expected failures until FIX2 #45 lands: then remove the decorators. Each one holds writer A in-process at a fixed
-    point of its refresh (no product edit, only a mock wrapper), lets writer B append and refresh to the new head, and
-    then releases A. A is released inside B's lock bound (review F3, S1): a fix that refreshes under the write lock
-    keeps B waiting in `begin_immediate` for up to T_ACQ_BOUND, and B must still commit for the test to flip. The
-    undecorated `*_preconditions_hold` tests run the same race and assert only that it happened (review F3, N2), so a
-    broken harness fails there instead of hiding inside an expected failure."""
+    `export.refresh` (txn.py:254-256). Before FIX2 #45, `refresh` read a snapshot and rewrote events.jsonl, head.json,
+    contract.json and manifest.txt one at a time under no lock, so an older snapshot could land after a newer one.
+    Under FIX2 #45 option (b), `refresh` takes `BEGIN IMMEDIATE` before its snapshot and holds it until manifest.txt is
+    written, so refreshes serialize with each other and with commits. Each strict test holds writer A in-process at a
+    fixed point of its refresh (no product edit, only a mock wrapper), starts writer B, and then releases A. A is
+    released inside B's lock bound (review F3, S1): B waits in `begin_immediate`, for up to T_ACQ_BOUND, while A's
+    refresh holds the write lock, then commits and refreshes to the new head, so verify is clean. The
+    `*_preconditions_hold` tests run the same race and assert only that it happened (review F3, N2), so a broken
+    harness fails there, not inside a strict check."""
 
     def _race(self, module, name: str) -> dict:
         """Hold writer A's first call of `module.name` until writer B has appended and refreshed (or is waiting on A),
@@ -311,20 +311,22 @@ class ExportRefreshRace(Adv):
         self._race(export.manifest, "write")
 
     def test_older_refresh_last_leaves_export_stale(self):
-        """FIX2 #45, stale path: A is held after its snapshot, before its first export write; B commits and refreshes
-        to the new head; A then writes its older snapshot over B's. Observed today: verify is not clean, with
-        `export events.jsonl is stale relative to the ledger`. Expected failure until FIX2 #45 (export.refresh runs
-        after the lock release, txn.py:246-248); remove the decorator when it is fixed."""
+        """FIX2 #45, stale path: A is held after its snapshot, before its first export write, while its refresh holds
+        the write lock. Before FIX2 #45, B committed and refreshed to the new head and A then wrote its older snapshot
+        over B's: verify was not clean, with `export events.jsonl is stale relative to the ledger`. Under #45 (b) B
+        waits for A's refresh to release the lock, then commits and refreshes last: verify is clean and the export
+        has no problem."""
         r = self._race(export, "_write_atomic")
         self.assertTrue(r["clean"], r)
         self.assertEqual(r["jobs"]["j"]["export"], [])
 
     def test_torn_refresh_leaves_manifest_mismatch(self):
         """FIX2 #45, torn path: A writes its files and builds its manifest entries, then is held before
-        `manifest.write`; B refreshes every file to the new head; A then writes its older manifest over B's files.
-        Observed today: verify is not clean, with `export file differs from manifest: events.jsonl` (and head.json).
-        Not covered by the stale test, which leaves a self-consistent older export. Expected failure until FIX2 #45
-        (export.refresh runs after the lock release, txn.py:246-248); remove the decorator when it is fixed."""
+        `manifest.write`, while its refresh holds the write lock. Before FIX2 #45, B refreshed every file to the new
+        head and A then wrote its older manifest over B's files: verify was not clean, with `export file differs from
+        manifest: events.jsonl` (and head.json), a case the stale test does not cover (it left a self-consistent older
+        export). Under #45 (b) B waits for A's refresh to release the lock, then commits and refreshes last: verify is
+        clean and the export has no problem."""
         r = self._race(export.manifest, "write")
         self.assertTrue(r["clean"], r)
         self.assertEqual(r["jobs"]["j"]["export"], [])
