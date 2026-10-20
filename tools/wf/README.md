@@ -24,7 +24,7 @@ error/refused/rejected, `2` usage, ambiguous resolve, or fault seam refused, `3`
 | Command | Role | Effect |
 |---|---|---|
 | `job new <job> --contract FILE` | coordinator | Validates the contract (R07 fields), stores it pinned by SHA-256, writes event 1 (`contract`). |
-| `job abandon <job> --reason TEXT` | — | Marks the contract abandoned (bounded UPDATE, no event, idempotent). |
+| `job abandon <job> --reason TEXT` | — | Marks the contract abandoned (bounded UPDATE, no event). A second run changes nothing and is refused `job <job> already abandoned`. |
 | `grant propose <job> --grant FILE` | coordinator | Records a `grant` event in state `proposed`; prints the Grant Confirmation Block and its hash. Resources must lie inside the contract write scope. |
 | `grant activate <job> --owner-hash H [--quote Q] [--turn T]` | coordinator | Records the grant as `activated` if `H` (≥ 8 hex chars, prefix match) equals the block hash. |
 | `append <job> --type intent\|receipt\|blocker\|handoff\|delivered --content FILE\|JSON` | builder (handoff/blocker: any listed in `validate.ROLE_FOR_TYPE`) | Appends one event. |
