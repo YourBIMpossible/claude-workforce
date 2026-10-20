@@ -8,13 +8,27 @@ import secrets
 import sqlite3
 import sys
 import threading
-from typing import Any
+import time
+from typing import Any, Callable, TypeVar
 
 from . import db as dbm
 from . import manifest, paths
 from .canon import canonical, sha256_file
 
+_T = TypeVar("_T")
+
 FILES = ("events.jsonl", "head.json", "contract.json")
+
+#: FIX2 Z3 (AMENDMENT FIX2-A17): `_retry_sharing` makes at most SHARING_ATTEMPTS attempts in all, SHARING_SLEEP_S
+#: seconds apart, so it adds at most (SHARING_ATTEMPTS - 1) * SHARING_SLEEP_S = 0.4 s to one call.
+SHARING_ATTEMPTS = 5
+SHARING_SLEEP_S = 0.1
+#: The `winerror` values every retried call retries: 32 ERROR_SHARING_VIOLATION and 33 ERROR_LOCK_VIOLATION.
+SHARING_WINERRORS: frozenset[int] = frozenset({32, 33})
+#: `_write_atomic`'s `os.replace` also retries 5 ERROR_ACCESS_DENIED: Windows reports a replace onto a file that
+#: another process holds open without delete sharing that way (Plexy WF-114, measured). Reads never retry 5.
+REPLACE_WINERRORS: frozenset[int] = SHARING_WINERRORS | {5}
+_WINDOWS = sys.platform == "win32"
 
 
 PRESERVED = "export temp file preserved: "
@@ -34,6 +48,27 @@ _ACTIVE: set[str] = set()
 _ACTIVE_LOCK = threading.Lock()
 
 
+def _retry_sharing(fn: Callable[..., _T], *args: Any, winerrors: frozenset[int] = SHARING_WINERRORS) -> _T:
+    """FIX2 Z3 (AMENDMENT FIX2-A17): `fn(*args)`, retried on a Windows sharing violation only.
+
+    A virus scanner, an indexer, a backup agent or another `wf` reading the export can hold an export file open for a
+    moment without the sharing a replace or a read needs, and Windows then fails the call at once instead of waiting.
+    A `PermissionError` whose `winerror` is in `winerrors` is retried: SHARING_ATTEMPTS attempts in all with
+    SHARING_SLEEP_S between them, so at most 0.4 s is added to one call. Any other error, and every error off Windows,
+    is raised from the first attempt. After the last attempt its error is raised, so the outcome is exactly the one
+    without the retry: `refresh` reports it in its note, `check` as `export file unreadable: ...`. The sleep runs
+    where the caller is: inside `refresh` that is under the write lock it holds (FIX2 #45 (b))."""
+    attempt = 1
+    while True:
+        try:
+            return fn(*args)
+        except PermissionError as exc:
+            if not _WINDOWS or getattr(exc, "winerror", None) not in winerrors or attempt >= SHARING_ATTEMPTS:
+                raise
+        attempt += 1
+        time.sleep(SHARING_SLEEP_S)
+
+
 def _write_atomic(path: str, text: str) -> None:
     """Stage `<path>.<pid>-<random>.tmp` exclusively, fsync, then `os.replace` it over `path`.
 
@@ -44,6 +79,7 @@ def _write_atomic(path: str, text: str) -> None:
     os.replace race against a concurrent refresh), the writer discards its own in-flight staging file so a lost
     race leaves nothing behind; the failure itself is still raised and reported. Only a staging file whose writer
     died (or whose discard failed) is left behind, and that one is reported as an orphan by the next refresh/check.
+    The `os.replace` retries a Windows sharing violation, `winerror` 32, 33 or 5 (`_retry_sharing`, FIX2 Z3).
     """
     tmp = f"{path}.{os.getpid()}-{secrets.token_hex(4)}.tmp"
     with _ACTIVE_LOCK:
@@ -55,7 +91,7 @@ def _write_atomic(path: str, text: str) -> None:
             fh.write(text)
             fh.flush()
             os.fsync(fh.fileno())
-        os.replace(tmp, path)
+        _retry_sharing(os.replace, tmp, path, winerrors=REPLACE_WINERRORS)
     except BaseException:
         if created:
             _discard_own_staging(tmp)
@@ -212,7 +248,10 @@ def strays(out: str, listed: set[str]) -> list[str]:
 
 def check(db_path: str, job: str) -> list[str]:
     """Verify-time consistency: manifest parses (3 fields), hashes match files, events.jsonl matches the ledger,
-    plus one `export temp file preserved: <name>` problem per abandoned staging file (see `orphans`)."""
+    plus one `export temp file preserved: <name>` problem per abandoned staging file (see `orphans`). The reads of
+    manifest.txt, the entries and events.jsonl retry a Windows sharing violation, `winerror` 32 or 33
+    (`_retry_sharing`, FIX2 Z3). Limitation (measured, WF-127 F1): CPython's `open` reports a held or locked file as
+    errno 13 with no `winerror`, so such a read is not retried and is reported unreadable at once, as before."""
     out = paths.export_dir(db_path, job)
     preserved = orphans(out)  # reported on every run while the file remains
     problems: list[str] = []
@@ -220,7 +259,7 @@ def check(db_path: str, job: str) -> list[str]:
     if not os.path.isfile(mpath):
         return [f"export manifest missing: {mpath}", *preserved, *strays(out, set(FILES))]
     try:
-        entries = manifest.read(mpath)
+        entries = _retry_sharing(manifest.read, mpath)
     except manifest.ManifestMalformed as exc:
         return [str(exc), *preserved, *strays(out, set(FILES))]
     except OSError as exc:  # FIX2 #51: held by another process, for example
@@ -233,7 +272,7 @@ def check(db_path: str, job: str) -> list[str]:
             problems.append(f"export file missing: {e.relpath}")
             continue
         try:
-            differs = sha256_file(full) != e.sha256 or os.path.getsize(full) != e.size
+            differs = _retry_sharing(_entry_differs, full, e)
         except OSError as exc:  # FIX2 #51
             problems.append(_unreadable(e.relpath, exc))
             unreadable.add(e.relpath)
@@ -249,14 +288,23 @@ def check(db_path: str, job: str) -> list[str]:
         finally:
             conn.close()
         try:
-            with open(ev, "r", encoding="utf-8") as fh:
-                text = fh.read()
+            text = _retry_sharing(_read_text, ev)
         except OSError as exc:  # FIX2 #51
             problems.append(_unreadable("events.jsonl", exc))
         else:
             if text != expected:
                 problems.append("export events.jsonl is stale relative to the ledger")
     return problems + preserved
+
+
+def _entry_differs(full: str, e: manifest.Entry) -> bool:
+    """One manifest entry against its file: the SHA-256 or the size differs."""
+    return sha256_file(full) != e.sha256 or os.path.getsize(full) != e.size
+
+
+def _read_text(path: str) -> str:
+    with open(path, "r", encoding="utf-8") as fh:
+        return fh.read()
 
 
 def _unreadable(relpath: str, exc: OSError) -> str:
