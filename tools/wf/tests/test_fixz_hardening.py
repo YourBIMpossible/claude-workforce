@@ -236,22 +236,32 @@ class Z3RealHandles(_Export):
         self.assertEqual((seen, self.sleeps), ([5], [0.1]))
         self.assertEqual(export.check(self.db, "j"), [])
 
-    def test_real_read_violation_carries_no_winerror_so_is_not_retried(self):
-        """Pins unchanged behaviour, and records WF-127 finding F1: with events.jsonl held at share mode 0, CPython's
-        `open` raises PermissionError errno 13 with `winerror` None (the C runtime maps ERROR_SHARING_VIOLATION to
-        EACCES), so check's read retry, keyed on `winerror` by A17, does not fire: one attempt, no sleep, today's
-        `export file unreadable` for the entry read (the later events.jsonl read is skipped as unreadable, as today).
-        If this starts failing, reads report `winerror` and the retry is live: revisit F1."""
-        release = hold(os.path.join(self.out, "events.jsonl"), 0)
+    def test_real_read_violation_is_retried(self):
+        """FIX2 batch Y, Y1 (AMENDMENT FIX2-A23 replaces, in place, the WF-127 F1 pin
+        `test_real_read_violation_carries_no_winerror_so_is_not_retried`; Rule 4). With events.jsonl held at share
+        mode 0, CPython's `open` still raises PermissionError errno 13 with `winerror` None; Y1's read-only probe
+        classifies it as a sharing violation (32), so check's read retry fires. Held throughout: 5 attempts, 4 sleeps,
+        then today's `export file unreadable` for the entry read (the later events.jsonl read is skipped as
+        unreadable, as today). Released during the first sleep: the second attempt reads it, and check is clean."""
+        path = os.path.join(self.out, "events.jsonl")
+        release = hold(path, 0)
         try:
             with self.patched():
                 problems = export.check(self.db, "j")
         finally:
             release()
-        self.assertEqual(self.sleeps, [])
+        self.assertEqual(self.sleeps, [0.1] * 4)
         self.assertEqual(len(problems), 1, problems)
         self.assertTrue(problems[0].startswith("export file unreadable: events.jsonl (PermissionError: [Errno 13]"),
                         problems)
+        self.sleeps.clear()
+        release = hold(path, 0)
+        try:
+            with self.patched(sleep=self.sleep_then_release(release)):
+                problems = export.check(self.db, "j")
+        finally:
+            release()
+        self.assertEqual((problems, self.sleeps), ([], [0.1]))
 
 
 # ------------------------------------------------------------------------------------------------ Z7 (test only)
