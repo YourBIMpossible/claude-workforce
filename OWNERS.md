@@ -68,7 +68,7 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/wfcore/manifest.py | F2YL |
 | tools/wf/tests/test_wf020_adversarial.py | F2YL |
 | tools/wf/tests/test_fixy_export.py | F2YL |
-| tools/wf/tests/test_fixz_hardening.py | F2ZL |
+| tools/wf/tests/test_fixz_hardening.py | F2YL |
 | tools/wf/tests/test_fixz_links.py | F2ZP |
 | tools/wf/tests/test_fixz_wording.py | F2ZZ |
 | tools/wf/tests/test_fix2_wording.py | F2HZ |
@@ -368,6 +368,6 @@ Package text: WorkForce collab `contracts/b2fix2/` (PACKAGE-FIX2.md with AMENDME
 
 | Lane | Worker | Branch | Scope |
 |---|---|---|---|
-| F2YL | Lazy | `fix2/lazy-y-export` | the F2YL rows above (Y1 the read retry that can fire, Y2 the per-refresh retry budget, Y3 an atomic retried manifest write, Y4 the stale `_race` comment only in test_wf020_adversarial.py); relabelled from A (export.py), D (manifest.py) and W20 (test_wf020_adversarial.py) for this batch only |
+| F2YL | Lazy | `fix2/lazy-y-export` | the F2YL rows above (Y1 the read retry that can fire, Y2 the per-refresh retry budget, Y3 an atomic retried manifest write, Y4 the stale `_race` comment only in test_wf020_adversarial.py; Lazy F1's pin test only in test_fixz_hardening.py, AMENDMENT FIX2-A23); relabelled from A (export.py), D (manifest.py), W20 (test_wf020_adversarial.py) and F2ZL (test_fixz_hardening.py) for this batch only |
 
 Rows go back to their previous owners when batch Y is integrated. The new test file `test_fixy_export.py` stays registered to F2YL.
