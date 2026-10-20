@@ -7,7 +7,7 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 
 | Path | Owner |
 |---|---|
-| tools/wf/wfcore/validate.py | F2ZZ |
+| tools/wf/wfcore/validate.py | A |
 | tools/wf/tests/test_fix2_validation.py | F2BP |
 | tools/wf/tests/test_fix2_export.py | F2GL |
 | tools/wf/tests/test_fix2_decisions.py | F2RP |
@@ -25,7 +25,7 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/wfcore/checkpointcmp.py | C |
 | tools/wf/tests/test_t36_verify_checkpoint.py | C |
 | tools/wf/tests/test_checkpoint_clarity.py | C |
-| tools/wf/wfcore/export.py | F2ZL |
+| tools/wf/wfcore/export.py | A |
 | tools/wf/tests/test_export_tmp_preserve.py | A |
 | tools/wf/tests/test_t35_windows_resolution.py | D |
 | fixtures/filesystem_qualification/** | FQ |
@@ -46,7 +46,7 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/wfcore/observe.py | S4L |
 | tools/wf/tests/test_t14_observe.py | S4L |
 | tools/wf/tests/test_t34_cli_matrix.py | S3M |
-| tools/wf/wfcore/gatecore.py | F2ZP |
+| tools/wf/wfcore/gatecore.py | S4G |
 | tools/wf/tests/test_gate_decide.py | S4G |
 | tools/wf/tests/test_fix2_gate.py | F2SP |
 | tools/wf/tests/test_gate_corpus_replay.py | S4G |
@@ -65,11 +65,8 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_fix1_ids.py | FXL |
 | tools/wf/tests/test_fix1_paths.py | FXM |
 | tools/wf/tests/test_fix2_scratch_names.py | F2TL |
-| tools/wf/tests/test_wf020_adversarial.py | F2ZL |
 | tools/wf/tests/test_fixz_hardening.py | F2ZL |
 | tools/wf/tests/test_fixz_links.py | F2ZP |
-| tools/wf/wfcore/commands.py | F2ZZ |
-| tools/wf/tests/test_wf021_fs_semantics.py | F2ZZ |
 | tools/wf/tests/test_fixz_wording.py | F2ZZ |
 | tools/wf/tests/test_fix2_wording.py | F2HZ |
 | tools/wf/tests/test_wf020_*.py | W20 |
@@ -357,3 +354,7 @@ Package text: WorkForce collab `contracts/b2fix2/` (PACKAGE-FIX2.md with AMENDME
 | F2ZZ | Zen | `fix2/zen-z-wording` | Z1 (commands.py `_replacement_blocker` wording only), Z4 (validate.py: an intent's `sha_before` format only), Z5 (test_wf021_fs_semantics.py: the row-36 test name only), and the new test_fixz_wording.py; relabelled from A (validate.py), D (commands.py) and W21 (test_wf021_fs_semantics.py) |
 
 Rows go back to their previous owners when batch Z is integrated. The new test files stay registered to their lanes.
+
+## Integration 2026-10-20 (FIX2 batch Z into `fix2/integration`, merge window 4; coordinator Zen "Workforce Dev", lane D)
+
+`fix2/integration` (from main `61854c7`, PR #60) merges `fix2/lazy-z-hardening` `fb8ec0c` (F2ZL: Z2, Z3, Z7), `fix2/zen-z-wording` `ea7482c` (F2ZZ: Z1, Z4, Z5) and `fix2/plexy-z-links` `1a3be16` (F2ZP: Z6 under AMENDMENTs FIX2-A18, A19, A20 and A21), each VERIFIED (independent reviews Plexy WF-130, Plexy WF-134, Lazy WF-132/WF-135/WF-135b; exact-head Windows runs per the Foreman's rule; Linux MyBuddy 36c96167 WF-131, WF-136/WF-137). The relabels are restored: validate.py A, export.py A, gatecore.py S4G; the test_wf020_adversarial.py, commands.py and test_wf021_fs_semantics.py rows are removed (back to the W20 glob, D and the W21 glob). The new test files stay registered: test_fixz_hardening.py F2ZL, test_fixz_wording.py F2ZZ, test_fixz_links.py F2ZP. Recorded for later (not in batch Z): Lazy WF-127 F1 (the read retry cannot fire through `open`), Plexy WF-130 R1/R2, the stale `_race` comment at test_wf020_adversarial.py:292, Plexy WF-134's two notes.
