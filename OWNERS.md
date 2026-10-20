@@ -67,6 +67,10 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_fix2_scratch_names.py | F2TL |
 | tools/wf/tests/test_fixy_export.py | F2YL |
 | tools/wf/tests/test_fixz_hardening.py | F2ZL |
+| tools/wf/wf.py | F3CL |
+| tools/wf/tests/test_wf.py | F3CL |
+| tools/wf/tests/test_wf020_cli.py | F3CL |
+| tools/wf/tests/test_fix3_parse.py | F3CL |
 | tools/wf/tests/test_fixz_links.py | F2ZP |
 | tools/wf/tests/test_fixz_wording.py | F2ZZ |
 | tools/wf/tests/test_fix2_wording.py | F2HZ |
@@ -373,3 +377,13 @@ Rows go back to their previous owners when batch Y is integrated. The new test f
 ## Integration 2026-10-20 (FIX2 batch Y into `fix2/integration`, merge window 5; coordinator Zen "Workforce Dev", lane D)
 
 `fix2/integration` (from main `7777711`, PR #61) merges `fix2/lazy-y-export` `55a2754` (F2YL: Y1 the read retry with a read-only probe, Y2 the per-refresh retry budget, Y3 the atomic manifest write, Y4 the `_race` comment; the A23 pin test; WF-146b and WF-146c), VERIFIED (independent review Plexy WF-147/WF-147b/WF-147c with exact-head Windows runs per the Foreman's rule; Linux MyBuddy 36c96167 WF-149(a)/(a2)). The relabels are restored: export.py A, test_fixz_hardening.py F2ZL; the manifest.py and test_wf020_adversarial.py rows are removed (back to D and the W20 glob). The new test file stays registered: test_fixy_export.py F2YL. The lane-D doc lines (README:30, :33, :34) follow in the next commit. Recorded for later (not in batch Y): Plexy WF-147 N1 (the probe race, conservative) and N2 (`check`'s reads have no shared retry budget; Y2 bounds only `refresh`).
+
+## Registration 2026-10-20 (package FIX3 part 1, fix 2: the wf.py repeat refusal; decided by the Foreman under the owner's delegation; coordinator Zen "Workforce Dev" while White is out)
+
+Package text: WorkForce collab `contracts/b2fix3/PACKAGE-FIX3.md` (frozen with SHA256SUMS), on the FIX3 spec r5 (SPEC.md §2, ACCEPTANCE.md CLI rows). Base: main `a6c82bc` (PR #62) plus this registration commit.
+
+| Lane | Worker | Branch | Scope |
+|---|---|---|---|
+| F3CL | Lazy | `fix3/lazy-cli` | the F3CL rows above: wf.py's five global value options given at most once (refusal as a returned `rejected(usage)`), `allow_abbrev=False`; test_wf.py's Base.run_wf only (skip a default the caller passes); test_wf020_cli.py only as the spec needs; the new test_fix3_parse.py. Relabelled from D (wf.py, test_wf.py) and W20 (test_wf020_cli.py) for this package only |
+
+Rows go back to their previous owners when FIX3 part 1 is integrated. The new test file `test_fix3_parse.py` stays registered to F3CL. README.md stays lane D: its doc lines are applied at integration.
