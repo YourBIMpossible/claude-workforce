@@ -7,12 +7,10 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 
 | Path | Owner |
 |---|---|
-| tools/wf/wfcore/validate.py | F2RP |
+| tools/wf/wfcore/validate.py | A |
 | tools/wf/tests/test_fix2_validation.py | F2BP |
 | tools/wf/tests/test_fix2_export.py | F2GL |
-| tools/wf/tests/test_b2s3_wiring.py | F2RP |
 | tools/wf/tests/test_fix2_decisions.py | F2RP |
-| tools/wf/tests/test_wf021_fs_semantics.py | F2RP |
 | tools/wf/tests/test_t24_accept_declarations.py | A |
 | tools/wf/wfcore/pathpolicy.py | B |
 | tools/wf/tests/test_t35_path_policy.py | B |
@@ -36,17 +34,17 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/wfcore/bind.py | S2B |
 | tools/wf/tests/test_t32_bind.py | S2B |
 | tools/wf/tests/test_t33_replacement.py | S2B |
-| tools/wf/wfcore/reconcile.py | F2RP |
+| tools/wf/wfcore/reconcile.py | S4L |
 | tools/wf/tests/test_t06_reconcile.py | S4L |
-| tools/wf/tests/test_t16a_recover_begin.py | F2RP |
+| tools/wf/tests/test_t16a_recover_begin.py | S2R |
 | tools/wf/tests/test_t30_recover_close.py | S2R |
 | tools/wf/tests/test_t30_recovery_faults.py | S2C |
 | tools/wf/wfcore/grant.py | S4G |
 | tools/wf/tests/test_t34_grant_lifecycle.py | S4G |
 | tools/wf/tests/test_grant_check_corpus.py | S3G |
 | tools/wf/tests/data/grant_check_corpus.json | S3G |
-| tools/wf/wfcore/observe.py | F2RP |
-| tools/wf/tests/test_t14_observe.py | F2RP |
+| tools/wf/wfcore/observe.py | S4L |
+| tools/wf/tests/test_t14_observe.py | S4L |
 | tools/wf/tests/test_t34_cli_matrix.py | S3M |
 | tools/wf/wfcore/gatecore.py | S4G |
 | tools/wf/tests/test_gate_decide.py | S4G |
@@ -337,3 +335,7 @@ Package text: WorkForce collab `contracts/b2fix2/` (PACKAGE-FIX2.md with AMENDME
 | F2RP | Plexy | `fix2/plexy-r-decisions` | the F2RP rows above (FIX2 #35 option (A) in validate.py; #36 option (A) with #9 in observe.py; #37 option (A) with #8 and #52 in reconcile.py); relabelled from A (validate.py), S4L (reconcile.py, observe.py, test_t14_observe.py), S2R (test_t16a_recover_begin.py) D (test_b2s3_wiring.py, for the observe log-path assertion only) and W21 (test_wf021_fs_semantics.py, for row 36's observe test only, AMENDMENT FIX2-A16) for this batch only |
 
 Rows go back to their previous owners when batch R is integrated. The new test file `test_fix2_decisions.py` stays registered to F2RP.
+
+## Integration 2026-10-20 (FIX2 batch R into `fix2/integration`, merge window 3; coordinator Zen "Workforce Dev", lane D)
+
+`fix2/integration` merges `fix2/plexy-r-decisions` `2b2ce25` (F2RP: #35 option (A); #36 option (A) with #9 under AMENDMENT S3-A3; #37 option (A) with #8 and #52 under AMENDMENT S1-G1; A16's row-36 test), VERIFIED (independent review Lazy WF-123 PASS; Windows Zen 981 OK, Plexy 981 OK, Lazy 981 OK; Linux MyBuddy WF-124 981 OK). The relabels are restored: validate.py A; reconcile.py, observe.py and test_t14_observe.py S4L; test_t16a_recover_begin.py S2R; the test_b2s3_wiring.py and test_wf021_fs_semantics.py rows are removed (back to D and the `test_wf021_*.py` W21 glob). The new test file `test_fix2_decisions.py` stays registered to F2RP. Recorded: the W21 author confirmation of the row-36 replacement (MyBuddy, AMENDMENT FIX2-A16); per Lazy WF-123 N1, the module-level helper `reconcile._gate_log_problem` (and its `gatelog` import) was added within #37's scope, reached only from `recoverable_exceptions`.
