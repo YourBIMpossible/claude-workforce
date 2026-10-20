@@ -55,6 +55,17 @@ class _Pairs(list):
     """An object's (key, value) pairs in input order, kept by the parser so duplicate keys can be named with a path."""
 
 
+_PLAIN_KEY = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+
+
+def _key_path(where: str, key: str) -> str:
+    """A4 N3 (batch H): `$.key` for a plain identifier, else `$["..."]` with JSON quoting and ASCII escapes, so a key
+    "a.b" is not shown as nested `$.a.b` and a control character is escaped, not dropped."""
+    if _PLAIN_KEY.match(key):
+        return f"{where}.{key}"
+    return f"{where}[{json.dumps(key, ensure_ascii=True)}]"
+
+
 def _unique_keys(obj: Any, where: str = "$") -> Any:
     """FIX2 #2: refuse a duplicate key at any depth (the parser would keep only the last), and build the dicts."""
     if isinstance(obj, _Pairs):
@@ -62,7 +73,7 @@ def _unique_keys(obj: Any, where: str = "$") -> Any:
         for k, v in obj:
             if k in out:
                 raise WfRejected("malformed", f"{where}: duplicate key {k!r}")
-            out[k] = _unique_keys(v, f"{where}.{k}" if k.isprintable() else f"{where}.?")
+            out[k] = _unique_keys(v, _key_path(where, k))
         return out
     if isinstance(obj, list):
         return [_unique_keys(v, f"{where}[{i}]") for i, v in enumerate(obj)]
@@ -569,6 +580,27 @@ def _evidence_refs(etype: str, content: dict) -> list[str]:
     return list(dict.fromkeys(out))
 
 
+def _replacement_blocker(conn: sqlite3.Connection, job: str, role: str, rows: list[dict[str, Any]]) -> str | None:
+    """FIX2 #41 (batch H): None when a replacement bind at the next generation is still possible for `role` under the
+    grant in force, by bind's delegation rules in bind's order (builder only, D-S2-2; replacement present and valid,
+    allowed, count < max, now < expiry); else the digest wording for why not. Read inside the digest's snapshot."""
+    if role != "builder":
+        return "replacement not permitted"
+    auth = grant.authority(rows, job=job, now=_now())
+    g = _latest_grant(conn, job) if auth["state"] == "in-force" else None
+    try:
+        rep = bind.parse_replacement(g.get("ars")) if g else None
+    except WfRejected:
+        rep = None
+    if rep is None or not rep["allowed"]:
+        return "replacement not permitted"
+    if bind.replacement_count(conn, job, role) >= rep["max"]:
+        return "replacement limit reached"
+    if _now() >= rep["expiry"]:
+        return "replacement expired"
+    return None
+
+
 def digest(db: str, job: str) -> dict[str, Any]:
     """Owner surface (spec §6.1 R16, T26): Done / Active / Needs-owner with recommendations, evidence links,
     activated grants with quote and block hash, ARS, binding table and the head for the retained checkpoint.
@@ -587,6 +619,8 @@ def digest(db: str, job: str) -> dict[str, Any]:
             # INTERFACE-CONTRACT 3 digest: reconciled is bool | None -- None while the role has no reconcile-report yet.
             explicit_rows = bind.digest_rows(conn, job, {r: _reconciled(reconcile.state(rows, r))
                                                          for r in explicit}) if explicit else []
+            blockers = {r: _replacement_blocker(conn, job, r, rows)
+                        for r, b in explicit.items() if b.stopped_seq is not None}
     finally:
         conn.close()
     marks = markers.describe(db, job)
@@ -695,10 +729,28 @@ def digest(db: str, job: str) -> dict[str, Any]:
                      [_ref(job, bstate["latest_report_seq"])])
     for role_name, b in explicit.items():
         rstate = reconcile.state(rows, role_name)
-        if rstate["unreconciled"]:
+        if rstate["unreconciled"] and b.stopped_seq is None:
             need(f"unreconciled {role_name}", f"reconcile report pending acknowledgement by session {b.session}",
                  f"the bound session runs `wf ack-reconcile {job} --report <seq> --exceptions <ids>`",
                  [_ref(job, rstate["latest_report_seq"])])
+        elif rstate["unreconciled"]:  # FIX2 #41: the stopped session can no longer acknowledge its report
+            report, why = rstate["latest_report_seq"], blockers[role_name]
+            stop = f"session {b.session} (generation {b.generation}) is stop-confirmed (seq {b.stopped_seq})"
+            ev = [_ref(job, report), _ref(job, b.stopped_seq)]
+            if why is None:
+                first = (f"`wf reconcile {job}` (report {report} predates the stop), then "
+                         if report < b.stopped_seq else "")
+                need(f"unreconciled report {report} for a stopped {role_name}",
+                     f"{stop} and can no longer acknowledge report {report}",
+                     f"replace the {role_name}: {first}`wf recover decide {job} --decision resume --turn <owner turn>`,"
+                     f" then `wf bind {job} --bind-role {role_name} --bind-session <new session> --bind-generation "
+                     f"{b.generation + 1}`; the new session's first event is `wf ack-reconcile {job} --report <seq> "
+                     f"--exceptions <ids>`", ev)
+            else:
+                need(f"unreconciled report {report} for a stopped {role_name}; {why}",
+                     f"{stop}; {why}, so no replacement can be bound to acknowledge report {report}",
+                     f"no session can acknowledge report {report}: `wf close` does not require the acknowledgement; "
+                     f"continuing the work needs a grant whose ARS allows a replacement", ev)
     if not closed and not c["abandoned_ts"]:
         if not grant_state:
             need("no grant", "the job has a contract but no grant",

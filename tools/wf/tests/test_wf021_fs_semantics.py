@@ -63,17 +63,15 @@ class Links(Base):
         self.assertFalse(reconcile._crosses_link(self.dir, "jobs/j/work/real/f.txt"))
         self.assertIsNone(reconcile._sha_now(self.dir, "jobs/j/work/ln"))
 
-    def test_row36_observe_refuses_a_symlinked_job_directory_and_writes_nothing_outside(self):
-        """Row #36 (unchanged by FIX1): the symlink twin of the Windows-only junctioned-job test."""
+    def test_row36_observe_refuses_a_symlinked_log_directory_and_writes_nothing_outside(self):
+        """Row #36, after AMENDMENT S3-A3 (FIX2 #36): the symlink twin of the Windows-only junctioned-runtime test."""
         self.new_job()
         outside = os.path.join(self.dir, "outside")
         os.makedirs(outside)
-        jobs = paths.jobs_dir(self.db)
-        os.makedirs(jobs, exist_ok=True)
-        jdir = os.path.join(jobs, "j")
-        if os.path.isdir(jdir) and not os.path.islink(jdir):
-            os.rename(jdir, jdir + "-kept")              # keep, never delete
-        os.symlink(outside, jdir, target_is_directory=True)
+        runtime = os.path.join(os.path.dirname(paths.jobs_dir(self.db)), "runtime")
+        if os.path.isdir(runtime) and not os.path.islink(runtime):
+            os.rename(runtime, runtime + "-kept")          # keep, never delete
+        os.symlink(outside, runtime, target_is_directory=True)
         with self.assertRaises((ValueError, OSError)):
             observe.append_log(self.db, "j", {"probe": True})
         self.assertEqual(os.listdir(outside), [])

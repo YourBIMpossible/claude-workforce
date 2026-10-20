@@ -47,7 +47,7 @@ import stat
 from datetime import datetime, timezone
 from typing import Any
 
-from . import changeset, export, pathpolicy
+from . import changeset, export, gatelog, pathpolicy
 from .canon import sha256_file
 from .db import WfRefused, WfRejected, integrity, verify_chain
 
@@ -410,14 +410,35 @@ def validate_recover_begin(rows: list[dict[str, Any]], *, job: str, content: dic
 
 
 def recoverable_exceptions(db_path: str, job: str) -> list[dict[str, Any]]:
-    """§1/§5: the recoverable exceptions found now, read-only and outside the write transaction: every
-    `export.check` problem (class `export`), with the preserved-temp lines `export.orphans` reports carried as class
-    `orphan`; ids `R1..` in order. The gate log is not an exception: it is the row's `gate_log: null`."""
+    """§1/§5 with AMENDMENT S1-G1 (FIX2 #37, #8, #52): the recoverable exceptions found now, read-only and outside the
+    write transaction: every `export.check` problem (class `export`), with the preserved-temp lines `export.orphans`
+    reports carried as class `orphan`, then one item of class `gate-log` when `runtime/gate/gate.db` exists and
+    `gatelog.verify` reports a chain problem or the file cannot be read (spec §3B, "an unreadable gate-log tail").
+    An absent gate.db, or one with no boundary root, adds nothing. Ids `R1..` in order. The recovery-opened row
+    carries no `gate_log` field; the `gate_log` field belongs to reconcile reports only."""
     out: list[dict[str, Any]] = []
     for p in export.check(db_path, job):
         cls = "orphan" if p.startswith(export.PRESERVED) else "export"
         out.append({"id": f"R{len(out) + 1}", "class": cls, "detail": p})
+    problem = _gate_log_problem(db_path)
+    if problem is not None:
+        out.append({"id": f"R{len(out) + 1}", "class": "gate-log", "detail": problem})
     return out
+
+
+def _gate_log_problem(db_path: str) -> str | None:
+    """S1-G1: the gate log's chain problems joined into one detail, or None for an absent or healthy gate.db. A
+    failure of the check itself is reported as the gate log being unreadable (fail closed: listed, never hidden)."""
+    root = changeset.boundary_root(db_path)
+    if root is None:
+        return None
+    try:
+        v = gatelog.verify(root)
+    except Exception as exc:  # noqa: BLE001 - an unexpected failure must list the gate log, not stop the recovery
+        return f"gate log unreadable: {type(exc).__name__}: {exc}"
+    if not v.get("present") or not v.get("chain_problems"):
+        return None
+    return "; ".join(v["chain_problems"])
 
 
 def chain_problems(conn: sqlite3.Connection, job: str) -> list[str]:

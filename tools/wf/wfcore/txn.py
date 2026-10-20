@@ -326,14 +326,19 @@ def write_event(db_path: str, job: str, faults: Faults, oplog: OpLog, *,
 
 
 def write_contracts_update(db_path: str, job: str, oplog: OpLog, sql: str, params: tuple) -> dict[str, Any]:
-    """Bounded UPDATE on contracts only (job abandon). No event, no marker; idempotent so an uncertain
-    outcome is reported and may simply be re-run."""
+    """Bounded UPDATE on contracts only (job abandon). No event, no marker. When the UPDATE matches no row, the same
+    reservation tells an already abandoned job (`job <j> already abandoned`) from an unknown one (`job <j> not
+    found`; FIX2 #39/#53). So a re-run after an uncertain outcome either commits (the first did not) or is refused
+    `already abandoned` (it did); the first reason is kept either way."""
     t_start = time.monotonic()
     conn = dbm.connect(db_path, create=False)
     try:
         t_begin = begin_immediate(conn, oplog, _remaining(t_start, T_ACQ_BOUND, oplog))
         cur = conn.execute(sql, params)
         if cur.rowcount != 1:
+            row = conn.execute("SELECT abandoned_ts FROM contracts WHERE job=?", (job,)).fetchone()
+            if row is not None and row[0] is not None:
+                raise WfRefused(f"job {job} already abandoned")
             raise WfRefused(f"job {job} not found")
         deadline = t_begin + T_HELD_BOUND
         attempts = 0

@@ -10,6 +10,7 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/wfcore/validate.py | A |
 | tools/wf/tests/test_fix2_validation.py | F2BP |
 | tools/wf/tests/test_fix2_export.py | F2GL |
+| tools/wf/tests/test_fix2_decisions.py | F2RP |
 | tools/wf/tests/test_t24_accept_declarations.py | A |
 | tools/wf/wfcore/pathpolicy.py | B |
 | tools/wf/tests/test_t35_path_policy.py | B |
@@ -64,6 +65,7 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_fix1_ids.py | FXL |
 | tools/wf/tests/test_fix1_paths.py | FXM |
 | tools/wf/tests/test_fix2_scratch_names.py | F2TL |
+| tools/wf/tests/test_fix2_wording.py | F2HZ |
 | tools/wf/tests/test_wf020_*.py | W20 |
 | fixtures/results/wf020-lazy/** | W20 |
 | tools/wf/tests/test_wf021_*.py | W21 |
@@ -309,3 +311,31 @@ Rows go back to their previous owners when batch G is integrated.
 ## Integration 2026-10-19 (FIX2 batch G into `fix2/integration`, merge window 2; coordinator Zen "Workforce Dev", lane D)
 
 `fix2/integration` merges `fix2/lazy-g-export` `c6d0dc7` (F2GL: #45 option (b), #51, #54, #61's `_STAGING` anchor, and R5 under AMENDMENT FIX2-A11/A12), reviewed (independent review Plexy WF-114 PASS; Windows Zen 907 OK, Windows Plexy 907 OK). Linux at `c6d0dc7` waits for MyBuddy and is required before the window-2 PR (Foreman decision (a)). The relabels are restored: export.py A; the txn.py, test_b1_gaps.py and test_wf020_adversarial.py rows are removed (back to D, D and W20). The new test file `test_fix2_export.py` stays registered to F2GL. Recorded outside-lane exception: `tools/wf/tests/test_transaction_sequence_requirements.py` (owner C) changed inside `Tracked` and at :350-351 only, as AMENDMENT FIX2-A11/A12 allow.
+
+## Registration 2026-10-19 (package FIX2 batch H, AMENDMENT FIX2-A15; decided by the Foreman under the owner's delegation; coordinator Zen "Workforce Dev" while White is out)
+
+Package text: WorkForce collab `contracts/b2fix2/` (PACKAGE-FIX2.md with AMENDMENT-FIX2-A15.md, frozen with SHA256SUMS). Base: `fix2/integration` `288cdba` (main `74006c4` plus FIX2 batches C, S, A, D and G) plus this registration commit.
+
+| Lane | Worker | Branch | Scope |
+|---|---|---|---|
+| F2HZ | Zen | `fix2/zen-h-wording` | the F2HZ rows above (FIX2 #39 with #53, #41, and A4's duplicate-key path quoting); relabelled from D (txn.py, for `write_contracts_update` only; commands.py, for `_unique_keys`, the digest's unreconciled-role entry and the `job abandon` call only) and W20 (test_wf020_txn.py, for `test_abandon_then_abandon_again` only) for this batch only |
+
+Rows go back to their previous owners when batch H is integrated. The new test file `test_fix2_wording.py` stays registered to F2HZ.
+
+## Integration 2026-10-20 (FIX2 batch H into `fix2/integration`, merge window 3; coordinator Zen "Workforce Dev", lane D)
+
+`fix2/integration` (from main `e4d4dd8`, PR #59) merges `fix2/zen-h-wording` `475cc7d` (F2HZ: #39 with #53, #41, A4 N3), VERIFIED (independent review Lazy WF-120 PASS, which is also the W20 author confirmation for `test_abandon_then_abandon_again`; Windows Zen 973 OK, Lazy 973 OK; Linux MyBuddy WF-122 973 OK). The relabels are restored: the txn.py, commands.py and test_wf020_txn.py rows are removed (back to D, D and the `test_wf020_*.py` W20 glob). The new test file `test_fix2_wording.py` stays registered to F2HZ. Recorded per Lazy WF-120 N2: the two module-level helpers `commands._key_path` and `commands._replacement_blocker` were added within A15's scope, each reached only from its A15 place (`_unique_keys`; the digest's unreconciled-role entry).
+
+## Registration 2026-10-19 (package FIX2 batch R, AMENDMENT FIX2-A14; decided by the Foreman under the owner's delegation; coordinator Zen "Workforce Dev" while White is out)
+
+Package text: WorkForce collab `contracts/b2fix2/` (PACKAGE-FIX2.md with AMENDMENT-FIX2-A14.md, frozen with SHA256SUMS), with AMENDMENT S1-G1 (`contracts/b2s1/`) and AMENDMENT S3-A3 (`contracts/b2s3/AMENDMENTS.md`). Base: `fix2/integration` `288cdba` (main `74006c4` plus FIX2 batches C, S, A, D and G) plus this registration commit.
+
+| Lane | Worker | Branch | Scope |
+|---|---|---|---|
+| F2RP | Plexy | `fix2/plexy-r-decisions` | the F2RP rows above (FIX2 #35 option (A) in validate.py; #36 option (A) with #9 in observe.py; #37 option (A) with #8 and #52 in reconcile.py); relabelled from A (validate.py), S4L (reconcile.py, observe.py, test_t14_observe.py), S2R (test_t16a_recover_begin.py) D (test_b2s3_wiring.py, for the observe log-path assertion only) and W21 (test_wf021_fs_semantics.py, for row 36's observe test only, AMENDMENT FIX2-A16) for this batch only |
+
+Rows go back to their previous owners when batch R is integrated. The new test file `test_fix2_decisions.py` stays registered to F2RP.
+
+## Integration 2026-10-20 (FIX2 batch R into `fix2/integration`, merge window 3; coordinator Zen "Workforce Dev", lane D)
+
+`fix2/integration` merges `fix2/plexy-r-decisions` `2b2ce25` (F2RP: #35 option (A); #36 option (A) with #9 under AMENDMENT S3-A3; #37 option (A) with #8 and #52 under AMENDMENT S1-G1; A16's row-36 test), VERIFIED (independent review Lazy WF-123 PASS; Windows Zen 981 OK, Plexy 981 OK, Lazy 981 OK; Linux MyBuddy WF-124 981 OK). The relabels are restored: validate.py A; reconcile.py, observe.py and test_t14_observe.py S4L; test_t16a_recover_begin.py S2R; the test_b2s3_wiring.py and test_wf021_fs_semantics.py rows are removed (back to D and the `test_wf021_*.py` W21 glob). The new test file `test_fix2_decisions.py` stays registered to F2RP. Recorded: the W21 author confirmation of the row-36 replacement (MyBuddy, AMENDMENT FIX2-A16); per Lazy WF-123 N1, the module-level helper `reconcile._gate_log_problem` (and its `gatelog` import) was added within #37's scope, reached only from `recoverable_exceptions`.
