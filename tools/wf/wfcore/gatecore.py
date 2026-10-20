@@ -55,6 +55,14 @@ Reading choices recorded for review (no signature change):
   drive, a subst drive, the device form of another drive) is compared by spelling only, with no I/O, and rule 0
   denies it `unresolvable-path`. The extended-length and device forms of a drive count as that drive, and the root
   goes through the same mapping (a root spelled as this machine's admin share is on that drive).
+* Rule 1 resolves a target on the root's anchor link by link (FIX2 batch Z, Z6; AMENDMENT FIX2-A17 as corrected by
+  A18 and A19; spec :194). Each component is `lstat`ed; a link's target is read with `readlink`, never followed. A
+  remote target (a UNC host that is not this machine, in any spelling, including the GLOBALROOT Mup device path)
+  ends the walk with no I/O under the link, and rule 1 compares by spelling only, so the later rules decide as
+  before. Local targets are followed as today: drive paths, extended-length and volume device forms, and this
+  machine's shares (admin shares mapped to their drive). A drive letter mapped to a network share is followed too, a
+  known limit (A19). A chain longer than `_MAX_LINK_HOPS` is a loop: unresolvable, so treated as the gate file (fail
+  closed).
 * `job-closed` (AMENDMENT S4A-A6) is checked once recovery-open, cancelled and authority-<state> have been checked for
   every touched job, so those states win on any touched job, not only on an earlier-sorted one. It applies to every
   session that touches the closed job: the bound session (whatever its target, as authority-<state> does), an unbound
@@ -69,7 +77,9 @@ from __future__ import annotations
 
 import fnmatch
 import hashlib
+import errno
 import json
+import ntpath
 import os
 import pathlib
 import re
@@ -254,11 +264,93 @@ def _anchor(path: str) -> str | None:
     return anchor.casefold()
 
 
+#: Z6: the longest chain of links the walk follows; a longer one is a loop (the usual SYMLOOP_MAX).
+_MAX_LINK_HOPS = 40
+_MUP = "GLOBALROOT\\DEVICE\\MUP\\"
+
+
+def _link_target(text: str, link_dir: str) -> str | None:
+    r"""Z6 (AMENDMENT FIX2-A18): where a link's target text points, decided from the text, without touching the
+    target. None for a remote target, a UNC host that is not this machine in any spelling (\\host\...,
+    \\?\UNC\host\..., \\.\UNC\host\..., \\?\GLOBALROOT\Device\Mup\host\...): the walk stops there. Otherwise the
+    absolute path the walk continues on: this machine's admin shares map to their drive, as `_local_form` maps them;
+    this machine's other shares, local device forms (\\?\X:\..., \\?\Volume{GUID}\...) and drive paths are followed
+    as today. A drive letter mapped to a network share is a drive path here: a known limit (A19)."""
+    s = text.replace("/", "\\")
+    while s.startswith("\\\\?\\\\\\?\\"):  # a junction's target can read back with its prefix doubled
+        s = s[4:]
+    unc: str | None = None
+    if s.startswith(("\\\\?\\", "\\\\.\\", "\\??\\")):
+        rest = s[4:]
+        if rest.upper().startswith("UNC\\"):
+            unc = rest[4:]
+        elif rest.upper().startswith(_MUP):
+            unc = rest[len(_MUP):]
+        else:
+            return s  # a local device form
+    elif s.startswith("\\\\"):
+        unc = s[2:]
+    if unc is not None:
+        host = unc.split("\\", 1)[0]
+        if host.casefold() not in _local_hosts():
+            return None  # remote: no I/O on it
+        return _local_form("\\\\" + unc) or "\\\\" + unc  # this machine: an admin share maps to its drive
+    if not ntpath.isabs(s):
+        s = os.path.join(link_dir, s)
+    return os.path.normpath(s)
+
+
+def _is_link(st: os.stat_result) -> bool:
+    """A link `os.stat` would follow: a symbolic link, or a name-surrogate reparse point (a junction)."""
+    if stat.S_ISLNK(st.st_mode):
+        return True
+    reparse = getattr(st, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    return bool(reparse and getattr(st, "st_reparse_tag", 0) & 0x20000000)
+
+
+def _walk_links(path: str) -> str | None:
+    """Z6 (spec :194): `path` with every link on it resolved, link by link: each component is `lstat`ed and a link's
+    target is read with `readlink`, never followed. None when a link's target is remote (`_link_target`): nothing
+    under that link is touched. The walk ends where a component does not exist, or at a link `readlink` cannot read
+    (that one is then resolved as today). Raises OSError (ELOOP) past `_MAX_LINK_HOPS` links (the caller fails
+    closed). On POSIX, where no link target is a UNC path, `path` is returned unchanged."""
+    if os.name != "nt":
+        return path
+    cur, hops = path, 0
+    while True:
+        drive, root, tail = ntpath.splitroot(cur)
+        parts = [c for c in tail.split("\\") if c not in ("", ".")]
+        here = drive + root
+        for i, name in enumerate(parts):
+            here = os.path.join(here, name)
+            try:
+                st = os.lstat(here)
+            except _NOT_FOUND:
+                return cur
+            if not _is_link(st):
+                continue
+            hops += 1
+            if hops > _MAX_LINK_HOPS:
+                raise OSError(errno.ELOOP, "too many levels of links", path)
+            try:
+                text = os.readlink(here)
+            except (OSError, ValueError):
+                return cur
+            nxt = _link_target(text, os.path.dirname(here))
+            if nxt is None:
+                return None
+            cur = os.path.normpath(os.path.join(nxt, *parts[i + 1:]))
+            break
+        else:
+            return cur
+
+
 def _is_gate_file(target: str, gate_files: list[str] | None, root: str) -> bool:
     """Rule 1 (FIX2 #4): the absolute `target` names a configured gate file by spelling, `realpath` or identity. An
     identity that cannot be resolved is treated as the gate file (fail closed). A target with no local form (a remote
     UNC or device spelling, WF-106 review F1) or whose local form is not on the boundary root's anchor (WF-106 review
-    F2, AMENDMENT FIX2-A9 section 2: rule 0 denies it) is compared by spelling only, with no I/O."""
+    F2, AMENDMENT FIX2-A9 section 2: rule 0 denies it) is compared by spelling only, with no I/O. So is a target whose
+    path holds a link to a remote target (Z6, spec :194): the link-by-link walk stops there."""
     gates = [g for g in gate_files or [] if isinstance(g, str)]
     if not gates:
         return False
@@ -272,11 +364,15 @@ def _is_gate_file(target: str, gate_files: list[str] | None, root: str) -> bool:
     if _anchor(local) != _anchor(_local_form(root_abs) or root_abs):
         return False
     try:
-        real, ident = os.path.normcase(os.path.realpath(local)), _identity(local)
+        walked = _walk_links(local)
+        if walked is None:
+            return False
+        real, ident = os.path.normcase(os.path.realpath(walked)), _identity(walked)
         for g in gates:
             g_local = _local_form(g)
-            if g_local is not None and (os.path.normcase(os.path.realpath(g_local)) == real
-                                        or _identity(g_local) == ident):
+            g_walked = _walk_links(g_local) if g_local is not None else None
+            if g_walked is not None and (os.path.normcase(os.path.realpath(g_walked)) == real
+                                         or _identity(g_walked) == ident):
                 return True
         return False
     except (OSError, ValueError):
