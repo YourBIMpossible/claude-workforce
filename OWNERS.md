@@ -25,7 +25,7 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/wfcore/checkpointcmp.py | C |
 | tools/wf/tests/test_t36_verify_checkpoint.py | C |
 | tools/wf/tests/test_checkpoint_clarity.py | C |
-| tools/wf/wfcore/export.py | A |
+| tools/wf/wfcore/export.py | F2YL |
 | tools/wf/tests/test_export_tmp_preserve.py | A |
 | tools/wf/tests/test_t35_windows_resolution.py | D |
 | fixtures/filesystem_qualification/** | FQ |
@@ -65,7 +65,10 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_fix1_ids.py | FXL |
 | tools/wf/tests/test_fix1_paths.py | FXM |
 | tools/wf/tests/test_fix2_scratch_names.py | F2TL |
-| tools/wf/tests/test_fixz_hardening.py | F2ZL |
+| tools/wf/wfcore/manifest.py | F2YL |
+| tools/wf/tests/test_wf020_adversarial.py | F2YL |
+| tools/wf/tests/test_fixy_export.py | F2YL |
+| tools/wf/tests/test_fixz_hardening.py | F2YL |
 | tools/wf/tests/test_fixz_links.py | F2ZP |
 | tools/wf/tests/test_fixz_wording.py | F2ZZ |
 | tools/wf/tests/test_fix2_wording.py | F2HZ |
@@ -358,3 +361,13 @@ Rows go back to their previous owners when batch Z is integrated. The new test f
 ## Integration 2026-10-20 (FIX2 batch Z into `fix2/integration`, merge window 4; coordinator Zen "Workforce Dev", lane D)
 
 `fix2/integration` (from main `61854c7`, PR #60) merges `fix2/lazy-z-hardening` `fb8ec0c` (F2ZL: Z2, Z3, Z7), `fix2/zen-z-wording` `ea7482c` (F2ZZ: Z1, Z4, Z5) and `fix2/plexy-z-links` `1a3be16` (F2ZP: Z6 under AMENDMENTs FIX2-A18, A19, A20 and A21), each VERIFIED (independent reviews Plexy WF-130, Plexy WF-134, Lazy WF-132/WF-135/WF-135b; exact-head Windows runs per the Foreman's rule; Linux MyBuddy 36c96167 WF-131, WF-136/WF-137). The relabels are restored: validate.py A, export.py A, gatecore.py S4G; the test_wf020_adversarial.py, commands.py and test_wf021_fs_semantics.py rows are removed (back to the W20 glob, D and the W21 glob). The new test files stay registered: test_fixz_hardening.py F2ZL, test_fixz_wording.py F2ZZ, test_fixz_links.py F2ZP. Recorded for later (not in batch Z): Lazy WF-127 F1 (the read retry cannot fire through `open`), Plexy WF-130 R1/R2, the stale `_race` comment at test_wf020_adversarial.py:292, Plexy WF-134's two notes.
+
+## Registration 2026-10-20 (package FIX2 batch Y, AMENDMENT FIX2-A22; decided by the Foreman under the owner's delegation (W-NIGHT); coordinator Zen "Workforce Dev" while White is out)
+
+Package text: WorkForce collab `contracts/b2fix2/` (PACKAGE-FIX2.md with AMENDMENT-FIX2-A22.md, frozen with SHA256SUMS). Base: main `7777711` (PR #61; FIX2 including batch Z) plus this registration commit.
+
+| Lane | Worker | Branch | Scope |
+|---|---|---|---|
+| F2YL | Lazy | `fix2/lazy-y-export` | the F2YL rows above (Y1 the read retry that can fire, Y2 the per-refresh retry budget, Y3 an atomic retried manifest write, Y4 the stale `_race` comment only in test_wf020_adversarial.py; Lazy F1's pin test only in test_fixz_hardening.py, AMENDMENT FIX2-A23); relabelled from A (export.py), D (manifest.py), W20 (test_wf020_adversarial.py) and F2ZL (test_fixz_hardening.py) for this batch only |
+
+Rows go back to their previous owners when batch Y is integrated. The new test file `test_fixy_export.py` stays registered to F2YL.
