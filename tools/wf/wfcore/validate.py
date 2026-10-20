@@ -196,7 +196,9 @@ def validate_content(etype: str, content: dict, contract: dict, grant_state: dic
                 raise WfRejected("widening", f"grant resource {res!r} is outside the contract write scope")
     elif etype == "intent":
         _req(content, "path", str)
-        _req(content, "sha_before", str, nonempty=False)
+        sha_before = _req(content, "sha_before", str, nonempty=False)
+        if sha_before != "" and not _HEX64.match(sha_before):  # FIX2 batch Z, Z4: the receipt's format rule (#35)
+            raise WfRejected("malformed", f"intent sha_before {sha_before!r} is not 64 lower-case hex or empty")
         _req(content, "note", str)
     elif etype == "receipt":
         _req(content, "path", str)

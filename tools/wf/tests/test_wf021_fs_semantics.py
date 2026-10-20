@@ -63,7 +63,7 @@ class Links(Base):
         self.assertFalse(reconcile._crosses_link(self.dir, "jobs/j/work/real/f.txt"))
         self.assertIsNone(reconcile._sha_now(self.dir, "jobs/j/work/ln"))
 
-    def test_row36_observe_refuses_a_symlinked_log_directory_and_writes_nothing_outside(self):
+    def test_row36_observe_refuses_a_symlinked_runtime_directory_and_writes_nothing_outside(self):
         """Row #36, after AMENDMENT S3-A3 (FIX2 #36): the symlink twin of the Windows-only junctioned-runtime test."""
         self.new_job()
         outside = os.path.join(self.dir, "outside")
