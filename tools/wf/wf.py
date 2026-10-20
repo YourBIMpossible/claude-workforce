@@ -16,14 +16,38 @@ from wfcore.faults import FaultsNotAllowed, load as load_faults  # noqa: E402
 EXIT_OK, EXIT_ERR, EXIT_USAGE = 0, 1, 2
 EXIT_INTERNAL = 4  # PACKAGE-FIX1 E1 / A1.1: an unexpected exception; not a refusal (1, 2) nor the fault-seam kill (3)
 
+# FIX3 fix 2 (SPEC §2, design 2-i): every global option that takes a value (--db, --session, --role, --generation,
+# --msg-id) may be given once, before the command or after it. A repeat in either position, or across both, is
+# refused by run(); it is never resolved as "last wins" or "first wins". The flags (--json, --oplog) may repeat.
+_GIVEN = "_wf_given"  # namespace attribute: each store of a global value option, in command-line order
+
+
+class _StoreOnce(argparse.Action):
+    """FIX3 fix 2: store the value as argparse's default action does, and record the store under _GIVEN so that run()
+    can refuse an option given more than once. Defaults (WF_SESSION, WF_ROLE) are set without calling the action, so
+    they never count; a value that only reads like an option (a --note text) is not stored here, so it never counts."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        setattr(namespace, self.dest, values)
+        given = getattr(namespace, _GIVEN, None)
+        if given is None:
+            given = []
+            setattr(namespace, _GIVEN, given)
+        given.append(self.option_strings[0])
+
 
 def _parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="wf", description="Workforce ledger: record events, verify the chain.")
-    p.add_argument("--db", help="ledger path (required: give --db <path> or set WF_DB; there is no default)")
-    p.add_argument("--session", default=os.environ.get("WF_SESSION", ""), help="session id (or WF_SESSION)")
-    p.add_argument("--role", default=os.environ.get("WF_ROLE", ""), help="author role (or WF_ROLE)")
-    p.add_argument("--generation", type=int, default=1)
-    p.add_argument("--msg-id", help="message id (default: random)")
+    # FIX3 fix 2: allow_abbrev=False, so an abbreviation (--ro) cannot stand for --role and hide a repeat. The
+    # subcommands' own options keep their abbreviations.
+    p = argparse.ArgumentParser(prog="wf", description="Workforce ledger: record events, verify the chain.",
+                                allow_abbrev=False)
+    p.add_argument("--db", action=_StoreOnce,
+                   help="ledger path (required: give --db <path> or set WF_DB; there is no default)")
+    p.add_argument("--session", action=_StoreOnce, default=os.environ.get("WF_SESSION", ""),
+                   help="session id (or WF_SESSION)")
+    p.add_argument("--role", action=_StoreOnce, default=os.environ.get("WF_ROLE", ""), help="author role (or WF_ROLE)")
+    p.add_argument("--generation", action=_StoreOnce, type=int, default=1)
+    p.add_argument("--msg-id", action=_StoreOnce, help="message id (default: random)")
     p.add_argument("--json", action="store_true", help="JSON result on stdout")
     p.add_argument("--oplog", action="store_true", help="include the operation log in the result")
     sp = p.add_subparsers(dest="cmd", required=True)
@@ -134,17 +158,25 @@ def run(argv: list[str]) -> tuple[int, dict]:
                             "error": f"rejected(usage): argument {bad} holds undecodable bytes (a lone surrogate)"}
     parser = _parser()
     args, rest = parser.parse_known_args(argv)
-    if rest:
-        glob = argparse.ArgumentParser(add_help=False)
+    given: list[str] = vars(args).pop(_GIVEN, [])
+    if rest:  # global options after the command: re-parsed, and counted with the leading ones (FIX3 fix 2)
+        glob = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
         for a in parser._actions:
             if a.option_strings and a.dest not in ("help",):
                 if isinstance(a, argparse._StoreTrueAction):
                     glob.add_argument(*a.option_strings, dest=a.dest, action="store_true", default=argparse.SUPPRESS)
                 else:
-                    glob.add_argument(*a.option_strings, dest=a.dest, type=a.type, default=argparse.SUPPRESS)
+                    glob.add_argument(*a.option_strings, dest=a.dest, type=a.type, action=_StoreOnce,
+                                      default=argparse.SUPPRESS)
         extra = glob.parse_args(rest)
+        given += vars(extra).pop(_GIVEN, [])
         for k, v in vars(extra).items():
             setattr(args, k, v)
+    repeated = [opt for opt in dict.fromkeys(given) if given.count(opt) > 1]  # in order of first appearance
+    if repeated:  # FIX3 fix 2: refused before any command runs; neither value is used
+        noun = "option" if len(repeated) == 1 else "options"
+        return EXIT_USAGE, {"ok": False, "code": "usage",
+                            "error": f"rejected(usage): {noun} {', '.join(repeated)} given more than once"}
     # PACKAGE-FIX1 I3: no implicit default ledger. A command without --db and without WF_DB would otherwise read or
     # write <repo>/ledger/ledger.db silently.
     db_arg = args.db or os.environ.get("WF_DB") or None

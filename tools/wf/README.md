@@ -11,11 +11,12 @@ through (spec §4.2, G-12).
 
 ```
 python -I F:\Claude-Workforce\tools\wf\wf.py --db PATH [--role R --session S] [--generation N] [--msg-id ID] [--json] [--oplog] <command>
+(each global option once, before or after the command)
 ```
 
 `--db` is required: give `--db PATH` or set `WF_DB` (`--db` wins when both are given). There is no default ledger;
 without either, every command answers `rejected(usage): --db required` with exit 2 (FIX1 I3: a forgotten `--db` must not
-write the real ledger). `--role`/`--session` may come from `WF_ROLE`/`WF_SESSION`. Exit codes: `0` ok, `1`
+write the real ledger). `--role`/`--session` may come from `WF_ROLE`/`WF_SESSION`. Each global option that takes a value (`--db`, `--role`, `--session`, `--generation`, `--msg-id`) is given once, before or after the command; a second one, in either place, is refused `rejected(usage): option --X given more than once` with exit 2, and nothing runs (FIX3 fix 2). Abbreviations of the global options are not accepted. `WF_DB`, `WF_ROLE` and `WF_SESSION` are defaults, not repeats; `--json` and `--oplog` may repeat. Exit codes: `0` ok, `1`
 error/refused/rejected, `2` usage, ambiguous resolve, or fault seam refused, `3` a fixture fault-seam kill, `4`
 `internal-error` (an unexpected exception, reported as one result instead of a traceback).
 
