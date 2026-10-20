@@ -1,9 +1,10 @@
 """`wf observe` support (B2 slice 3, lane S3O; INTERFACE-CONTRACT-S3 sections 5 and 6, spec 4.1, 6.2 step 1, 7).
 
 Read-only supervision: `classify` labels a job from recorded ledger rows only, and `append_log` keeps the bounded
-observation log `jobs/<job>/observe/observe.log` (JSON lines, newest LOG_MAX_ENTRIES). Nothing here contacts,
-resumes, launches, binds or recovers a worker, and nothing writes the ledger (owner item 4). The only file this
-module writes is that log, through a staging file in the same directory and `os.replace`.
+observation log `runtime/observe/<job>.log` under the boundary root (JSON lines, newest LOG_MAX_ENTRIES; AMENDMENT
+S3-A3, FIX2 #36). Nothing here contacts, resumes, launches, binds or recovers a worker, and nothing writes the
+ledger (owner item 4). The only file this module writes is that log, through a staging file in the same directory
+and `os.replace`.
 
 B2 slice 4a (INTERFACE-CONTRACT-S4A section 5, lane S4L): `classify(..., gate_attempts=None)` takes gate-log rows.
 Attempts by a builder session (a session that authored a builder event) count as activity evidence, shell
@@ -37,7 +38,7 @@ RECORDED_ONLY = "classification uses recorded events only; a session can be work
 SILENT_NOT_STOPPED = "silent does not establish that the process stopped"
 # W-category execution events (section 5 "blocked" rule).
 EXECUTION_TYPES: tuple[str, ...] = ("intent", "receipt", "handoff", "delivered", "blocker")
-LOG_NAME = "observe.log"
+LOG_DIR = os.path.join("runtime", "observe")  # AMENDMENT S3-A3: the log is <boundary root>/runtime/observe/<job>.log
 
 # Same job-id rule as validate.check_job_id; repeated here because section 6 limits `.validate` to now_ts.
 _JOB_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
@@ -200,10 +201,16 @@ def _check_job(job: str) -> None:
         raise ValueError(f"invalid job id for the observation log: {job!r}")
 
 
+def _root(db_path: str) -> str:
+    """The boundary root: the parent of the jobs dir (`paths.jobs_dir`)."""
+    return os.path.dirname(paths.jobs_dir(db_path))
+
+
 def log_path(db_path: str, job: str) -> str:
-    """`jobs/<job>/observe/observe.log` under the boundary root (`paths.jobs_dir`)."""
+    """`runtime/observe/<job>.log` under the boundary root (AMENDMENT S3-A3, FIX2 #36 with #9): the P4
+    coordination path, so a `wf observe` run adds nothing inside a job's write scope."""
     _check_job(job)
-    return os.path.join(paths.jobs_dir(db_path), job, "observe", LOG_NAME)
+    return os.path.join(_root(db_path), LOG_DIR, f"{job}.log")
 
 
 def _same(a: str, b: str) -> bool:
@@ -215,32 +222,32 @@ def _is_link(p: str) -> bool:
     return os.path.islink(p) or bool(isjunction and isjunction(p))
 
 
-def _contained(db_path: str, job: str) -> None:
-    """Refuse to write when `jobs/<job>` or `jobs/<job>/observe` is a link or junction, or resolves anywhere other
-    than its own place under the jobs dir: the log is never written outside `jobs/<job>/observe/`."""
-    root = os.path.realpath(paths.jobs_dir(db_path))
-    for rel in (job, os.path.join(job, "observe")):
-        p = os.path.join(paths.jobs_dir(db_path), rel)
+def _contained(db_path: str) -> None:
+    """Refuse to write when `runtime` or `runtime/observe` is a link or junction, or resolves anywhere other than its
+    own place under the boundary root: the log is never written outside `runtime/observe/`."""
+    root = os.path.realpath(_root(db_path))
+    for rel in ("runtime", LOG_DIR):
+        p = os.path.join(_root(db_path), rel)
         if not os.path.lexists(p):
             return
         if _is_link(p) or not os.path.isdir(p) or not _same(p, os.path.join(root, rel)):
-            raise ValueError(f"observation log refused: {p} is not a plain directory under the jobs dir")
+            raise ValueError(f"observation log refused: {p} is not a plain directory under the boundary root")
 
 
 def append_log(db_path: str, job: str, entry: dict) -> str:
     """Append one JSON line and keep the newest LOG_MAX_ENTRIES lines. The new content is staged in
-    `observe.log.<pid>-<hex8>.tmp` in the same directory (exclusive create, fsync) and moved over the log with
-    `os.replace`; if that fails, this writer removes its own staging file and re-raises. Returns the log path.
-    Writes nothing else: no ledger row, no other file."""
+    `<job>.log.<pid>-<hex8>.tmp` in the same directory (exclusive create, fsync) and moved over the log with
+    `os.replace`; if that fails, this writer removes its own staging file and re-raises. The directory is created on
+    first use. Returns the log path. Writes nothing else: no ledger row, no other file, nothing under `jobs/<job>/`."""
     if not isinstance(entry, dict):
         raise TypeError("observation log entry must be a dict")
     line = json.dumps(entry, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
     path = log_path(db_path, job)
-    _contained(db_path, job)
+    _contained(db_path)
     if os.path.lexists(path) and (_is_link(path) or not os.path.isfile(path)):
         raise ValueError(f"observation log refused: {path} is not a regular file")
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    _contained(db_path, job)
+    _contained(db_path)
 
     kept: list[str] = []
     if os.path.exists(path):

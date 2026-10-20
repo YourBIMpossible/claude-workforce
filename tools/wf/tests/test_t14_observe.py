@@ -3,9 +3,9 @@
 
 Covers each class (active, slow, silent, blocked, unknown) with its evidence, basis and uncertainty; default and
 contract thresholds; invalid thresholds falling back with a note; the gate statement on every result; `append_log`
-bounded at 500 entries, writing only `jobs/<job>/observe/observe.log` (directory listing before/after) and never the
-ledger (row count and head unchanged); and the T22 refusals available at module level (no output, contact, resume
-or launch parameter; no forbidden imports). The CLI half (`wf observe` argparse refusals) is S3W's
+bounded at 500 entries, writing only `runtime/observe/<job>.log` (AMENDMENT S3-A3; directory listing before/after) and
+never the ledger (row count and head unchanged); and the T22 refusals available at module level (no output, contact,
+resume or launch parameter; no forbidden imports). The CLI half (`wf observe` argparse refusals) is S3W's
 test_b2s3_wiring.py. Nothing here deletes test artifacts: they stay under WF_TEST_TMP.
 """
 from __future__ import annotations
@@ -311,11 +311,13 @@ class ObserveLog(Base):
         with open(path, encoding="utf-8") as fh:
             return fh.read().splitlines()
 
-    def test_log_path_under_jobs_dir(self):
+    def test_log_path_under_runtime_observe(self):
+        """AMENDMENT S3-A3 (FIX2 #36): the log is `runtime/observe/<job>.log` under the boundary root."""
         p = observe.log_path(self.db, "j")
-        self.assertEqual(p, os.path.join(paths.jobs_dir(self.db), "j", "observe", "observe.log"))
-        self.assertTrue(p.replace("\\", "/").endswith("jobs/j/observe/observe.log"))
-        self.assertTrue(paths.is_under(p, paths.jobs_dir(self.db)))
+        root = os.path.dirname(paths.jobs_dir(self.db))
+        self.assertEqual(p, os.path.join(root, "runtime", "observe", "j.log"))
+        self.assertTrue(p.replace("\\", "/").endswith("runtime/observe/j.log"))
+        self.assertFalse(paths.is_under(p, paths.jobs_dir(self.db)))
 
     def test_append_writes_only_the_log_and_never_the_ledger(self):
         self.ledger_job()
@@ -325,7 +327,7 @@ class ObserveLog(Base):
         before = self.tree()
         p = observe.append_log(self.db, "j", {"job": "j", "class": "active", "evidence_seqs": [4]})
         added = self.tree() - before
-        self.assertEqual(added, {"jobs/j/observe", "jobs/j/observe/observe.log"})
+        self.assertEqual(added, {"runtime", "runtime/observe", "runtime/observe/j.log"})
         self.assertEqual(before - self.tree(), set())
         self.assertEqual(p, observe.log_path(self.db, "j"))
         self.assertEqual(self.ledger_identity(), ledger_before)          # row count and head unchanged
@@ -335,7 +337,7 @@ class ObserveLog(Base):
         before = self.tree()
         observe.append_log(self.db, "j", {"n": 2})
         self.assertEqual(self.tree(), before)                            # second run: no new file, no staging left
-        self.assertEqual(os.listdir(os.path.dirname(p)), ["observe.log"])
+        self.assertEqual(os.listdir(os.path.dirname(p)), ["j.log"])
         self.assertEqual(len(self.read_lines(p)), 2)
         self.assertEqual(self.ledger_identity(), ledger_before)
 
@@ -354,7 +356,7 @@ class ObserveLog(Base):
         lines = [json.loads(x) for x in self.read_lines(p)]
         self.assertEqual(len(lines), 500)
         self.assertEqual((lines[0], lines[-1]), ({"n": 110}, {"n": 609}))
-        self.assertEqual(os.listdir(os.path.dirname(p)), ["observe.log"])
+        self.assertEqual(os.listdir(os.path.dirname(p)), ["j.log"])
 
     def test_grows_to_bound_from_empty(self):
         p = None
@@ -397,18 +399,26 @@ class ObserveLog(Base):
         self.assertEqual(os.listdir(p), [])
 
     @unittest.skipUnless(sys.platform == "win32", "junction creation uses the Windows-only _winapi.CreateJunction")
-    def test_junctioned_job_dir_refused(self):
+    def test_junctioned_runtime_dir_refused(self):
+        """AMENDMENT S3-A3: the log's directories are now `runtime` and `runtime/observe`; a junction at `runtime` is
+        refused, as one at `jobs/<job>` was."""
         import _winapi
         outside = os.path.join(self.dir, "outside")
         os.makedirs(outside)
-        jobs = paths.jobs_dir(self.db)
-        os.makedirs(jobs)
-        _winapi.CreateJunction(outside, os.path.join(jobs, "j"))
+        _winapi.CreateJunction(outside, os.path.join(os.path.dirname(paths.jobs_dir(self.db)), "runtime"))
         with self.assertRaises(ValueError):
             observe.append_log(self.db, "j", {"n": 1})
         self.assertEqual(os.listdir(outside), [])                        # nothing written through the junction
-        os.makedirs(os.path.join(jobs, "k"))
-        _winapi.CreateJunction(outside, os.path.join(jobs, "k", "observe"))
+
+    @unittest.skipUnless(sys.platform == "win32", "junction creation uses the Windows-only _winapi.CreateJunction")
+    def test_junctioned_runtime_observe_dir_refused(self):
+        """AMENDMENT S3-A3: a junction at `runtime/observe` is refused, as one at `jobs/<job>/observe` was."""
+        import _winapi
+        outside = os.path.join(self.dir, "outside")
+        os.makedirs(outside)
+        runtime = os.path.join(os.path.dirname(paths.jobs_dir(self.db)), "runtime")
+        os.makedirs(runtime)
+        _winapi.CreateJunction(outside, os.path.join(runtime, "observe"))
         with self.assertRaises(ValueError):
             observe.append_log(self.db, "k", {"n": 1})
         self.assertEqual(os.listdir(outside), [])

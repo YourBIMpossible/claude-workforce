@@ -7,9 +7,12 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 
 | Path | Owner |
 |---|---|
-| tools/wf/wfcore/validate.py | A |
+| tools/wf/wfcore/validate.py | F2RP |
 | tools/wf/tests/test_fix2_validation.py | F2BP |
 | tools/wf/tests/test_fix2_export.py | F2GL |
+| tools/wf/tests/test_b2s3_wiring.py | F2RP |
+| tools/wf/tests/test_fix2_decisions.py | F2RP |
+| tools/wf/tests/test_wf021_fs_semantics.py | F2RP |
 | tools/wf/tests/test_t24_accept_declarations.py | A |
 | tools/wf/wfcore/pathpolicy.py | B |
 | tools/wf/tests/test_t35_path_policy.py | B |
@@ -33,17 +36,17 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/wfcore/bind.py | S2B |
 | tools/wf/tests/test_t32_bind.py | S2B |
 | tools/wf/tests/test_t33_replacement.py | S2B |
-| tools/wf/wfcore/reconcile.py | S4L |
+| tools/wf/wfcore/reconcile.py | F2RP |
 | tools/wf/tests/test_t06_reconcile.py | S4L |
-| tools/wf/tests/test_t16a_recover_begin.py | S2R |
+| tools/wf/tests/test_t16a_recover_begin.py | F2RP |
 | tools/wf/tests/test_t30_recover_close.py | S2R |
 | tools/wf/tests/test_t30_recovery_faults.py | S2C |
 | tools/wf/wfcore/grant.py | S4G |
 | tools/wf/tests/test_t34_grant_lifecycle.py | S4G |
 | tools/wf/tests/test_grant_check_corpus.py | S3G |
 | tools/wf/tests/data/grant_check_corpus.json | S3G |
-| tools/wf/wfcore/observe.py | S4L |
-| tools/wf/tests/test_t14_observe.py | S4L |
+| tools/wf/wfcore/observe.py | F2RP |
+| tools/wf/tests/test_t14_observe.py | F2RP |
 | tools/wf/tests/test_t34_cli_matrix.py | S3M |
 | tools/wf/wfcore/gatecore.py | S4G |
 | tools/wf/tests/test_gate_decide.py | S4G |
@@ -324,3 +327,13 @@ Rows go back to their previous owners when batch H is integrated. The new test f
 ## Integration 2026-10-20 (FIX2 batch H into `fix2/integration`, merge window 3; coordinator Zen "Workforce Dev", lane D)
 
 `fix2/integration` (from main `e4d4dd8`, PR #59) merges `fix2/zen-h-wording` `475cc7d` (F2HZ: #39 with #53, #41, A4 N3), VERIFIED (independent review Lazy WF-120 PASS, which is also the W20 author confirmation for `test_abandon_then_abandon_again`; Windows Zen 973 OK, Lazy 973 OK; Linux MyBuddy WF-122 973 OK). The relabels are restored: the txn.py, commands.py and test_wf020_txn.py rows are removed (back to D, D and the `test_wf020_*.py` W20 glob). The new test file `test_fix2_wording.py` stays registered to F2HZ. Recorded per Lazy WF-120 N2: the two module-level helpers `commands._key_path` and `commands._replacement_blocker` were added within A15's scope, each reached only from its A15 place (`_unique_keys`; the digest's unreconciled-role entry).
+
+## Registration 2026-10-19 (package FIX2 batch R, AMENDMENT FIX2-A14; decided by the Foreman under the owner's delegation; coordinator Zen "Workforce Dev" while White is out)
+
+Package text: WorkForce collab `contracts/b2fix2/` (PACKAGE-FIX2.md with AMENDMENT-FIX2-A14.md, frozen with SHA256SUMS), with AMENDMENT S1-G1 (`contracts/b2s1/`) and AMENDMENT S3-A3 (`contracts/b2s3/AMENDMENTS.md`). Base: `fix2/integration` `288cdba` (main `74006c4` plus FIX2 batches C, S, A, D and G) plus this registration commit.
+
+| Lane | Worker | Branch | Scope |
+|---|---|---|---|
+| F2RP | Plexy | `fix2/plexy-r-decisions` | the F2RP rows above (FIX2 #35 option (A) in validate.py; #36 option (A) with #9 in observe.py; #37 option (A) with #8 and #52 in reconcile.py); relabelled from A (validate.py), S4L (reconcile.py, observe.py, test_t14_observe.py), S2R (test_t16a_recover_begin.py) D (test_b2s3_wiring.py, for the observe log-path assertion only) and W21 (test_wf021_fs_semantics.py, for row 36's observe test only, AMENDMENT FIX2-A16) for this batch only |
+
+Rows go back to their previous owners when batch R is integrated. The new test file `test_fix2_decisions.py` stays registered to F2RP.

@@ -100,6 +100,7 @@ class RecoverBegin(_Engine):
         self.assertEqual(reconcile.recovery_open(rows), res["seq"])
         self.assertEqual(reconcile.execution_axis(rows), "recovering")
         content = json.loads(rows[-1]["content"])
+        # S1-G1 (FIX2 #37/#52): the row carries no `gate_log` field; a gate-log problem is an exception item instead
         self.assertEqual(set(content) - {"contract_sha256"}, {"reason", "owner_turn", "exceptions", "chain_head"})
         self.assertEqual(content["chain_head"], {"seq": res["seq"] - 1, "self": rows[-2]["self"]})
         ex = content["exceptions"]
@@ -109,7 +110,7 @@ class RecoverBegin(_Engine):
         self.assertIn("orphan", {e["class"] for e in ex})
         self.assertTrue(any("stale" in e["detail"] for e in ex if e["class"] == "export"))
         self.assertTrue(any(e["detail"].startswith(export.PRESERVED) for e in ex if e["class"] == "orphan"))
-        self.assertFalse(any(e["class"] == "gate-log" for e in ex))                # gate log is not an exception
+        self.assertFalse(any(e["class"] == "gate-log" for e in ex))                # no gate.db here: nothing (S1-G1)
 
     def test_every_ordinary_mutation_refused_while_open_and_second_begin_refused(self) -> None:
         self.new_job(); self.activate()
