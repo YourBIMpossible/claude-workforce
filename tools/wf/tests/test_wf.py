@@ -114,8 +114,11 @@ class Base(unittest.TestCase):
         os.environ.pop("WF_TEST_FAULTS", None)
 
     def run_wf(self, *argv: str, role="builder", session="B1", **kw):
-        base = ["--db", self.db, "--role", role, "--session", session]
-        if "msg_id" in kw:
+        # FIX3 fix 2: wf refuses a global option given twice, so a default the caller passes itself is not prepended
+        passed = {a.split("=", 1)[0] for a in argv if a.startswith("--")}
+        base = [x for opt, val in (("--db", self.db), ("--role", role), ("--session", session)) if opt not in passed
+                for x in (opt, val)]
+        if "msg_id" in kw and "--msg-id" not in passed:
             base += ["--msg-id", kw["msg_id"]]
         code, res = wf.run(base + list(argv))
         log(f"{self.scratch}-{len(os.listdir(LOGDIR)) if os.path.isdir(LOGDIR) else 0}", {"argv": argv, "code": code, "res": res})
