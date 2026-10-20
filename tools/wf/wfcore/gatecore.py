@@ -55,14 +55,16 @@ Reading choices recorded for review (no signature change):
   drive, a subst drive, the device form of another drive) is compared by spelling only, with no I/O, and rule 0
   denies it `unresolvable-path`. The extended-length and device forms of a drive count as that drive, and the root
   goes through the same mapping (a root spelled as this machine's admin share is on that drive).
-* Rule 1 resolves a target on the root's anchor link by link (FIX2 batch Z, Z6; AMENDMENT FIX2-A17 as corrected by
-  A18 and A19; spec :194). Each component is `lstat`ed; a link's target is read with `readlink`, never followed. A
-  remote target (a UNC host that is not this machine, in any spelling, including the GLOBALROOT Mup device path)
-  ends the walk with no I/O under the link, and rule 1 compares by spelling only, so the later rules decide as
-  before. Local targets are followed as today: drive paths, extended-length and volume device forms, and this
-  machine's shares (admin shares mapped to their drive). A drive letter mapped to a network share is followed too, a
-  known limit (A19). A chain longer than `_MAX_LINK_HOPS` is a loop: unresolvable, so treated as the gate file (fail
-  closed).
+* Rule 1 walks a target on the root's anchor link by link before resolving it (FIX2 batch Z, Z6; AMENDMENT FIX2-A17
+  as corrected by A18, A19 and A20; spec :194). Each component is `lstat`ed; a link's target is read with
+  `readlink`, never followed. A remote target (a UNC host that is not this machine by batch S's names, in any
+  spelling, including the GLOBALROOT Mup device path) ends the walk with no I/O under the link, and rule 1 fails
+  closed (A20), unless rule 0 refuses the target anyway because its first link lies under the root. When the walk
+  meets no remote target, rule 1 resolves the target as before (`realpath`, identity), so no decision is weaker than
+  before. Local targets are followed: drive paths, extended-length and volume device forms, and this machine's
+  shares (admin shares mapped to their drive). A drive letter mapped to a network share is followed too, a known
+  limit (A19). A chain longer than `_MAX_LINK_HOPS` is a loop, and a target with a doubled device prefix cannot be
+  traversed: both are unresolvable, so treated as the gate file (fail closed).
 * `job-closed` (AMENDMENT S4A-A6) is checked once recovery-open, cancelled and authority-<state> have been checked for
   every touched job, so those states win on any touched job, not only on an earlier-sorted one. It applies to every
   session that touches the closed job: the bound session (whatever its target, as authority-<state> does), an unbound
@@ -275,10 +277,12 @@ def _link_target(text: str, link_dir: str) -> str | None:
     \\?\UNC\host\..., \\.\UNC\host\..., \\?\GLOBALROOT\Device\Mup\host\...): the walk stops there. Otherwise the
     absolute path the walk continues on: this machine's admin shares map to their drive, as `_local_form` maps them;
     this machine's other shares, local device forms (\\?\X:\..., \\?\Volume{GUID}\...) and drive paths are followed
-    as today. A drive letter mapped to a network share is a drive path here: a known limit (A19)."""
+    as today. A drive letter mapped to a network share is a drive path here: a known limit (A19). Raises OSError for
+    a target with a doubled device prefix (how a junction stored as \\?\X:\... reads back): Windows cannot traverse
+    it, so it is unresolvable, as `os.stat` reports it (A20, Lazy WF-132 N1)."""
     s = text.replace("/", "\\")
-    while s.startswith("\\\\?\\\\\\?\\"):  # a junction's target can read back with its prefix doubled
-        s = s[4:]
+    if s.startswith("\\\\?\\\\\\?\\"):
+        raise OSError(errno.EINVAL, "link target with a doubled device prefix", text)
     unc: str | None = None
     if s.startswith(("\\\\?\\", "\\\\.\\", "\\??\\")):
         rest = s[4:]
@@ -308,15 +312,16 @@ def _is_link(st: os.stat_result) -> bool:
     return bool(reparse and getattr(st, "st_reparse_tag", 0) & 0x20000000)
 
 
-def _walk_links(path: str) -> str | None:
-    """Z6 (spec :194): `path` with every link on it resolved, link by link: each component is `lstat`ed and a link's
-    target is read with `readlink`, never followed. None when a link's target is remote (`_link_target`): nothing
-    under that link is touched. The walk ends where a component does not exist, or at a link `readlink` cannot read
-    (that one is then resolved as today). Raises OSError (ELOOP) past `_MAX_LINK_HOPS` links (the caller fails
-    closed). On POSIX, where no link target is a UNC path, `path` is returned unchanged."""
+def _walk_links(path: str) -> tuple[bool, str | None]:
+    """Z6 (spec :194; AMENDMENT FIX2-A20): walk `path` link by link: each component is `lstat`ed and a link's target
+    is read with `readlink`, never followed. Returns (remote, first): `remote` is True when a link's target is remote
+    (`_link_target`), and then nothing under that link is touched; `first` is the first link met on `path` itself, or
+    None. The walk ends where a component does not exist, or at a link `readlink` cannot read. Raises OSError past
+    `_MAX_LINK_HOPS` links (ELOOP) and for a target Windows cannot traverse; the caller fails closed. On POSIX, where
+    no link target is a UNC path, it returns (False, None) with no I/O."""
     if os.name != "nt":
-        return path
-    cur, hops = path, 0
+        return False, None
+    cur, hops, first = path, 0, None
     while True:
         drive, root, tail = ntpath.splitroot(cur)
         parts = [c for c in tail.split("\\") if c not in ("", ".")]
@@ -326,31 +331,40 @@ def _walk_links(path: str) -> str | None:
             try:
                 st = os.lstat(here)
             except _NOT_FOUND:
-                return cur
+                return False, first
             if not _is_link(st):
                 continue
+            first = first or here
             hops += 1
             if hops > _MAX_LINK_HOPS:
                 raise OSError(errno.ELOOP, "too many levels of links", path)
             try:
                 text = os.readlink(here)
             except (OSError, ValueError):
-                return cur
+                return False, first
             nxt = _link_target(text, os.path.dirname(here))
             if nxt is None:
-                return None
+                return True, first
             cur = os.path.normpath(os.path.join(nxt, *parts[i + 1:]))
             break
         else:
-            return cur
+            return False, first
+
+
+def _below(path: str, root: str) -> bool:
+    """Lexically, the absolute `path` lies below the absolute `root` (case-folded where the platform folds case)."""
+    p, r = os.path.normcase(os.path.normpath(path)), os.path.normcase(os.path.normpath(root))
+    return p.startswith(r.rstrip(os.sep) + os.sep)
 
 
 def _is_gate_file(target: str, gate_files: list[str] | None, root: str) -> bool:
     """Rule 1 (FIX2 #4): the absolute `target` names a configured gate file by spelling, `realpath` or identity. An
     identity that cannot be resolved is treated as the gate file (fail closed). A target with no local form (a remote
     UNC or device spelling, WF-106 review F1) or whose local form is not on the boundary root's anchor (WF-106 review
-    F2, AMENDMENT FIX2-A9 section 2: rule 0 denies it) is compared by spelling only, with no I/O. So is a target whose
-    path holds a link to a remote target (Z6, spec :194): the link-by-link walk stops there."""
+    F2, AMENDMENT FIX2-A9 section 2: rule 0 denies it) is compared by spelling only, with no I/O. A target whose path
+    holds a link to a remote target (Z6, spec :194) is never resolved: the link-by-link walk stops there and rule 1
+    fails closed (AMENDMENT FIX2-A20), unless rule 0 refuses the target anyway because its first link lies under the
+    root (`unresolvable-path`); rule 0's link check, run here only then, lstats no path through a link."""
     gates = [g for g in gate_files or [] if isinstance(g, str)]
     if not gates:
         return False
@@ -361,18 +375,19 @@ def _is_gate_file(target: str, gate_files: list[str] | None, root: str) -> bool:
     if local is None:
         return False
     root_abs = root if _split_abs(root) is not None else os.path.abspath(root)
-    if _anchor(local) != _anchor(_local_form(root_abs) or root_abs):
+    root_local = _local_form(root_abs) or root_abs
+    if _anchor(local) != _anchor(root_local):
         return False
     try:
-        walked = _walk_links(local)
-        if walked is None:
-            return False
-        real, ident = os.path.normcase(os.path.realpath(walked)), _identity(walked)
+        remote, first = _walk_links(local)
+        if remote:
+            return not (first is not None and _below(first, root_local)
+                        and _to_root_relative(target, root)[1] == "unresolvable-path")
+        real, ident = os.path.normcase(os.path.realpath(local)), _identity(local)
         for g in gates:
             g_local = _local_form(g)
-            g_walked = _walk_links(g_local) if g_local is not None else None
-            if g_walked is not None and (os.path.normcase(os.path.realpath(g_walked)) == real
-                                         or _identity(g_walked) == ident):
+            if g_local is not None and (os.path.normcase(os.path.realpath(g_local)) == real
+                                        or _identity(g_local) == ident):
                 return True
         return False
     except (OSError, ValueError):
