@@ -64,9 +64,6 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_fix1_ids.py | FXL |
 | tools/wf/tests/test_fix1_paths.py | FXM |
 | tools/wf/tests/test_fix2_scratch_names.py | F2TL |
-| tools/wf/wfcore/txn.py | F2HZ |
-| tools/wf/wfcore/commands.py | F2HZ |
-| tools/wf/tests/test_wf020_txn.py | F2HZ |
 | tools/wf/tests/test_fix2_wording.py | F2HZ |
 | tools/wf/tests/test_wf020_*.py | W20 |
 | fixtures/results/wf020-lazy/** | W20 |
@@ -323,3 +320,7 @@ Package text: WorkForce collab `contracts/b2fix2/` (PACKAGE-FIX2.md with AMENDME
 | F2HZ | Zen | `fix2/zen-h-wording` | the F2HZ rows above (FIX2 #39 with #53, #41, and A4's duplicate-key path quoting); relabelled from D (txn.py, for `write_contracts_update` only; commands.py, for `_unique_keys`, the digest's unreconciled-role entry and the `job abandon` call only) and W20 (test_wf020_txn.py, for `test_abandon_then_abandon_again` only) for this batch only |
 
 Rows go back to their previous owners when batch H is integrated. The new test file `test_fix2_wording.py` stays registered to F2HZ.
+
+## Integration 2026-10-20 (FIX2 batch H into `fix2/integration`, merge window 3; coordinator Zen "Workforce Dev", lane D)
+
+`fix2/integration` (from main `e4d4dd8`, PR #59) merges `fix2/zen-h-wording` `475cc7d` (F2HZ: #39 with #53, #41, A4 N3), VERIFIED (independent review Lazy WF-120 PASS, which is also the W20 author confirmation for `test_abandon_then_abandon_again`; Windows Zen 973 OK, Lazy 973 OK; Linux MyBuddy WF-122 973 OK). The relabels are restored: the txn.py, commands.py and test_wf020_txn.py rows are removed (back to D, D and the `test_wf020_*.py` W20 glob). The new test file `test_fix2_wording.py` stays registered to F2HZ. Recorded per Lazy WF-120 N2: the two module-level helpers `commands._key_path` and `commands._replacement_blocker` were added within A15's scope, each reached only from its A15 place (`_unique_keys`; the digest's unreconciled-role entry).
