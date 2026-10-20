@@ -583,11 +583,14 @@ def _evidence_refs(etype: str, content: dict) -> list[str]:
 def _replacement_blocker(conn: sqlite3.Connection, job: str, role: str, rows: list[dict[str, Any]]) -> str | None:
     """FIX2 #41 (batch H): None when a replacement bind at the next generation is still possible for `role` under the
     grant in force, by bind's delegation rules in bind's order (builder only, D-S2-2; replacement present and valid,
-    allowed, count < max, now < expiry); else the digest wording for why not. Read inside the digest's snapshot."""
+    allowed, count < max, now < expiry); else the digest wording for why not. Read inside the digest's snapshot.
+    When no grant is in force the wording names the authority state (FIX2 batch Z, Z1)."""
     if role != "builder":
         return "replacement not permitted"
     auth = grant.authority(rows, job=job, now=_now())
-    g = _latest_grant(conn, job) if auth["state"] == "in-force" else None
+    if auth["state"] != "in-force":
+        return f"replacement not permitted (grant {auth['state']})"
+    g = _latest_grant(conn, job)
     try:
         rep = bind.parse_replacement(g.get("ars")) if g else None
     except WfRejected:
