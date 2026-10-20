@@ -177,7 +177,7 @@ What replaces Rev 4's stale-lock recovery. Most of Rev 4 §3B existed to repair 
 | `wf close <job>` | Coordinator | Refused unless accepted-or-abandoned, intervention declaration present, `wf verify` clean |
 | `wf log-intervention <job>` | Coordinator or owner | Appends an intervention entry |
 | `wf cancel <job>` | Anyone | Records owner cancellation/revocation; gate denies the very next tool call |
-| `wf verify [<job>]` | Anyone | Integrity check by the ladder of §3C: chain, engine `integrity_check`, optional `--checkpoint seq:hash` supplied by the owner. The output states which level was checked and what it does not show |
+| `wf verify [<job>]` | Anyone | Integrity check by the ladder of §3C: chain, engine `integrity_check`, optional `--checkpoint seq:hash` supplied by the owner (level 3 reports `match`, `mismatch` or `missing`); `--restored PATH --job J --checkpoint seq:hash` checks a restored copy and reports `matches`, `differs` or `missing`, the same three outcomes in other words (both vocabularies are kept; unifying them is a code change). The output states which level was checked and what it does not show |
 | `wf digest [<job>\|--all]` | Anyone | Owner surface (R16): Done / Active / Needs-owner (decision queue, each with recommendation), evidence links, chain head `(seq, self)` for the owner's retained checkpoint, ARS and binding table, intervention totals as recorded |
 
 ### 4.2 Gate hook (PreToolUse + PostToolUse)
@@ -189,6 +189,9 @@ What replaces Rev 4's stale-lock recovery. Most of Rev 4 §3B existed to repair 
   3. Session **not** bound but touching a job's write scope or ledger paths → deny.
   4. Direct Write/Edit to `ledger/**`, `jobs/**/export/**`, `runtime/**` and the gate itself → deny for everyone (the ledger has one writer, `wf`; `runtime/gate/gate.db` has one writer, the gate).
   5. Cancellation or revocation recorded → deny everything for that job.
+- **Pending uncertain writes** (G-8, documented; FIX2 #60): the gate decides on committed rows only. A `wf` write left uncertain (a pending marker under `ledger/pending/`, tools/wf/README.md) changes no gate decision, so file writes stay allowed while it is pending. Procedure: the builder stops file work until `wf resolve` has decided the write.
+- **POSIX network mounts** (documented limitation; FIX2-A9 §2): from batch S (FIX2 #4) on, the gate-file check resolves a target's identity (`os.stat`, `os.path.realpath`) when the target lies on the boundary root's drive or anchor. On POSIX that anchor is `/`, so a target on an NFS or SMB mount under it (for example under `/mnt`) is stat'ed, and a stalled mount can delay the gate's decision until the hook times out (the timeout outcome is G-12's, in the preconditions below). On Windows, targets off the root's drive, mapped network drives included, are denied `unresolvable-path` with no identity I/O; POSIX mounts are not mitigated, because the gate's deployment platform is Windows.
+- **Links to network paths on the root's anchor** (documented limitation; WF-110 S1, deferred to batch Z): from batch S (FIX2 #4) on, rule 1 resolves a target on the boundary root's drive or anchor by following links (`os.stat`, `os.path.realpath`) before rule 0's link refusal. A symbolic link there whose target is a network path is followed, so the decision can wait on that server up to the hook timeout (the timeout outcome is G-12's, in the preconditions below). Creating such a link on Windows needs the symlink privilege or Developer Mode. The batch-Z fix is a link-by-link walk that stops at a remote target.
 - **Shell channel**: not preventable by text matching `[DOC* Pg3]` `[REC hooks/README.md]`. The gate logs shell attempts. Detection is limited to the monitored boundary in §4.3, and every acceptance record states that limit.
 - **Pinned install** under rule C1 (posture E1): a copied, single-file hook in `C:\Users\<USER>\.claude\hooks\`, registered in the profile's settings template in the same change; never referenced from the Workforce working tree `[REC]`. **E1 is custody against accident and misdirection, not independent custody.** A worker with shell access runs as the same user and can edit the hook, its registration or the settings file. The gate-file hash checked at closeout detects that afterwards and cannot stop it mid-job. E1 is acceptable for a narrowly supervised prototype only. It is **not** strict containment and **not** sufficient for unattended operation, which needs a posture where the worker cannot write the gate (Decision 3).
 - **Preconditions to verify before relying on it** (G-05, G-07, G-12): the hook input carries a usable session id; local Claude Code version supports `onFailure: "block"` (v2.1.295+) so a timeout cannot silently allow `[DOC* Pg4]`; hook `session_id` for subagents. Version inspection does not demonstrate fail-closed behavior, and neither does an intentional exit code 2 (an explicit denial decision, documented as blocking). Fail-closed behavior is shown only by the confined Q1b tests of unexpected hook error (Q1b-b) and timeout (Q1b-c), each claimed separately (OPT-Q1B, strikable from the grant); otherwise it stays NOT RUN and blocks reliance on the gate before B3. If G-05 fails: the caller-identification control is unsupported; T01 (identity part), T13, T17, T32 and the gate parts of T34 are recorded "not satisfied as specified: control unsupported", not relabeled detection; a single-builder rule plus owner-confirmed stop is an option only after an owner decision (QUALIFICATION-PROPOSAL §5.2).
@@ -229,7 +232,7 @@ Carried from handoff FINAL v3 §6, implemented in `wf append` and `wf verify`:
 1. **Per-message disposition** recorded as a separate event: `received` → `accepted` | `rejected(reason)`.
 2. **Duplicate rule:** same `msg_id` **and** same `content_sha256` → ignore, log `duplicate-ignored`. Same `msg_id`, different content → `rejected(conflict)`, raise exception, no dependent work proceeds.
 3. **Missing field** (author, session, generation, job, type, `prev`) → `rejected(malformed)`. When the missing field is a required command-line option of the `wf` CLI (author, session), the CLI reports a usage error (exit 2, result code `usage`) before an entry exists (T09, D-017); an entry that reaches the engine with the field missing or empty is `rejected(malformed)` as stated.
-4. **Stale sender:** `generation` below the current binding → `rejected(stale)`; its content is retained as evidence, never acted on.
+4. **Stale sender:** `generation` below the current binding → `rejected(stale)`; no row is written and the content is never acted on (the rejection is returned to the caller; R1 records no rejected submission in the ledger).
 5. **Two claimants** for one role/generation → both blocked, exception to coordinator, then owner.
 6. **Handoff** with scope or authority wider than the active grant/contract → `rejected(widening)`.
 7. **Grant without a cited source owner turn** → `rejected(no-provenance)`; it never reaches `quoted`. **A quoted grant without block-hash match never reaches `activated`** (`rejected(unbound-approval)`). A citation is a provenance reference only: nothing verifies the quoted approval is genuine (layer O).
@@ -252,7 +255,7 @@ Carried from handoff FINAL v3 §6, implemented in `wf append` and `wf verify`:
 2. **Stop the old executor.** Owner closes the builder session (an owner or delegated act). Coordinator records `stop-confirmed`: how, when, and an owner-reported check that no child process or outstanding operation from that session remains. Without it `wf bind` refuses to advance the generation, and R1 has no override. A generation edit alone is not fencing (R13). If termination cannot be confirmed the job stays `interrupted`; it is not replaced.
 3. **Reconcile before any retry (R12).** `wf reconcile` compares: baseline manifest, receipts, intents, gate-log attempts without completions, and the actual files now on disk. Each in-scope path is classified: *matches receipt* · *matches baseline (not executed)* · *matches neither (unrecorded change)* · *attempt without completion (ambiguous)*. Missing completion does not prove nonexecution.
 4. **Decide.** Coordinator writes `recovery-decision`: resume (new session, gen+1) · restore path X to baseline · abandon. Ambiguous items go to the owner via the digest.
-5. **Resume.** `wf bind` gen+1, only inside the ARS delegation rules (§2B). The new builder's first event must be `ack-reconcile` listing each exception it understood. The gate now denies the old session id (T13).
+5. **Resume.** `wf bind` gen+1, only inside the ARS delegation rules (§2B). The new builder's first event must be `ack-reconcile` listing each exception it understood; this orders the ledger events only. The gate does not hold the new session's file writes until `ack-reconcile` (G-7, documented), so the procedure makes `wf ack-reconcile` the new builder's first act, before any file work. The gate now denies the old session id (T13).
 6. **Intervention logged** (label `restart`; avoidable-or-necessary; minutes or `unknown`).
 
 ### 6.3 Other failure paths (abbreviated)
@@ -267,7 +270,7 @@ Carried from handoff FINAL v3 §6, implemented in `wf append` and `wf verify`:
 It **may not**: contact any session, send any message, stop/resume/replace anything, write bindings or grants, edit job files, read session transcripts, or run on a schedule.
 Anything outside that list is *contact* or *recover*, which are separate capabilities, qualified separately, and need their own owner grant after R1 (the planning package's watchdog experiment, S1 there). Observation success never implies recovery permission. Thresholds (silent = N minutes) are contract parameters and placeholders until measured. Scheduling `wf observe` is a post-R1 step: Desktop scheduled tasks stall on prompts, run only while the app is open, and cannot message desktop sessions `[DOC Pg1]`; a Task Scheduler trigger would need an owner-approved task and a lease lock `[DOC Pg10]` `[NS Pg10]`.
 
-## 8. Acceptance cases (specified; **none run**)
+## 8. Acceptance cases (specified; fixture tests exist for most cases, see the run-status note below and §9; **none run live**)
 
 Layers are those of §2A: **V** record validation · **I** caller identification · **O** owner-approval verification · **E** gate enforcement. Result column: **Reject/Deny** = refused at that layer for hooked tools or `wf` submissions only · **Detect** = found after the fact within the §4.3 boundary · **Proc** = procedural only. All required for R1 build acceptance unless marked.
 
@@ -276,7 +279,7 @@ Layers are those of §2A: **V** record validation · **I** caller identification
 | T01 | Two sessions claim builder (or foreman) role | Both blocked; exception; no dependent work | V (I if G-05) | Reject |
 | T02 | Same message number appears twice (number reuse) | Never two events at one sequence number: same `msg_id`+content → `duplicate-ignored`, different content → `rejected(conflict)`; the sequence key is `(job, seq)` regardless of type (see T31) | V | Reject |
 | T03 | Grant claims owner approval, no source turn | `rejected(no-provenance)`; never in force. A cited turn is not verified genuine; the owner confirms in the digest | V; O is procedural | Reject / Proc |
-| T04 | Superseded session sends a new instruction | `rejected(stale)`; kept as evidence | V | Reject |
+| T04 | Superseded session sends a new instruction | `rejected(stale)`; no row is written and it is never acted on (R1 records no rejected submission in the ledger; the rejection is returned to the caller) | V | Reject |
 | T05 | Same message received twice | One effect, `duplicate-ignored` logged | V | Reject |
 | T06 | Worker restarts after changing files, before reporting | Reconcile classifies; no retry before `ack-reconcile` | V | Reject / Detect |
 | T07 | Doorbell missed, durable message remains | Message processed from ledger on next read; no loss | V | Reject |
@@ -291,7 +294,7 @@ Layers are those of §2A: **V** record validation · **I** caller identification
 | T16 | Recovery/replacement triggered twice for the same interruption | Second is refused/no-op; one generation bump; no override path exists; replacement without `stop-confirmed` and completed reconcile refused | V | Reject |
 | T17 | Unbound session writes (hooked tools) into a job's scope or ledger | Denied (needs G-05; if unsupported: not satisfied as specified, not detection) | I + E | Deny |
 | T18 | Write outside write scope — (a) via Write/Edit, (b) via shell | (a) denied; (b) detected at `wf accept` **only inside the §4.3 boundary and per the §4.4 classes**; outside it, not detected and the record says so | (a) E · (b) V over boundary | Deny / Detect (bounded) |
-| T19 | Gate or ledger database corrupt, locked, unreadable, at an unexpected identity, or recovery open | Gate and `wf` deny, blocker raised; never allow. Gate read has its own timeout and denies on expiry | E + V | Deny |
+| T19 | Gate or ledger database corrupt, locked, unreadable, at an unexpected identity, or recovery open | Gate and `wf` deny with a reason; never allow. The gate records each denial in its gate log (if that write fails, in its audit-failures file; the deny stands) and prints `wf gate: deny <reason>` to the session; `wf` returns the refusal to the caller. No ledger `blocker` row is written: the gate never writes the ledger, and a faulty ledger cannot take one; the failure reaches the owner as a blocker through the session (§6.3). Gate read has its own timeout and denies on expiry | E + V | Deny |
 | T20 | Closeout without evidence-linked claims; or "delivered" treated as accepted | `wf accept`/`wf close` refuse | V | Reject |
 | T21 | Closeout without intervention declaration; owner minutes absent | Refuse until entry or explicit `none`; minutes may be `unknown`, never agent-estimated | V | Reject |
 | T22 | `wf observe` asked to write elsewhere / contact / resume | Refuses; own log only | V | Reject |
@@ -312,7 +315,9 @@ Layers are those of §2A: **V** record validation · **I** caller identification
 | T37 | **Backup, restore, export:** backup via the engine's backup interface while a writer is active; restore into a separate location with all processes stopped; restored file verified against the retained checkpoint; stale/missing export; an export tampered with after generation | Backup passes its own integrity_check, its own chain verifies, and its head is present in source history (head equality with the source asserted only with the writer stopped); restored chain verifies against the retained head or is reported as not matching; the damaged file is never deleted; export is regenerable and never authority; tampered export is reported by hash recorded at export | V | Detect |
 
 **Live-pilot acceptance additionally requires** one staged interruption exercised on the real pilot (owner-authorized at that time) with §6.2 followed, and T06/T12/T16 observed live, not only on fixtures.
-Fixtures T01–T11 are the handoff's eleven required protocol cases, in handoff order. T12–T30 are Rev 1–4 additions (T27, T28, T30 rewritten for S-DB in Rev 5; T02, T16, T18, T19, T23, T26 adjusted). T31–T37 are Rev 5 additions for defects A–E. Deferred automation cannot satisfy a required case. **Every case is NOT RUN.** Reading a case is not a test. Under S-FILE (fallback) T27, T28, T30 revert to their Rev 4 text (history\rev4) with the §6 corrections of STORAGE-COMPARISON.
+Fixtures T01–T11 are the handoff's eleven required protocol cases, in handoff order. T12–T30 are Rev 1–4 additions (T27, T28, T30 rewritten for S-DB in Rev 5; T02, T16, T18, T19, T23, T26 adjusted). T31–T37 are Rev 5 additions for defects A–E. Deferred automation cannot satisfy a required case. **Run status:** every case except T07, T12 and T34's environment/stance clause has fixture tests in `tools/wf/tests`, run on Windows and Linux at each integration; a case counts only for the clauses its tests assert (per-case coverage FULL / PARTIAL / NONE: `fixtures/results/wf019-plexy/TRACEABILITY-T01-T37.md`, traced at `2dedc94`, with the WF-026 gap tests in `tools/wf/tests/test_wf026_gaps.py`). **No case has been run live.** Reading a case is not a test. Under S-FILE (fallback) T27, T28, T30 revert to their Rev 4 text (history\rev4) with the §6 corrections of STORAGE-COMPARISON.
+
+**No R1 mechanism (WF-019 F10).** Three required clauses cannot pass on fixtures in R1 and are not claimed: **T07** (the doorbell is the owner, §5 rule 9, and doorbells are excluded, §10; the message itself is a durable ledger row, but "processed from ledger on next read" has no test); **T12** (closed-session recovery is procedural, §6.2, and observed live only, above); **T34's environment/stance change** (R1 has no command that records one; `test_t34_cli_matrix.py` declares it NOT RUN).
 
 ## 9. Requirements-to-tests mapping
 
@@ -326,21 +331,21 @@ Fixtures T01–T11 are the handoff's eleven required protocol cases, in handoff 
 | R06 Two lanes | Partial | Contract pinned (T24); improvement lane deferred |
 | R07 Job contract | Covered | `wf job new` field validation; T24, T35 |
 | R08 Status axes | Covered | T20; derived status |
-| R09 Enforcement | **Partial** | Layers V/I/O/E (§2A). T11, T13, T15, T17–T19, T25, T32, T34 deny for hooked tools; shell channel detect-only inside the §4.3 boundary and the §4.4 classes (T18, T35); O is procedural; integrity limits T36 |
-| R10 Ownership | Covered | T01, T04, T13, T17, T27, T30(i), T31–T34 |
-| R11 Messages | Covered | T02, T05, T07–T10 |
-| R12 Reconcile first | Covered | T06, T12, T16, T30, T33 |
+| R09 Enforcement | **Partial** | Layers V/I/O/E (§2A). T11, T13, T15, T17–T19, T25, T32, T34 deny for hooked tools; shell channel detect-only inside the §4.3 boundary and the §4.4 classes (T18, T35); O is procedural (T03, T29); integrity: chain edits detected T23, limits T36 |
+| R10 Ownership | Covered | T01, T03, T04, T13, T17, T27, T29, T30(i), T31–T34 (T29's quote-content clause stays PARTIAL, D-022) |
+| R11 Messages | Covered (except T07) | T02, T05, T08–T10; T07 has no R1 mechanism and no fixture test (§8, no-R1-mechanism note) |
+| R12 Reconcile first | Covered (T12 procedural) | T06, T16, T30, T33; T12 is procedural and live-only, with no fixture test (§8, no-R1-mechanism note) |
 | R13 Watchdog | Observe only | T14, T22; contact/recover deferred |
 | R14 Quality | Partial | T20, T24; fresh-reviewer order is procedural; not human independence |
 | R15 Measurement | Covered (record) | T21; no claims from one job |
 | R16 Owner surface | Covered (basic) | T26 |
-| R17 Permissions | Partial | Role tool lists in contract + existing permission rules; "no bypass" is procedural |
+| R17 Permissions | Partial | Role tool lists in contract + existing permission rules; `wf bind --tool` is checked against the ARS when binding but **not enforced per tool call** by the gate, so per-session tool limits rely on a Claude Code permission rule (per-call enforcement deferred to a post-R1 owner decision, FIX2 #58); "no bypass" is procedural |
 | R18 Workforce | Constraint | 3 roles used; no roster |
 | R19 Modes | Managed only | Parallel excluded |
 | R20 Qualification | Evidence only | R1 qualifies nothing; k=5/x=1 not applied |
 | R21 Evolution | Partial | Failures kept as events; fixtures from failures |
 | R22 Ambition | Governance | The parking lot is CURRENT-STATE *Needs your call / Captured* (owner direction, turn 3); no WORKLOG migration |
-| R23 Continuity | Layout doc | RECORD-AND-LAYOUT-PROPOSAL.md; backup/restore/export T37 |
+| R23 Continuity | Layout doc | RECORD-AND-LAYOUT-PROPOSAL.md; crash safety and stale export T28; backup/restore/export T37 |
 
 ## 10. Exclusions
 

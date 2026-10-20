@@ -98,22 +98,13 @@ class BackupFailures(Fixture):
             code = wf.main()
         return code, json.loads(out.getvalue())
 
-    @unittest.expectedFailure
-    def test_busy_copy_check_is_a_lock_timeout_refusal(self):
+    def test_busy_copy_check_is_a_lock_timeout_refusal(self):  # FIX2 batch C fixed this finding; decorator removed by the integrator (AMENDMENT FIX2-A5 section 3)
         """FINDING W29-F1 (backup.py:87, row 50): backup._check documents that a busy/lock error "still raises
         (db.WfLockTimeout)", but it re-raises the raw sqlite3.OperationalError, which is not a WfError. `wf backup`
         then ends as an unexpected exception: `internal-error`, exit 4 (FIX1 E1), instead of the `lock-timeout`
         refusal (exit 1). This test asserts the documented outcome and fails on that assertion (review W29-R2)."""
         code, res = self._main_backup()
         self.assertEqual((code, res["code"]), (1, "lock-timeout"), res)
-
-    def test_busy_copy_check_today_is_an_internal_error(self):
-        """The observation behind W29-F1, pinned: exit 4, `internal-error`, the raw engine error named.
-        Renamed from `test_busy_copy_check_observed_today_is_an_internal_error`
-        (WF-065: test-name length and Windows path length; see FIX2 #40)."""
-        code, res = self._main_backup()
-        self.assertEqual((code, res["code"]), (4, "internal-error"), res)
-        self.assertEqual(res["error"], "OperationalError: database is locked")
 
 
 # ------------------------------------------------------------------------------------------- export.py

@@ -310,7 +310,6 @@ class ExportRefreshRace(Adv):
         (in `_race`). It passes today and once FIX2 #45 lands."""
         self._race(export.manifest, "write")
 
-    @unittest.expectedFailure
     def test_older_refresh_last_leaves_export_stale(self):
         """FIX2 #45, stale path: A is held after its snapshot, before its first export write; B commits and refreshes
         to the new head; A then writes its older snapshot over B's. Observed today: verify is not clean, with
@@ -320,7 +319,6 @@ class ExportRefreshRace(Adv):
         self.assertTrue(r["clean"], r)
         self.assertEqual(r["jobs"]["j"]["export"], [])
 
-    @unittest.expectedFailure
     def test_torn_refresh_leaves_manifest_mismatch(self):
         """FIX2 #45, torn path: A writes its files and builds its manifest entries, then is held before
         `manifest.write`; B refreshes every file to the new head; A then writes its older manifest over B's files.

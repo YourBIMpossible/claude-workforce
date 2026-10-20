@@ -38,7 +38,7 @@ class _Gate(Base):
         super().setUp()
         with open(self.gpath, "w", encoding="utf-8") as fh:
             json.dump(self.grant_obj, fh)
-        self.hook = os.path.join(os.path.dirname(self.dir), f"{self._testMethodName}-hooks", "wf_gate_hook.py")
+        self.hook = os.path.join(os.path.dirname(self.dir), f"{self.scratch}-hooks", "wf_gate_hook.py")
         self.cfg = os.path.join(os.path.dirname(self.hook), "wf_gate.json")
 
     # ---- payloads and decisions
@@ -557,7 +557,7 @@ class PathsAndFailClosed(_Gate):
 
     def test_link_component_is_unresolvable(self):
         self.explicit()
-        outside = os.path.join(os.path.dirname(self.dir), f"{self._testMethodName}-outside")
+        outside = os.path.join(os.path.dirname(self.dir), f"{self.scratch}-outside")
         os.makedirs(outside, exist_ok=True)
         os.makedirs(os.path.join(self.dir, "jobs", "j", "work"), exist_ok=True)
         link = os.path.join(self.dir, "jobs", "j", "work", "lnk")
@@ -592,7 +592,8 @@ class PathsAndFailClosed(_Gate):
         for reason in ("malformed-payload", "unresolvable-path", "protected-path", "ledger-unreadable",
                        "ledger-locked", "ledger-identity", "chain-tail", "recovery-open", "cancelled",
                        "authority-none", "authority-proposed", "authority-expired", "authority-revoked",
-                       "authority-voided", "authority-malformed", "stale-session", "not-current-binding",
+                       "authority-voided", "authority-malformed", "job-closed",  # AMENDMENT S4A-A6
+                       "stale-session", "not-current-binding",
                        "path-not-granted", "path-excluded", "unbound-session", "shell-not-preventable",
                        "out-of-scope", "outside-boundary", "not-mediated", "gate-error", "allowed",
                        "gate-config", "gate-integrity", "audit-unavailable"):  # FIX1 I6: hook-only reasons

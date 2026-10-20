@@ -81,8 +81,7 @@ class SymlinkedLedger(_Backup):
         os.symlink(self.ledger, alias, target_is_directory=True)
         self.assertRefusedInsideLedger(os.path.join(self.ledger, "b.db"), db_path=os.path.join(alias, "l.db"))
 
-    @unittest.expectedFailure
-    def test_1c_db_file_symlink_elsewhere_still_protects_the_real_ledger_directory(self):
+    def test_1c_db_file_symlink_elsewhere_still_protects_the_real_ledger_directory(self):  # FIX2 batch C fixed this finding; decorator removed by the integrator (AMENDMENT FIX2-A5 section 3)
         """W30-F1 (finding, fail-open, POSIX AND Windows): `--db <root>/elsewhere/l-alias.db` is a symlink to
         `<root>/ledger/l.db`. The ledger directory is taken as `dirname(abspath(db))` = `<root>/elsewhere`
         (backup._refuse_dest, backup.py:100), not the directory of the resolved ledger file. OBSERVED on Ubuntu, and
@@ -115,8 +114,7 @@ class DotDotDestination(_Backup):
         self.assertTrue(os.path.isfile(os.path.join(self.dir, "b.db")))
 
     @unittest.skipUnless(POSIX, SKIP_POSIX)
-    @unittest.expectedFailure
-    def test_2b_dotdot_after_a_symlink_into_the_ledger_is_refused(self):
+    def test_2b_dotdot_after_a_symlink_into_the_ledger_is_refused(self):  # FIX2 batch C fixed this finding; decorator removed by the integrator (AMENDMENT FIX2-A5 section 3)
         """W30-F2 (finding, fail-open on POSIX): `<root>/lnk -> <root>/ledger/sub`, `--to <root>/lnk/../b.db`.
         backup._norm runs abspath (which collapses `..` lexically: `<root>/b.db`, outside) BEFORE realpath, but the
         kernel resolves `lnk` before `..` (as realpath alone would: `<root>/ledger/b.db`). OBSERVED on Ubuntu: no
@@ -147,8 +145,7 @@ class WindowsAliases(_Backup):
         drive, rest = os.path.splitdrive(os.path.abspath(path))
         return f"\\\\localhost\\{drive[0]}$" + rest
 
-    @unittest.expectedFailure
-    def test_3a_admin_share_alias_of_the_ledger_directory_is_refused(self):
+    def test_3a_admin_share_alias_of_the_ledger_directory_is_refused(self):  # FIX2 batch C fixed this finding; decorator removed by the integrator (AMENDMENT FIX2-A5 section 3)
         """W30-F3 (finding, fail-open plus a crash; CONFIRMED on Windows by Zen, WF-030 review F1, 2026-10-19):
         `--to \\\\localhost\\C$\\...\\ledger\\b.db` names the ledger directory through the admin share. realpath keeps
         the UNC form, so commonpath raises ValueError (different drives) and `_inside` answers False: no refusal.

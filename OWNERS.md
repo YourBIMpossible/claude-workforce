@@ -9,6 +9,7 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 |---|---|
 | tools/wf/wfcore/validate.py | A |
 | tools/wf/tests/test_fix2_validation.py | F2BP |
+| tools/wf/tests/test_fix2_export.py | F2GL |
 | tools/wf/tests/test_t24_accept_declarations.py | A |
 | tools/wf/wfcore/pathpolicy.py | B |
 | tools/wf/tests/test_t35_path_policy.py | B |
@@ -46,6 +47,7 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_t34_cli_matrix.py | S3M |
 | tools/wf/wfcore/gatecore.py | S4G |
 | tools/wf/tests/test_gate_decide.py | S4G |
+| tools/wf/tests/test_fix2_gate.py | F2SP |
 | tools/wf/tests/test_gate_corpus_replay.py | S4G |
 | tools/wf/wfcore/gatelog.py | S4L |
 | tools/wf/gate/wf_gate_hook.py | S4L |
@@ -53,10 +55,12 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_gate_hook_deployed.py | S4L |
 | tools/wf/tests/test_t19_gate_faults.py | S4M |
 | tools/wf/wfcore/backup.py | S5B |
+| tools/wf/tests/test_fix2_backup.py | F2CP |
 | tools/wf/tests/test_t37_backup.py | S5B |
 | tools/wf/tests/test_t30_race_secondwriter_identity.py | S5R |
 | tools/wf/tests/test_t37_t36_matrix.py | S5M |
 | tools/wf/tests/test_fix1_errors.py | FXL |
+| tools/wf/tests/test_fix2_resolve.py | F2AL |
 | tools/wf/tests/test_fix1_ids.py | FXL |
 | tools/wf/tests/test_fix1_paths.py | FXM |
 | tools/wf/tests/test_fix2_scratch_names.py | F2TL |
@@ -245,3 +249,63 @@ Decided by the Foreman under the owner's delegation; merged by the Foreman on th
 ## Integrator edit 2026-10-19 (AMENDMENT FIX2-A6: W20 pins superseded by FIX2 #2; coordinator Zen "Workforce Dev", lane D)
 
 The cumulative suite at `d0200e0` (main `52253dc` with batches T and B) errored in two lane-W20 characterization tests that pinned the pre-FIX2 behaviour FIX2 #2 changes: `test_wf020_adversarial.ContentEncodings.test_duplicate_keys_last_one_wins_silently` and `.test_large_event_body_from_a_file_is_committed`. Under A6 the integrator flips them to assert the new behaviour, renamed `test_duplicate_keys_are_refused` and `test_large_event_body_from_a_file_is_bounded` (`rejected(malformed)`, no row written, the ledger verifies; a large but legal body under the bound is still committed, per review WF-104 M1 and AMENDMENT FIX2-A8). This is the only edit to a W20 path; it is reviewed in WF-104 with the other integration commits.
+
+## Registration 2026-10-19 (package FIX2 batch C, AMENDMENT FIX2-A3; decided by the Foreman under the owner's delegation; coordinator Zen "Workforce Dev" while White is out)
+
+Package text: WorkForce collab `contracts/b2fix2/` (PACKAGE-FIX2.md with AMENDMENT-FIX2-A3.md, frozen with SHA256SUMS). Base: main `4321f16` plus this registration commit.
+
+| Lane | Worker | Branch | Scope |
+|---|---|---|---|
+| F2CP | Plexy | `fix2/plexy-c-backup` | the F2CP rows above (FIX2 #3, #22+#31, #23, #26+#32, #28, #50); relabelled from S5B (backup.py) and D (commands.py, for #50 at about :1224 only) for this batch only |
+
+Rows go back to their previous owners when batch C is integrated.
+
+## Integration 2026-10-19 (FIX2 batch C into `fix2/integration`, merge window 2; coordinator Zen "Workforce Dev", lane D)
+
+`fix2/integration` merges `fix2/plexy-c-backup` `8b91192` (F2CP), VERIFIED (independent review MyBuddy WF-105 and delta WF-108, Linux 658 OK, Windows Zen 658 OK). AMENDMENT FIX2-A5 widened F2CP's commands.py scope from #50 only to #50 and #3, both in `backup_cmd` (review WF-105 N3). The relabels are restored: backup.py S5B; the commands.py row is removed (back to D). The new test file `test_fix2_backup.py` stays registered to F2CP. Integrator edits under A5 section 3 (lanes W30/W29, recorded here): the expected-failure decorators of `test_wf030_backup_edges` `test_1c_…` (W30-F1), `test_3a_…` (W30-F3) and `test_2b_…` (W30-F2, its flip shown on Linux by WF-105) and of `test_wf029_store` `test_busy_copy_check_is_a_lock_timeout_refusal` (W29-F1) are removed, and the pin `test_busy_copy_check_today_is_an_internal_error` (today's exit 4, superseded by #28) is removed. `test_5b_…` (W30-F4) stays an expected failure.
+
+## Registration 2026-10-19 (package FIX2 batch S, AMENDMENT FIX2-A7; decided by the Foreman under the owner's delegation; coordinator Zen "Workforce Dev" while White is out)
+
+Package text: WorkForce collab `contracts/b2fix2/` (PACKAGE-FIX2.md with AMENDMENT-FIX2-A7.md) and `contracts/b2s4a/AMENDMENTS.md` S4A-A6 (frozen with SHA256SUMS). Base: `fix2/integration` `7d76863` (main `52253dc` plus FIX2 batches T and B) plus this registration commit.
+
+| Lane | Worker | Branch | Scope |
+|---|---|---|---|
+| F2SP | Plexy | `fix2/plexy-s-gate` | the F2SP rows above (FIX2 #4, #5, #56; test_gate_decide.py :40/:559 to `self.scratch`); relabelled from S4G (gatecore.py, test_gate_decide.py) and D (commands.py, for #5's `gate_print_install` only) for this batch only |
+
+Rows go back to their previous owners when batch S is integrated.
+
+## Integration 2026-10-19 (FIX2 batch S into `fix2/integration`, merge window 2; coordinator Zen "Workforce Dev", lane D)
+
+`fix2/integration` merges `fix2/plexy-s-gate` `3ee0344` (F2SP: #4 with review F1/F2, #5, #56 per S4A-A6, S-add), VERIFIED (independent review MyBuddy WF-110, Linux 930 OK, Windows Zen 930 OK). The relabels are restored: gatecore.py S4G, test_gate_decide.py S4G; the commands.py row is removed (back to D). The new test file `test_fix2_gate.py` stays registered to F2SP. Deferred to batch Z with a batch-D doc line: rule 1 follows a link on the root's anchor before rule 0's link refusal (WF-110 S1).
+
+## Registration 2026-10-19 (package FIX2 batch A, AMENDMENT FIX2-A4; decided by the Foreman under the owner's delegation; coordinator Zen "Workforce Dev" while White is out)
+
+Package text: WorkForce collab `contracts/b2fix2/` (PACKAGE-FIX2.md with AMENDMENT-FIX2-A4.md, frozen with SHA256SUMS). Base: main `4321f16` plus this registration commit.
+
+| Lane | Worker | Branch | Scope |
+|---|---|---|---|
+| F2AL | Lazy | `fix2/lazy-a-resolve` | the F2AL rows above (FIX2 #1, #18, #21, #46, #47, #48); relabelled from D (markers.py, txn.py; wf.py for #21's auto-resolve handler at about :257-261 only, AMENDMENT FIX2-A9) for this batch only |
+
+Rows go back to their previous owners when batch A is integrated.
+
+## Integration 2026-10-19 (FIX2 batch A into `fix2/integration`, merge window 2; coordinator Zen "Workforce Dev", lane D)
+
+`fix2/integration` merges `fix2/lazy-a-resolve` `52f7e64` (F2AL: #1, #18, #21 in wf.py per A9, #46, #47, #48, and the WF-109 M1 conflict-marker fix including probe B), VERIFIED (independent review Plexy WF-109 and its delta review, Linux MyBuddy WF-111 663 OK, Windows Zen 663 OK). The relabels are restored: the markers.py, txn.py and wf.py rows are removed (back to D). The new test file `test_fix2_resolve.py` stays registered to F2AL.
+
+## Integrator edit 2026-10-19 (AMENDMENT FIX2-A13: W20 tests meeting FIX2 batch A #1; coordinator Zen "Workforce Dev", lane D)
+
+The cumulative Windows suite at `d2f4579` (window 2: C+S+A) failed `test_wf020_txn.ResolveOutcomes.test_incomplete_conflict_marker_stays_uncertain` (it pinned the pre-FIX2 reason text "conflict marker incomplete: 'attempted_msg_id'"; batch A #1 unified the reason to "conflict marker malformed: … attempted_msg_id …", the behaviour, STILL-UNCERTAIN with the marker kept, unchanged) and reported an unexpected success for `test_empty_conflict_payload_marker_not_dropped` (lane W20 finding F8, fixed by batch A #1). Under A13 the integrator asserts the new reason wording while still requiring the missing field to be named, and removes the F8 expected-failure decorator. These are the only edits to that W20 file.
+
+## Registration 2026-10-19 (package FIX2 batch G, AMENDMENT FIX2-A10; decided by the Foreman under the owner's delegation; coordinator Zen "Workforce Dev" while White is out)
+
+Package text: WorkForce collab `contracts/b2fix2/` (PACKAGE-FIX2.md with AMENDMENT-FIX2-A10.md, frozen with SHA256SUMS). Base: `fix2/integration` `ebfd6fc` (main `52253dc` plus FIX2 batches T and B and the A6/A8 integrator edits) plus this registration commit.
+
+| Lane | Worker | Branch | Scope |
+|---|---|---|---|
+| F2GL | Lazy | `fix2/lazy-g-export` | the F2GL rows above (FIX2 #45 option (b), #51, #54, and #61's export.py `_STAGING` anchor); relabelled from A (export.py), D (txn.py, for the export refresh call only; test_b1_gaps.py, for #54 only) and W20 (test_wf020_adversarial.py, for the ExportRefreshRace expected-failure decorators and the WF-064 S1 one-line change only) for this batch only |
+
+Rows go back to their previous owners when batch G is integrated.
+
+## Integration 2026-10-19 (FIX2 batch G into `fix2/integration`, merge window 2; coordinator Zen "Workforce Dev", lane D)
+
+`fix2/integration` merges `fix2/lazy-g-export` `c6d0dc7` (F2GL: #45 option (b), #51, #54, #61's `_STAGING` anchor, and R5 under AMENDMENT FIX2-A11/A12), reviewed (independent review Plexy WF-114 PASS; Windows Zen 907 OK, Windows Plexy 907 OK). Linux at `c6d0dc7` waits for MyBuddy and is required before the window-2 PR (Foreman decision (a)). The relabels are restored: export.py A; the txn.py, test_b1_gaps.py and test_wf020_adversarial.py rows are removed (back to D, D and W20). The new test file `test_fix2_export.py` stays registered to F2GL. Recorded outside-lane exception: `tools/wf/tests/test_transaction_sequence_requirements.py` (owner C) changed inside `Tracked` and at :350-351 only, as AMENDMENT FIX2-A11/A12 allow.

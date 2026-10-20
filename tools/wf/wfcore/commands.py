@@ -517,9 +517,10 @@ def _recovery_state(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 def export_cmd(db: str, job: str) -> dict[str, Any]:
     """`wf export <job>`: ledger-read-only, export-writing. Refuses an unknown job exactly as `status` does
-    (before any directory is created), then regenerates jobs\\<job>\\export via export.refresh (bounded read
-    snapshot, temp file + os.replace, writes only under paths.export_dir) and re-checks it with export.check.
-    Never opens a write transaction, never appends a row, never touches markers or head."""
+    (before any directory is created), then regenerates jobs\\<job>\\export via export.refresh (under the write
+    lock: BEGIN IMMEDIATE across its snapshot and its file writes, then ROLLBACK, FIX2 #45 (b); temp file +
+    os.replace, writes only under paths.export_dir) and re-checks it with export.check. Never commits a ledger
+    write, never appends a row, never touches markers or head."""
     conn = dbm.connect(db, create=False)
     try:
         with dbm.read_snapshot(conn):
@@ -1248,19 +1249,32 @@ def backup_cmd(db: str, job: str | None, *, all_jobs: bool, dest: str, writer_st
         raise WfUsage("give exactly one of <job> or --all")
     if not dest or not dest.strip():
         raise WfUsage("--to <path> is required")
+    # FIX2 #3 (AMENDMENT FIX2-A5): FIX1 I1's rule for names a filesystem merges with another name or a device, for the
+    # destination's file name, on every platform and before any filesystem access; the device rule is validate's own.
+    # It lives here because backup.py may not import validate (INTERFACE-CONTRACT-S5 section 5). A destination ending
+    # in a path separator names a directory and has no file name to check (WF-105 M1), so it is refused first.
+    if dest.endswith(tuple(sep for sep in (os.sep, os.altsep) if sep)):
+        raise WfRefused("dest-is-a-directory-path", dest=dest)
+    dest_name = os.path.basename(dest)
+    if dest_name.endswith((".", " ")):
+        raise WfRefused("dest-trailing-dot-or-space", dest=dest, name=dest_name)
+    if validate._DEVICE.match(dest_name):
+        raise WfRefused("dest-device-name", dest=dest, name=dest_name)
     backup = _backup_module()
     if job:
         check_job_id(job)
         if not os.path.isfile(db):
             raise WfRefused(f"ledger not found: {db}")
-        conn = sqlite3.connect(f"{_file_uri(db)}?mode=ro", uri=True, timeout=0, isolation_level=None)
-        try:
+        conn = None
+        try:  # FIX2 #50: opened inside the try, so a ledger the engine cannot open (a UNC --db) is refused, not exit 4
+            conn = sqlite3.connect(f"{_file_uri(db)}?mode=ro", uri=True, timeout=0, isolation_level=None)
             with dbm.read_snapshot(conn):
                 known = job in dbm.jobs(conn)
         except sqlite3.Error as exc:
-            raise WfRefused(f"ledger not readable ({type(exc).__name__}: {exc})") from exc
+            raise WfRefused(f"ledger not readable ({type(exc).__name__}: {exc}); the read-only open failed") from exc
         finally:
-            conn.close()
+            if conn is not None:
+                conn.close()
         if not known:
             raise WfRefused(f"job {job} is not in the ledger; nothing written", job=job)
     res = backup.backup(db, dest, writer_stopped=writer_stopped)
@@ -1626,7 +1640,15 @@ PRINT_ONLY_NOTE = ("printed only: not installed, not qualified; installation and
 
 def gate_print_install(*, hooks_dir: str, root: str, db: str, wf_dir: str | None = None) -> dict[str, Any]:
     """`wf gate print-install` (INTERFACE-CONTRACT-S4A section 5). Computes and prints the install record; writes
-    nothing anywhere. The snippet is not an installation and not a qualification."""
+    nothing anywhere. The snippet is not an installation and not a qualification.
+
+    FIX2 #5: the hook command names the running interpreter (`sys.executable`) and quotes it and the hook path for
+    the platform's command-line parser (CommandLineToArgvW rules on Windows, POSIX shell words elsewhere)."""
+    import shlex
+    import subprocess
+    import sys
+    if not sys.executable:
+        raise WfRefused("sys.executable is empty: the interpreter for the hook command is unknown")
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     wf_dir = os.path.abspath(wf_dir or here)
     hook_src = os.path.join(wf_dir, "gate", "wf_gate_hook.py")
@@ -1640,10 +1662,12 @@ def gate_print_install(*, hooks_dir: str, root: str, db: str, wf_dir: str | None
     wfcore_sha = sha256_text("".join(lines))
     hook_sha = sha256_file(hook_src)
     hook_dst = os.path.join(hooks_dir, "wf_gate_hook.py")
+    argv = [sys.executable, "-I", hook_dst]
+    command = subprocess.list2cmdline(argv) if os.name == "nt" else shlex.join(argv)
     config = {"root": os.path.abspath(root), "db": os.path.abspath(db), "wf_dir": wf_dir,
               "wfcore_sha256": wfcore_sha, "read_timeout_s": 2.0, "hook_sha256": hook_sha}
     snippet = {"hooks": {"PreToolUse": [{"matcher": "Write|Edit|NotebookEdit|Bash|PowerShell", "hooks": [
-        {"type": "command", "command": f"python -I {hook_dst}", "timeout": 10, "onFailure": "block"}]}]}}
+        {"type": "command", "command": command, "timeout": 10, "onFailure": "block"}]}]}}
     return {"ok": True, "hook_source": hook_src, "hook_sha256": hook_sha, "hook_destination": hook_dst,
             "config_destination": os.path.join(hooks_dir, "wf_gate.json"), "config": config,
             "settings_snippet": snippet, "note": PRINT_ONLY_NOTE, "written": []}
