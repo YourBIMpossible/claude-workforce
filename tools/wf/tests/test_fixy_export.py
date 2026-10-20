@@ -15,6 +15,7 @@ elsewhere. The sleep goes through a stand-in for export's `time`, so it is count
 on the base 1439f94 (red-before in from-lazy RESULTS.md) unless its docstring says it pins unchanged behaviour."""
 from __future__ import annotations
 
+import csv
 import ctypes
 import errno
 import json
@@ -73,6 +74,22 @@ def lock_bytes(path: str):
             msvcrt.locking(fd, msvcrt.LK_UNLCK, n)
             os.close(fd)
     return release
+
+
+def system32(exe: str) -> str:
+    """The Windows tool `exe` by its System32 path, so no same-named program elsewhere is run instead."""
+    return os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", exe)
+
+
+def account_sid() -> str | None:
+    """This account's SID from `whoami /user /fo csv /nh` (one row: "<domain>\\<user>","S-1-…"), or None."""
+    try:
+        run = subprocess.run([system32("whoami.exe"), "/user", "/fo", "csv", "/nh"], capture_output=True, text=True)
+    except OSError:
+        return None
+    rows = list(csv.reader(run.stdout.splitlines())) if run.returncode == 0 else []
+    sid = rows[0][-1].strip() if rows and rows[0] else ""
+    return sid if sid.startswith("S-1-") else None
 
 
 class _Export(Base):
@@ -206,18 +223,31 @@ class Y1RealHandles(_Export):
         self.assertTrue(problems[0].startswith("export file unreadable: events.jsonl (PermissionError: [Errno 13]"), problems)
 
     def test_access_denied_is_not_retried(self):
-        """Pins unchanged behaviour: an ACL that denies this user reading head.json is errno 13 with no `winerror` too;
-        the probe gets 5, so it is today's `export file unreadable` at once."""
+        """Pins unchanged behaviour: an ACL that denies this account reading head.json is errno 13 with no `winerror`
+        too; the probe gets 5, so it is today's `export file unreadable` at once. The deny names the account's SID:
+        `%USERNAME%` resolves to the computer on a host whose account and computer names are equal, and the read then
+        succeeds (Plexy WF-147 F1). If the file is still readable after the deny, the test skips with the reason."""
         target = os.path.join(self.out, "head.json")
-        user = os.environ.get("USERNAME", "")
-        deny = subprocess.run(["icacls", target, "/deny", f"{user}:(R)"], capture_output=True, text=True)
+        sid = account_sid()
+        if sid is None:
+            self.skipTest("whoami /user gave no SID for this account")
+        principal = f"*{sid}"
+        icacls = system32("icacls.exe")
+        deny = subprocess.run([icacls, target, "/deny", f"{principal}:(R)"], capture_output=True, text=True)
         if deny.returncode != 0:
             self.skipTest(f"icacls could not deny read: {deny.stdout.strip()} {deny.stderr.strip()}")
         try:
+            try:
+                with open(target, "rb") as fh:
+                    fh.read(1)
+            except PermissionError:
+                pass
+            else:
+                self.skipTest(f"head.json is still readable after icacls /deny {principal}:(R)")
             with self.patched():
                 problems = export.check(self.db, "j")
         finally:
-            subprocess.run(["icacls", target, "/remove:d", user], capture_output=True, text=True)
+            subprocess.run([icacls, target, "/remove:d", principal], capture_output=True, text=True)
         self.assertEqual(self.sleeps, [])
         self.assertEqual(len(problems), 1, problems)
         self.assertTrue(problems[0].startswith("export file unreadable: head.json (PermissionError: [Errno 13]"), problems)

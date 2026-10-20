@@ -12,9 +12,11 @@
 Violations are simulated by patching the call, with `export._WINDOWS` set (any platform), and on Windows also produced
 for real with a handle from CreateFileW that lacks the sharing the call needs. Measured on Windows (WF-127 F1): a real
 replace onto a held file reports `winerror` 5 and is retried; a real read of a held or locked file raises errno 13 with
-no `winerror`, so the read retry does not fire for it (pinned). The sleep goes through a stand-in for export's `time`,
-so it is counted and no test waits. Each Z3 test failed on the base 0b6031e (red-before in
-from-lazy RESULTS.md) unless its docstring says it pins unchanged behaviour; Z7 pins unchanged behaviour."""
+no `winerror`, and FIX2 Y1's read-only probe of the same path classifies it (32 or 33 retried, 5 not), so the read
+retry fires for it (`test_real_read_violation_is_retried`, AMENDMENT FIX2-A23). The sleep goes through a stand-in for
+export's `time`, so it is counted and no test waits. Each Z3 test failed on the base 0b6031e (red-before in
+from-lazy RESULTS.md) unless its docstring says it pins unchanged behaviour; the Y1 test failed on dd98481 (WF-146);
+Z7 pins unchanged behaviour."""
 from __future__ import annotations
 
 import builtins
