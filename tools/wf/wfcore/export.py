@@ -179,10 +179,18 @@ def _discard_own_staging(tmp: str) -> None:
 
 
 def _pid_alive(pid: int) -> bool:
-    """Best effort: is `pid` a running process? True on any doubt (never claims an orphan it cannot prove)."""
+    """Best effort: is `pid` a running process? True on any doubt (never claims an orphan it cannot prove).
+
+    A staging name may carry any digits, so a pid no process can have is not alive (FIX2 WF-146c): below 1 (on POSIX
+    `kill(0, 0)` would probe the process group), past a Windows DWORD (ctypes would refuse it), or one `os.kill`
+    cannot take (`OverflowError`, `ValueError`: past a POSIX pid_t)."""
     if pid == os.getpid():
         return True
+    if pid < 1:
+        return False
     if sys.platform == "win32":
+        if pid > 0xFFFFFFFF:
+            return False
         import ctypes
         k32 = ctypes.WinDLL("kernel32", use_last_error=True)
         k32.OpenProcess.restype = ctypes.c_void_p
@@ -199,6 +207,8 @@ def _pid_alive(pid: int) -> bool:
         os.kill(pid, 0)
         return True
     except ProcessLookupError:
+        return False
+    except (OverflowError, ValueError):
         return False
     except OSError:
         return True

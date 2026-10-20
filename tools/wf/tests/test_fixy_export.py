@@ -389,6 +389,21 @@ class Y3Manifest(_Export):
         self.assertIn(export.PRESERVED + os.path.basename(dead), export.orphans(self.out))
         self.assertFalse(any("manifest.txt.4294967290" in p for p in export.strays(self.out, set(export.FILES))))
 
+    def test_a_pid_no_process_can_have_is_an_orphan(self):
+        """WF-146c (MyBuddy WF-149(a)): a staging name may carry any digits. A pid no process can have (0; 2**31, past
+        a POSIX pid_t; 2**32, past a Windows DWORD; 2**64) is not alive, so its file is an orphan and `check` reports
+        it. Before, `_pid_alive` raised for it, and `check` with it: `OverflowError` from `os.kill` on Linux from
+        2**31, `ctypes.ArgumentError` on Windows from 2**32 (and pid 0 was alive on POSIX: `kill(0, 0)` probes the
+        process group)."""
+        for pid in (0, 2**31, 2**32, 2**64):
+            with self.subTest(pid=pid):
+                self.assertFalse(export._pid_alive(pid))
+        name = f"manifest.txt.{2**64}-0123abcd.tmp"
+        with open(os.path.join(self.out, name), "w", encoding="utf-8") as fh:
+            fh.write("left by a writer that died\n")
+        self.assertIn(export.PRESERVED + name, export.orphans(self.out))
+        self.assertIn(export.PRESERVED + name, export.check(self.db, "j"))
+
     def test_verify_clean_after_a_refresh(self):
         """Pins unchanged behaviour."""
         self.assertNotIn("error", export.refresh(self.db, "j"))
