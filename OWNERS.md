@@ -64,6 +64,10 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_fix1_ids.py | FXL |
 | tools/wf/tests/test_fix1_paths.py | FXM |
 | tools/wf/tests/test_fix2_scratch_names.py | F2TL |
+| tools/wf/wfcore/txn.py | F2HZ |
+| tools/wf/wfcore/commands.py | F2HZ |
+| tools/wf/tests/test_wf020_txn.py | F2HZ |
+| tools/wf/tests/test_fix2_wording.py | F2HZ |
 | tools/wf/tests/test_wf020_*.py | W20 |
 | fixtures/results/wf020-lazy/** | W20 |
 | tools/wf/tests/test_wf021_*.py | W21 |
@@ -309,3 +313,13 @@ Rows go back to their previous owners when batch G is integrated.
 ## Integration 2026-10-19 (FIX2 batch G into `fix2/integration`, merge window 2; coordinator Zen "Workforce Dev", lane D)
 
 `fix2/integration` merges `fix2/lazy-g-export` `c6d0dc7` (F2GL: #45 option (b), #51, #54, #61's `_STAGING` anchor, and R5 under AMENDMENT FIX2-A11/A12), reviewed (independent review Plexy WF-114 PASS; Windows Zen 907 OK, Windows Plexy 907 OK). Linux at `c6d0dc7` waits for MyBuddy and is required before the window-2 PR (Foreman decision (a)). The relabels are restored: export.py A; the txn.py, test_b1_gaps.py and test_wf020_adversarial.py rows are removed (back to D, D and W20). The new test file `test_fix2_export.py` stays registered to F2GL. Recorded outside-lane exception: `tools/wf/tests/test_transaction_sequence_requirements.py` (owner C) changed inside `Tracked` and at :350-351 only, as AMENDMENT FIX2-A11/A12 allow.
+
+## Registration 2026-10-19 (package FIX2 batch H, AMENDMENT FIX2-A15; decided by the Foreman under the owner's delegation; coordinator Zen "Workforce Dev" while White is out)
+
+Package text: WorkForce collab `contracts/b2fix2/` (PACKAGE-FIX2.md with AMENDMENT-FIX2-A15.md, frozen with SHA256SUMS). Base: `fix2/integration` `288cdba` (main `74006c4` plus FIX2 batches C, S, A, D and G) plus this registration commit.
+
+| Lane | Worker | Branch | Scope |
+|---|---|---|---|
+| F2HZ | Zen | `fix2/zen-h-wording` | the F2HZ rows above (FIX2 #39 with #53, #41, and A4's duplicate-key path quoting); relabelled from D (txn.py, for `write_contracts_update` only; commands.py, for `_unique_keys`, the digest's unreconciled-role entry and the `job abandon` call only) and W20 (test_wf020_txn.py, for `test_abandon_then_abandon_again` only) for this batch only |
+
+Rows go back to their previous owners when batch H is integrated. The new test file `test_fix2_wording.py` stays registered to F2HZ.
