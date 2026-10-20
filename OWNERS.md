@@ -25,7 +25,7 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/wfcore/checkpointcmp.py | C |
 | tools/wf/tests/test_t36_verify_checkpoint.py | C |
 | tools/wf/tests/test_checkpoint_clarity.py | C |
-| tools/wf/wfcore/export.py | F2YL |
+| tools/wf/wfcore/export.py | A |
 | tools/wf/tests/test_export_tmp_preserve.py | A |
 | tools/wf/tests/test_t35_windows_resolution.py | D |
 | fixtures/filesystem_qualification/** | FQ |
@@ -65,10 +65,8 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_fix1_ids.py | FXL |
 | tools/wf/tests/test_fix1_paths.py | FXM |
 | tools/wf/tests/test_fix2_scratch_names.py | F2TL |
-| tools/wf/wfcore/manifest.py | F2YL |
-| tools/wf/tests/test_wf020_adversarial.py | F2YL |
 | tools/wf/tests/test_fixy_export.py | F2YL |
-| tools/wf/tests/test_fixz_hardening.py | F2YL |
+| tools/wf/tests/test_fixz_hardening.py | F2ZL |
 | tools/wf/tests/test_fixz_links.py | F2ZP |
 | tools/wf/tests/test_fixz_wording.py | F2ZZ |
 | tools/wf/tests/test_fix2_wording.py | F2HZ |
@@ -371,3 +369,7 @@ Package text: WorkForce collab `contracts/b2fix2/` (PACKAGE-FIX2.md with AMENDME
 | F2YL | Lazy | `fix2/lazy-y-export` | the F2YL rows above (Y1 the read retry that can fire, Y2 the per-refresh retry budget, Y3 an atomic retried manifest write, Y4 the stale `_race` comment only in test_wf020_adversarial.py; Lazy F1's pin test only in test_fixz_hardening.py, AMENDMENT FIX2-A23); relabelled from A (export.py), D (manifest.py), W20 (test_wf020_adversarial.py) and F2ZL (test_fixz_hardening.py) for this batch only |
 
 Rows go back to their previous owners when batch Y is integrated. The new test file `test_fixy_export.py` stays registered to F2YL.
+
+## Integration 2026-10-20 (FIX2 batch Y into `fix2/integration`, merge window 5; coordinator Zen "Workforce Dev", lane D)
+
+`fix2/integration` (from main `7777711`, PR #61) merges `fix2/lazy-y-export` `55a2754` (F2YL: Y1 the read retry with a read-only probe, Y2 the per-refresh retry budget, Y3 the atomic manifest write, Y4 the `_race` comment; the A23 pin test; WF-146b and WF-146c), VERIFIED (independent review Plexy WF-147/WF-147b/WF-147c with exact-head Windows runs per the Foreman's rule; Linux MyBuddy 36c96167 WF-149(a)/(a2)). The relabels are restored: export.py A, test_fixz_hardening.py F2ZL; the manifest.py and test_wf020_adversarial.py rows are removed (back to D and the W20 glob). The new test file stays registered: test_fixy_export.py F2YL. The lane-D doc lines (README:30, :33, :34) follow in the next commit. Recorded for later (not in batch Y): Plexy WF-147 N1 (the probe race, conservative) and N2 (`check`'s reads have no shared retry budget; Y2 bounds only `refresh`).
