@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
+from typing import Callable
 
 from .canon import sha256_file
 
@@ -37,10 +38,22 @@ def format_line(e: Entry) -> str:
     return f"{e.sha256}{SEP}{e.size}{SEP}{e.relpath}"
 
 
-def write(path: str, entries: list[Entry]) -> None:
+def render(entries: list[Entry]) -> str:
+    """The manifest's text: one `format_line` per entry, each ending in LF."""
     lines = [format_line(e) for e in entries]
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
+def write(path: str, entries: list[Entry], write_text: Callable[[str, str], None] | None = None) -> None:
+    """Write the manifest. `export.refresh` passes its atomic, retried writer (FIX2 Y3: staged, fsynced and replaced
+    like the other export files, inside the refresh's retry budget); without `write_text` the file is written in
+    place."""
+    text = render(entries)
+    if write_text is not None:
+        write_text(path, text)
+        return
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
-        fh.write("\n".join(lines) + ("\n" if lines else ""))
+        fh.write(text)
 
 
 def parse_line(line_no: int, line: str) -> Entry:

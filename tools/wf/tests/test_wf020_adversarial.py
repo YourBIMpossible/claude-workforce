@@ -289,7 +289,7 @@ class ExportRefreshRace(Adv):
             self.assertTrue(held.wait(30), "writer A never reached its export refresh")
             b = threading.Thread(target=lambda: out.update(b=self.append_intent(json.dumps(dict(BASE, note="B")))))
             b.start()
-            b.join(dbm.T_ACQ_BOUND / 2)  # today B is done at once; under a fix B waits on A, inside its lock bound
+            b.join(dbm.T_ACQ_BOUND / 2)  # under FIX2 #45 (b) B waits on A's refresh lock, inside its lock bound
             release.set()
             a.join(30)
             b.join(30)
