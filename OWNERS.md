@@ -12,6 +12,7 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_fix2_export.py | F2GL |
 | tools/wf/tests/test_b2s3_wiring.py | F2RP |
 | tools/wf/tests/test_fix2_decisions.py | F2RP |
+| tools/wf/tests/test_wf021_fs_semantics.py | F2RP |
 | tools/wf/tests/test_t24_accept_declarations.py | A |
 | tools/wf/wfcore/pathpolicy.py | B |
 | tools/wf/tests/test_t35_path_policy.py | B |
@@ -318,6 +319,6 @@ Package text: WorkForce collab `contracts/b2fix2/` (PACKAGE-FIX2.md with AMENDME
 
 | Lane | Worker | Branch | Scope |
 |---|---|---|---|
-| F2RP | Plexy | `fix2/plexy-r-decisions` | the F2RP rows above (FIX2 #35 option (A) in validate.py; #36 option (A) with #9 in observe.py; #37 option (A) with #8 and #52 in reconcile.py); relabelled from A (validate.py), S4L (reconcile.py, observe.py, test_t14_observe.py), S2R (test_t16a_recover_begin.py) and D (test_b2s3_wiring.py, for the observe log-path assertion only) for this batch only |
+| F2RP | Plexy | `fix2/plexy-r-decisions` | the F2RP rows above (FIX2 #35 option (A) in validate.py; #36 option (A) with #9 in observe.py; #37 option (A) with #8 and #52 in reconcile.py); relabelled from A (validate.py), S4L (reconcile.py, observe.py, test_t14_observe.py), S2R (test_t16a_recover_begin.py) D (test_b2s3_wiring.py, for the observe log-path assertion only) and W21 (test_wf021_fs_semantics.py, for row 36's observe test only, AMENDMENT FIX2-A16) for this batch only |
 
 Rows go back to their previous owners when batch R is integrated. The new test file `test_fix2_decisions.py` stays registered to F2RP.
