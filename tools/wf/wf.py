@@ -2,24 +2,31 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import os
 import sys
 import uuid
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I omits the script dir
+WF_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, WF_DIR)  # -I omits the script dir
 
-from wfcore import checkpointcmp, commands, paths  # noqa: E402
-from wfcore.db import OpLog, WfError, WfUsage  # noqa: E402
+from wfcore import checkpointcmp, client, commands, paths, peer, wire  # noqa: E402
+from wfcore.db import OpLog, WfError, WfRefused, WfRejected, WfUsage  # noqa: E402
 from wfcore.faults import FaultsNotAllowed, load as load_faults  # noqa: E402
 
 EXIT_OK, EXIT_ERR, EXIT_USAGE = 0, 1, 2
 EXIT_INTERNAL = 4  # PACKAGE-FIX1 E1 / A1.1: an unexpected exception; not a refusal (1, 2) nor the fault-seam kill (3)
 
-# FIX3 fix 2 (SPEC §2, design 2-i): every global option that takes a value (--db, --session, --role, --generation,
-# --msg-id) may be given once, before the command or after it. A repeat in either position, or across both, is
-# refused by run(); it is never resolved as "last wins" or "first wins". The flags (--json, --oplog) may repeat.
+# FIX3 fix 2 (SPEC §2, design 2-i): every global option that takes a value (--db, --broker, --session, --role,
+# --generation, --msg-id) may be given once, before the command or after it. A repeat in either position, or across
+# both, is refused by run(); it is never resolved as "last wins" or "first wins". The flags (--json, --oplog) may repeat.
 _GIVEN = "_wf_given"  # namespace attribute: each store of a global value option, in command-line order
+
+# FIX3-II (INTERFACE-CONTRACT-FIX3-II r2 section 3.5): the commands a worker account may not run through the broker
+# (SII:191-194). `verify` joins them when it names a path (--restored, --gate-file, --gate-sha).
+_NOT_BROKERED = frozenset({"job abandon", "resolve", "export", "checkpoint", "observe", "backup", "gate print-install"})
 
 
 class _StoreOnce(argparse.Action):
@@ -43,6 +50,8 @@ def _parser() -> argparse.ArgumentParser:
                                 allow_abbrev=False)
     p.add_argument("--db", action=_StoreOnce,
                    help="ledger path (required: give --db <path> or set WF_DB; there is no default)")
+    p.add_argument("--broker", action=_StoreOnce,
+                   help="broker address (or WF_BROKER): send the command to the account-checking broker, not --db")
     p.add_argument("--session", action=_StoreOnce, default=os.environ.get("WF_SESSION", ""),
                    help="session id (or WF_SESSION)")
     p.add_argument("--role", action=_StoreOnce, default=os.environ.get("WF_ROLE", ""), help="author role (or WF_ROLE)")
@@ -97,6 +106,8 @@ def _parser() -> argparse.ArgumentParser:
     bd.add_argument("--bind-session", required=True); bd.add_argument("--bind-generation", type=int, default=1)
     bd.add_argument("--tool", action="append", default=None, help="declared tool (repeatable; default: contract allowed_tools)")
     bd.add_argument("--path", action="append", default=None, help="declared path glob (repeatable; default: contract scope)")
+    bd.add_argument("--bind-account", default=None,
+                    help="the OS account id the bound session runs as (FIX3-II section 4.2; checked against the grant's map)")
     rc = sp.add_parser("reconcile", help="compare in-scope files with baseline, receipts and intents; append the report")
     rc.add_argument("job"); rc.add_argument("--target-role", default="builder")
     ak = sp.add_parser("ack-reconcile", help="acknowledge a reconcile report (same as append --type ack-reconcile)")
@@ -132,6 +143,9 @@ def _parser() -> argparse.ArgumentParser:
     rd.add_argument("--unresolved", action="append", default=None, metavar="PATH=DISPOSITION",
                     help="disposition for an unresolvable report path: owner-inspected | restore | abandon-path (repeatable)")
     rd.add_argument("--turn", required=True, help="owner turn text naming the job"); rd.add_argument("--note", default=None)
+    # FIX3-II section 4.5: the account wf runs as (direct) or the broker read (brokered); with a job, its map entries
+    wh = sp.add_parser("whoami", help="print the account this call runs as; with a job, the roles and sessions it holds")
+    wh.add_argument("job", nargs="?")
     return p
 
 
@@ -151,11 +165,20 @@ def _undecodable_arg(argv: list[str]) -> int | None:
     return None
 
 
-def run(argv: list[str]) -> tuple[int, dict]:
+def _usage(text: str) -> tuple[int, dict]:
+    return EXIT_USAGE, {"ok": False, "code": "usage", "error": f"rejected(usage): {text}"}
+
+
+def _undecodable_refusal(argv: list[str]) -> tuple[int, dict] | None:
     bad = _undecodable_arg(argv)
     if bad is not None:  # refused before any command runs; the argument itself is not echoed
-        return EXIT_USAGE, {"ok": False, "code": "usage",
-                            "error": f"rejected(usage): argument {bad} holds undecodable bytes (a lone surrogate)"}
+        return _usage(f"argument {bad} holds undecodable bytes (a lone surrogate)")
+    return None
+
+
+def _parse(argv: list[str]) -> tuple[argparse.ArgumentParser, argparse.Namespace, list[str]]:
+    """Parse the command line, then any global options after the command (FIX3 fix 2). Returns the parser, the
+    namespace and fix 2's record of each global value option given, in order. An argparse error raises SystemExit."""
     parser = _parser()
     args, rest = parser.parse_known_args(argv)
     given: list[str] = vars(args).pop(_GIVEN, [])
@@ -172,21 +195,231 @@ def run(argv: list[str]) -> tuple[int, dict]:
         given += vars(extra).pop(_GIVEN, [])
         for k, v in vars(extra).items():
             setattr(args, k, v)
+    return parser, args, given
+
+
+def _once_refusal(given: list[str]) -> tuple[int, dict] | None:
     repeated = [opt for opt in dict.fromkeys(given) if given.count(opt) > 1]  # in order of first appearance
     if repeated:  # FIX3 fix 2: refused before any command runs; neither value is used
         noun = "option" if len(repeated) == 1 else "options"
-        return EXIT_USAGE, {"ok": False, "code": "usage",
-                            "error": f"rejected(usage): {noun} {', '.join(repeated)} given more than once"}
+        return _usage(f"{noun} {', '.join(repeated)} given more than once")
+    return None
+
+
+def _env_value(name: str) -> str | None:
+    """An environment value, or None when it is unset, empty or whitespace only (FIX3-II section 1.9, as wf.py:183)."""
+    value = os.environ.get(name)
+    return value if value is not None and value.strip() else None
+
+
+def run(argv: list[str]) -> tuple[int, dict]:
+    refusal = _undecodable_refusal(argv)
+    if refusal is not None:
+        return refusal
+    parser, args, given = _parse(argv)
+    refusal = _once_refusal(given)
+    if refusal is not None:
+        return refusal
+    # FIX3-II section 1.9: the route. --db or --broker, else WF_DB or WF_BROKER; never both of a pair. An empty --db
+    # falls back to WF_DB, as before.
+    if args.db and args.broker is not None:
+        return _usage("give --db or --broker, not both")
+    if args.db:
+        db_arg = args.db
+    elif args.broker is not None:
+        return _run_via_broker(parser, args, args.broker)
+    else:
+        env_db, env_broker = _env_value("WF_DB"), _env_value("WF_BROKER")
+        if env_db is not None and env_broker is not None:
+            return _usage("WF_DB and WF_BROKER are both set (give --db or --broker)")
+        if env_broker is not None:
+            return _run_via_broker(parser, args, env_broker)
+        db_arg = env_db
     # PACKAGE-FIX1 I3: no implicit default ledger. A command without --db and without WF_DB would otherwise read or
     # write <repo>/ledger/ledger.db silently.
-    db_arg = args.db or os.environ.get("WF_DB") or None
     if not db_arg or not db_arg.strip():
-        return EXIT_USAGE, {"ok": False, "code": "usage",
-                            "error": "rejected(usage): --db required (give --db <path> or set WF_DB)"}
-    db = paths.db_path(db_arg)
+        return _usage("--db required (give --db <path> or set WF_DB)")
+    return _dispatch(args, paths.db_path(db_arg))
+
+
+# --- FIX3-II: the broker route (client side) and the broker's run target ------------------------------------------------
+
+def _subcommands(p: argparse.ArgumentParser) -> argparse._SubParsersAction | None:
+    return next((a for a in p._actions if isinstance(a, argparse._SubParsersAction)), None)
+
+
+def _command_parser(parser: argparse.ArgumentParser,
+                    args: argparse.Namespace) -> tuple[argparse.ArgumentParser, list[str]]:
+    """The parser of the typed command, and its path (`["grant", "activate"]`)."""
+    sub = _subcommands(parser).choices[args.cmd]
+    path = [args.cmd]
+    group = _subcommands(sub)
+    if group is not None:
+        sub = group.choices[args.sub]
+        path.append(args.sub)
+    return sub, path
+
+
+def _file_actions(cmd_parser: argparse.ArgumentParser) -> list[argparse.Action]:
+    """The command's file-valued options (section 1.2's FILE_OPTIONS that it takes)."""
+    return [a for a in cmd_parser._actions if a.option_strings and a.option_strings[0] in wire.FILE_OPTIONS]
+
+
+def _input_text(value: str) -> str:
+    """Section 1.5: a file the caller names is checked by `_load_json` in the caller's own account, then read once
+    more and sent as text; any other value is sent unchanged (not converted), for the broker to parse as inline JSON.
+    Either way the 1 MiB input bound is the client's first (section 1.4; WF-199 S1): over it, nothing is sent."""
+    if not os.path.isfile(value):
+        commands._check_size(len(value.encode("utf-8", "surrogatepass")), "inline JSON")  # _load_json's own measure
+        return value
+    commands._load_json(value)  # the size bound, strict UTF-8 and strict JSON, with today's texts (commands.py:89-97)
+    with open(value, "rb") as fh:
+        data = fh.read(commands.MAX_JSON_INPUT_BYTES + 1)
+    if len(data) > commands.MAX_JSON_INPUT_BYTES:
+        raise WfRejected("malformed", f"{value}: changed while being read: over {commands.MAX_JSON_INPUT_BYTES} bytes")
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise WfRejected("malformed", f"{value}: changed while being read: not valid UTF-8 ({exc.reason})") from None
+
+
+def _request_argv(args: argparse.Namespace, cmd_parser: argparse.ArgumentParser, path: list[str],
+                  msg_id: str) -> list[str]:
+    """Section 1.9's argv: the globals as --opt=value, the command path, the positionals, then the command's options as
+    --opt=value (repeatable ones repeated, flags bare). --db, --broker and --json stay with the client, and the
+    file-valued options travel in `inputs`."""
+    argv = [f"--role={args.role}", f"--session={args.session}", f"--generation={args.generation}", f"--msg-id={msg_id}"]
+    if args.oplog:
+        argv.append("--oplog")
+    argv += path
+    options: list[str] = []
+    for a in cmd_parser._actions:
+        if isinstance(a, argparse._HelpAction):
+            continue
+        value = getattr(args, a.dest)
+        if not a.option_strings:  # a positional
+            if value is not None:
+                argv.append(str(value))
+        elif a.option_strings[0] in wire.FILE_OPTIONS:
+            continue
+        elif isinstance(a, argparse._StoreTrueAction):
+            if value:
+                options.append(a.option_strings[0])
+        elif isinstance(a, argparse._AppendAction):
+            options += [f"{a.option_strings[0]}={v}" for v in value or ()]
+        elif value is not None and value != a.default:
+            options.append(f"{a.option_strings[0]}={value}")
+    return argv + options
+
+
+def _quiet_parse(argv: list[str]) -> tuple[argparse.ArgumentParser, argparse.Namespace, list[str]] | str:
+    """`_parse` with argparse's own output captured: the parse, or argparse's message when it would have exited."""
+    out, err = io.StringIO(), io.StringIO()
+    try:
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            return _parse(argv)
+    except SystemExit:
+        lines = err.getvalue().strip().splitlines()
+        return lines[-1] if lines else "help was requested"
+
+
+def _run_via_broker(parser: argparse.ArgumentParser, args: argparse.Namespace, address: str) -> tuple[int, dict]:
+    """FIX3-II sections 1.2, 1.5, 1.6 and 1.9: build the request and send it. No ledger is opened and no `commands`
+    call is made, except `_load_json` on a file the caller names (section 1.5)."""
+    try:
+        platform = peer.host_platform()
+    except OSError as exc:
+        return _usage(f"--broker: {exc}")
+    if not wire.is_address(address, platform):
+        return _usage(f"--broker {address!r} is not a {wire.ADDRESS_FORM[platform]}")
+    cmd_parser, path = _command_parser(parser, args)
+    msg_id = args.msg_id or uuid.uuid4().hex  # section 1.6: fixed before any byte is sent
+    inputs: dict[str, str] = {}
+    texts: dict[str, str] = {}
+    try:
+        for a in _file_actions(cmd_parser):
+            inputs[a.option_strings[0]] = texts[a.dest] = _input_text(getattr(args, a.dest))
+    except WfError as exc:
+        return exc.exit_code, {"ok": False, "code": exc.code, "error": str(exc), **exc.info}
+    argv = _request_argv(args, cmd_parser, path, msg_id)
+    # Section 1.9 (binding): the broker's parse of argv plus the inputs must give this namespace, less --db, --broker
+    # and --json, with msg_id fixed. Checked here, so a value that would not survive the trip is never sent.
+    back = _quiet_parse(argv + [f"{opt}={text}" for opt, text in inputs.items()])
+    want = {k: v for k, v in vars(args).items() if k not in ("db", "broker", "json")} | {"msg_id": msg_id} | texts
+    if isinstance(back, str) or {k: v for k, v in vars(back[1]).items() if k not in ("db", "broker", "json")} != want:
+        return EXIT_ERR, wire.rejected("wire", "the command does not parse back unchanged from its request form "
+                                               "(a value that reads like an option?); nothing was sent")
+    request = {"v": wire.PROTOCOL_VERSION, "op": "run", "argv": argv, "inputs": inputs,
+               "wfcore": wire.wfcore_sha256(WF_DIR)}
+    return client.call(address, request)
+
+
+def run_brokered(argv: list[str], inputs: dict[str, str], *, db: str, caller: peer.Caller) -> tuple[int, dict]:
+    """FIX3-II section 3.5: the broker's run target. In order: the parse (an error is `rejected(wire)`); section 1.2's
+    argv rules (`rejected(wire)`; a repeat is the once rule's usage); section 1.5's inputs checks (`rejected(wire)`);
+    a not-brokered command from a worker account (`rejected(not-brokered)`); then the same dispatch as `run`, with
+    `caller`. It never raises SystemExit."""
+    refusal = _undecodable_refusal(argv)
+    if refusal is not None:
+        return refusal
+    refs = wire.file_option_refs(argv)
+    if refs:  # AMENDMENT-FIX3-II-A1 item 2: a file option's text travels only in `inputs`
+        return EXIT_ERR, wire.rejected("wire", f"argv names file option(s) {', '.join(refs)}; their text goes in inputs")
+    parsed = _quiet_parse(argv + [f"{opt}={text}" for opt, text in inputs.items()])
+    if isinstance(parsed, str):
+        return EXIT_ERR, wire.rejected("wire", f"argv does not parse: {parsed}")
+    parser, args, given = parsed
+    refusal = _once_refusal(given)
+    if refusal is not None:
+        return refusal
+    kept = [opt for opt, kept_ in (("--db", args.db is not None), ("--broker", args.broker is not None),
+                                   ("--json", args.json)) if kept_]
+    if kept:  # section 1.2: the client keeps these
+        return EXIT_ERR, wire.rejected("wire", f"argv carries {', '.join(kept)}, which the client keeps")
+    missing = [opt for opt in ("--role", "--session", "--generation", "--msg-id") if opt not in given]
+    if missing:  # section 1.2: never a parser default for a value the client left out
+        return EXIT_ERR, wire.rejected("wire", f"argv lacks {', '.join(missing)}")
+    cmd_parser, path = _command_parser(parser, args)
+    takes = {a.option_strings[0]: a.dest for a in _file_actions(cmd_parser)}
+    if set(inputs) != set(takes):
+        return EXIT_ERR, wire.rejected("wire", f"inputs hold {', '.join(sorted(inputs)) or 'none'}; the command takes "
+                                               f"{', '.join(sorted(takes)) or 'none'}")
+    for opt, dest in takes.items():
+        if getattr(args, dest) != inputs[opt]:
+            return EXIT_ERR, wire.rejected("wire", f"the parsed {opt} differs from its input")
+    command = " ".join(path)
+    if not caller.own and (command in _NOT_BROKERED or (command == "verify" and (
+            args.restored is not None or args.gate_file is not None or args.gate_sha is not None))):
+        return EXIT_ERR, wire.rejected("not-brokered", f"{command} is not served to a worker account; the owner "
+                                                       f"account runs it", command=command)
+    return _dispatch(args, db, caller)
+
+
+def _whoami(args: argparse.Namespace, db: str, caller: peer.Caller | None) -> dict:
+    """FIX3-II section 4.5. Reads only; with a job, `commands.whoami_job`'s keys for the account."""
+    if caller is not None:
+        account = caller.peer.account
+        res = {"ok": True, "mode": "broker", "account": account, "own": caller.own,
+               "broker": {"account": caller.broker_account, "wfcore": caller.broker_wfcore}}
+    else:
+        try:
+            account = peer.own_account()
+        except OSError as exc:
+            raise WfRefused(f"cannot read this process's account: {exc}") from exc
+        res = {"ok": True, "mode": "direct", "account": account, "note": "direct mode: no account check"}
+    if args.job is not None:
+        res.update(commands.whoami_job(db, args.job, account))
+    return res
+
+
+def _dispatch(args: argparse.Namespace, db: str, caller: peer.Caller | None = None) -> tuple[int, dict]:
+    """Run the parsed command on `db`. Direct mode (`caller` None) calls `commands` exactly as at ff3cd2f
+    (FIX3-II section 3.3, S1): `caller` joins `common` only when set, and `bind_account` only when given."""
     oplog = OpLog()
     msg_id = args.msg_id or uuid.uuid4().hex
     common = dict(msg_id=msg_id, role=args.role, session=args.session, generation=args.generation, oplog=oplog)
+    if caller is not None:
+        common["caller"] = caller
     try:
         faults = load_faults(db)
     except FaultsNotAllowed as exc:
@@ -261,9 +494,10 @@ def run(argv: list[str]) -> tuple[int, dict]:
             res = commands.resolve(db, args.job, args.seq, args.attempt, args.disposition, oplog)
         elif args.cmd == "bind":
             _need(args, "role", "session")
+            account = {} if args.bind_account is None else {"bind_account": args.bind_account}  # section 4.2 (S1)
             res = commands.bind_cmd(db, args.job, bind_role=args.bind_role, bind_session=args.bind_session,
                                     bind_generation=args.bind_generation, tools=args.tool, paths_=args.path,
-                                    faults=faults, **common)
+                                    faults=faults, **common, **account)
         elif args.cmd == "reconcile":
             _need(args, "role", "session")
             res = commands.reconcile_cmd(db, args.job, target_role=args.target_role, faults=faults, **common)
@@ -280,6 +514,8 @@ def run(argv: list[str]) -> tuple[int, dict]:
         elif args.cmd == "recover" and args.sub == "close":
             _need(args, "role", "session")
             res = commands.recover_close(db, args.job, turn=args.turn, faults=faults, **common)
+        elif args.cmd == "whoami":
+            res = _whoami(args, db, caller)
         elif args.cmd == "recover":  # decide
             _need(args, "role", "session")
             res = commands.recover_decide(db, args.job, decision=args.decision, restore_paths=args.restore_path,
@@ -352,6 +588,9 @@ def main() -> int:
         elif res.get("ok", True):
             keys = [k for k in ("outcome", "job", "seq", "self", "attempt_id", "commit_attempts", "axes", "head",
                                 "clean", "decision", "block_hash", "binding", "exceptions", "recovery") if k in res]
+            if "mode" in res:  # FIX3-II section 3.5 and AMENDMENT A3: whoami's keys, for a whoami result only
+                keys += [k for k in ("mode", "account", "own", "broker", "map_in_force", "roles", "sessions", "note")
+                         if k in res]
             sys.stdout.write(" ".join(f"{k}={json.dumps(res[k], default=str)}" for k in keys) + "\n")
         else:
             sys.stdout.write(f"{res.get('code', 'error')}: {res.get('error', res.get('outcome'))}\n")

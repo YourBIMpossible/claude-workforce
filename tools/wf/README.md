@@ -37,7 +37,7 @@ error/refused/rejected, `2` usage, ambiguous resolve, or fault seam refused, `3`
 | `accept <job> --results FILE` | reviewer | Records `accept` with decision `accepted` only when every contract criterion is present with `pass: true`, no changed path is outside scope (P4) or excluded (P5), and no unknown criterion is named; otherwise `rejected`. Refused (no event) if the session wrote any builder event (`same-session`) or nothing was delivered. |
 | `close <job> --intervention TEXT` | coordinator | Refused unless verify is clean, no marker is pending, and acceptance is `accepted` **or** the job is abandoned (the abandoned-close rule). Writes `close`; the job then rejects further events. |
 | `resolve <job> <seq> [--attempt ID] [--disposition TEXT]` | — | Decides an uncertain write (below). |
-| `bind <job> --bind-role R --bind-session S [--bind-generation N] [--tool T]... [--path GLOB]...` | coordinator | Records a role assignment checked against the activated grant's ARS (spec 2B); the bound session answers with `append --type ack-assignment`. The `--tool` list is checked against the ARS here but is not enforced per tool call by the gate; restrict a session's tools with a Claude Code permission rule (spec R17). |
+| `bind <job> --bind-role R --bind-session S [--bind-generation N] [--tool T]... [--path GLOB]...` | coordinator | Records a role assignment checked against the activated grant's ARS (spec 2B); the bound session answers with `append --type ack-assignment`. The `--tool` list is checked against the ARS here but is not enforced per tool call by the gate; restrict a session's tools with a Claude Code permission rule (spec R17). With a grant whose `ars` holds `accounts`, a builder or reviewer bind names the session's OS account with `--bind-account ID`. The account must be in `ars.accounts[<role>]` and bound to no other session of the job; otherwise the bind is `rejected(ars)`. A coordinator bind names none (`rejected(malformed)`), and a grant without `accounts` takes none (`rejected(ars)`). |
 | `reconcile <job> [--target-role builder]` | coordinator | Compares in-scope files with the baseline, receipts and intents and appends a `reconcile-report`; the role acknowledges it with `ack-reconcile <job> --report SEQ --exceptions JSON`. |
 | `recover begin\|reconcile\|close <job> --turn T` | coordinator (owner turn naming the job) | Opens a recovery (the chain is verified first), acknowledges each recoverable exception it lists (export problems, orphan temp files, and a broken or unreadable gate-log tail as class `gate-log`, AMENDMENT S1-G1), and closes it once all are acknowledged and the chain verifies. Every ordinary mutation refuses while a recovery is open. |
 | `recover decide <job> --decision resume\|restore\|abandon --turn T` | coordinator | Records the builder-role decision after a confirmed stop (spec 6.2 step 4). |
@@ -151,6 +151,12 @@ and no row hash, so the owner supplies the hash once and a rerun on a fresh ledg
 position) reproduces it. Consequence: the same hash activates an identical proposal on any fresh ledger. The hash is
 a consistency check that the owner saw this exact block, not an authentication of the owner.
 
+`ars.accounts` (`{"builder": [ids], "reviewer": [ids]}`) maps the worker roles to OS accounts: SID strings on Windows, decimal uids on Linux, in canonical form.
+
+`grant propose` and `grant activate` refuse a malformed map with `rejected(ars)`. That covers: empty; a key other than builder or reviewer; a value that is not a non-empty list of strings; an id not in the host's form; an id twice; or this process's own account in the map.
+
+The block hash covers the map. The latest activated grant's map is in force, also after revoke or expiry; a proposed grant's map is not.
+
 ## Fault seam (test-only)
 
 `WF_TEST_FAULTS` (fixtures and unit tests only) injects delays, COMMIT errors, guard bypasses, a pre-commit kill and
@@ -162,6 +168,12 @@ Auto-resolve is skipped for injected COMMIT errors so fixtures can resolve expli
 
 - `--role`, `--session` and `--generation` are typed fields checked for consistency. They do not authenticate anyone.
   `same-session` refusal compares typed values only.
+- Through the broker (`--broker`), the connecting account decides a role claim before any other check:
+  - A builder or reviewer claim passes only for an account in the map in force under that role, bound by a `bind` row to the claimed session. Otherwise it is `rejected(caller-mismatch)`, with `account`, `claimed_role` and `claimed_session`.
+  - An account in no map in force is `rejected(caller-unattributed)`.
+  - The broker's own account may claim any role but builder and reviewer.
+
+  Through the broker, inputs are JSON text only: a value that is not JSON is `usage` ("not a file and not JSON"). Direct mode (`--db`) runs no account check, so the typed fields stay unauthenticated there.
 - `accept` checks what the results file claims against the contract. It does not run the checks.
 - `ledger\pending\<job>` is shared by every ledger in the same directory (`ledger.db` and `demo.db`): two ledgers
   with the same job id there would see each other's markers (fail-closed, but confusing). Keep job ids distinct.
@@ -182,6 +194,57 @@ Auto-resolve is skipped for injected COMMIT errors so fixtures can resolve expli
   so an excluded path outside every write scope and `jobs\<job>\` stays writable for unbound sessions: keep protected
   files (for example a pilot's `pristine\**`) under `jobs\<job>\`. A replaced or stop-confirmed session is denied every
   preventable target (D-027).
+
+## Through the broker: `--broker` (FIX3-II)
+**Status: fix 1 code merged, NOT qualified.** The broker and the account check are opt-in (`--broker`); direct mode (`--db`) behaves as before. Qualification still needs the real-account tests on prepared Windows and Linux hosts (T1, T2) and an owner-named security review. Until then, rely on the limits in Identity and limits above.
+
+- **`--broker <address>`** (or `WF_BROKER`) sends the command to the account-checking broker. wf then opens no ledger.
+  - The address is a named pipe `\\.\pipe\<name>` on Windows, or an absolute socket path of at most 107 bytes on Linux.
+  - Give `--db` or `--broker`, never both: `rejected(usage)`, exit 2. The same holds for `WF_DB` with `WF_BROKER`.
+  - An empty or blank variable counts as unset.
+  - With neither, the refusal is today's `--db required`.
+- **The client reads each file-valued option** (`--content`, `--contract`, `--grant`, `--results`, `--exceptions`) in its own account and sends the text. The broker reads no path you name.
+- **`--json` stays with the client; `--oplog` is sent.**
+- **A broker refusal is exit 1:**
+  - `rejected(caller-mismatch)`, `rejected(caller-unattributed)`, `rejected(not-brokered)`, `rejected(version-mismatch)` and `rejected(wire)`;
+  - `broker-unavailable`, with `reason` `no-endpoint`, `busy` or `access-denied`;
+  - `broker-response-lost`. Re-send the same command with `--msg-id <msg_id>`: a command that committed answers `DUPLICATE-IGNORED`, and no second row is written.
+  - An exception inside the broker's run is `internal-error`, exit 4.
+- **Not served to a worker account** (`rejected(not-brokered)`): `job abandon`, `resolve`, `export`, `checkpoint`, `observe`, `backup`, `verify` with `--restored`, `--gate-file` or `--gate-sha`, and `gate print-install`. The broker's own account runs every command.
+
+## `wf whoami [job]`
+- **Direct:** prints this process's account, with `note: direct mode: no account check`.
+- **Through the broker:** prints the account the broker read from the connection, whether it is the broker's own (`own`), and the broker's account and wfcore sha.
+- **With a job:** it adds the roles and bound sessions that the job's account map gives that account.
+- **It writes nothing.**
+
+## `wfbroker.py`
+- **Serve:** `python -I tools/wf/wfbroker.py --db <ledger> --address <addr> [--client-account <id>]…`.
+- **Stop:** `python -I tools/wf/wfbroker.py --stop --address <addr>`. Only the broker's own account may stop it.
+- **Start checks:** it refuses to start with `{"ok": false, "code": "broker-config", "check": …}`, exit 1, when any of these fails:
+  - `env`: `WF_ROLE`, `WF_SESSION`, `WF_DB` or `WF_BROKER` is set, to any value;
+  - `faults`: `WF_TEST_FAULTS` is set on a ledger outside `fixtures\tmp`;
+  - `ledger`: the ledger does not open and read;
+  - `root`: the ledger has no boundary root, because its directory is not named `ledger`;
+  - `own-account`: the broker's own account cannot be read;
+  - `client-account`: an id is malformed, repeated, or the broker's own account;
+  - `address`: the address is malformed;
+  - `address-in-use`: another broker serves the address.
+- **Its output:**
+  - when ready, `{"ok": true, "code": "broker-ready", "address", "pid", "account", "wfcore", "db"}`;
+  - after a stop, `{"ok": true, "code": "broker-stopped", "served": <n>}`.
+- **It serves one request at a time.**
+- **The log** is `<root>\runtime\broker\broker-log.jsonl`, one JSON line per connection, with the keys `ts`, `peer`, `pid`, `op`, `cmd`, `job`, `msg_id`, `exit`, `code`, `reason` and `ms`.
+  - A key is null where the step that sets it was not reached.
+  - `reason` names a refusal, for example `caller-mismatch` (AMENDMENT-FIX3-II-A2 item 3); it is null for any other result.
+  - It never holds argv values or inputs.
+  - At 16 MiB the log is renamed to `broker-log.1.jsonl`, replacing the previous one. Rotation touches only those two files.
+- **Refusal events are recorded only in this rotating log,** each with its `reason`; no refusal writes a ledger row, a marker or an export.
+- **The version check covers `wfcore\*.py` only, by the gate's recipe.** A `wf.py` or `wfbroker.py` difference between client and broker is not detected (O3, a stated limit).
+- **`wfbroker.address_for_root(root, platform)`** gives the run sheets' address:
+  - Windows: `\\.\pipe\wf-broker-<16 hex>`;
+  - Linux: `<root>/runtime/broker/wf.sock`.
+- **Linux broker socket** (FIX3-II F3-OSI-L): the broker listens on an AF_UNIX socket at an absolute path of at most 107 bytes of UTF-8 (`<root>/runtime/broker/wf.sock`). Its mode is set to 0660 before it listens; the owner, the group and the directory are left as setup makes them. A stale socket file is replaced, and a live one makes a second broker refuse to start; the first broker then sees one empty connection, which it closes unanswered. The caller's account is the `SO_PEERCRED` uid; its pid is for the log only.
 
 ## Tests
 

@@ -10,7 +10,8 @@ import time
 from typing import Any
 
 from . import db as dbm
-from . import bind, changeset, checkpointcmp, export, gatelog, grant, markers, observe, pathpolicy, paths, reconcile, txn
+from . import (accounts, bind, changeset, checkpointcmp, export, gatelog, grant, markers, observe, pathpolicy, paths,
+               peer, reconcile, txn)
 from .canon import canonical, sha256_file, sha256_obj, sha256_text
 from .db import OpLog, WfRefused, WfRejected, WfUsage
 from .faults import Faults
@@ -85,8 +86,11 @@ def _check_size(size: int, what: str) -> None:
         raise WfRejected("malformed", f"{what}: {size} bytes; JSON input is limited to {MAX_JSON_INPUT_BYTES} bytes")
 
 
-def _load_json(path_or_text: str) -> Any:
-    if os.path.isfile(path_or_text):
+def _load_json(path_or_text: str, *, inline_only: bool = False) -> Any:
+    """A JSON input: a file's text, or inline JSON. With `inline_only` (every call site passes `caller is not None`:
+    a brokered call, FIX3-II r2 section 1.5) the value is JSON text only: nothing is stat'ed or opened, so a name that
+    is not JSON is `usage` ("not a file and not JSON"), and the size bound and the value checks apply as inline."""
+    if not inline_only and os.path.isfile(path_or_text):
         _check_size(os.path.getsize(path_or_text), path_or_text)
         try:
             with open(path_or_text, "rb") as fh:
@@ -151,14 +155,19 @@ def _author_binding(conn: sqlite3.Connection, job: str, role: str) -> dict[str, 
 
 
 def _guard(conn: sqlite3.Connection, job: str, *, etype: str, role: str, session: str, generation: int,
-           msg_id: str, contract_sha: str | None) -> list[dict[str, Any]]:
+           msg_id: str, contract_sha: str | None, caller: peer.Caller | None = None) -> list[dict[str, Any]]:
     """B2 slice 1 (INTERFACE-CONTRACT 3-6, spec 3A step 2 and 5 rules 4-5): runs inside the write transaction
     before build_row for every role-bearing mutation. (1) recovery gate: while a recovery is open only
     `recovery-opened` itself passes (recover reconcile/close are outside the slice); (2) explicit binding check
     (a no-op for a job without `wf bind` events = implicit mode, today's observed-header behaviour);
     (3) unreconciled check (only `ack-reconcile` passes). The existing build_row checks remain mandatory and
-    run afterwards. Returns the rows read so callers do not read them twice."""
+    run afterwards. Returns the rows read so callers do not read them twice.
+
+    FIX3-II r2 section 3.4: before (1), a brokered call's account check (`accounts.check_caller`) on the rows this
+    write reads, so the map, the bindings and the claim come from the write's own snapshot; it is the authoritative
+    check. A refusal there never reaches `bind.check_actor`, so no claimant-conflict row is written for it."""
     rows = dbm.rows(conn, job)
+    accounts.check_caller(rows, caller, role=role, session=session)
     if etype not in RECOVERY_TYPES:  # INTERFACE-CONTRACT-S2 section 6: only the recovery rows pass the gate
         opened = reconcile.recovery_open(rows)
         if opened is not None:
@@ -171,6 +180,40 @@ def _guard(conn: sqlite3.Connection, job: str, *, etype: str, role: str, session
                          contract_sha=contract_sha or "")
         reconcile.check_actor(rows, role=role, etype=etype)
     return rows
+
+
+def _job_rows(db: str, job: str) -> list[dict[str, Any]]:
+    """The job's rows in one read snapshot; [] when there is no ledger file."""
+    if not os.path.exists(db):
+        return []
+    conn = dbm.connect(db, create=False)
+    try:
+        with dbm.read_snapshot(conn):
+            return dbm.rows(conn, job)
+    finally:
+        conn.close()
+
+
+def _caller_entry(db: str, job: str, caller: peer.Caller | None, *, role: str, session: str) -> None:
+    """FIX3-II r2 section 3.4, the entry check: the first statement of every function that takes `caller`, so a
+    brokered claim is decided before every other check (C1), on every path, including one that never reaches
+    `_guard` (C2). Direct mode (`caller` None) returns at once. The own account's claim needs no rows (section 4.4
+    rows 2-3); a worker's is decided on the job's rows, read in one snapshot. `_guard` checks again in the write."""
+    if caller is None:
+        return
+    accounts.check_caller([] if caller.own else _job_rows(db, job), caller, role=role, session=session)
+
+
+def _grant_accounts(ars: object) -> None:
+    """FIX3-II r2 section 4.1: a grant's `ars.accounts` at propose and at activate, against this process's own
+    account and the host's platform, read in both modes (D16). A grant with no map reads neither."""
+    if not isinstance(ars, dict) or "accounts" not in ars:
+        return
+    try:
+        own, plat = peer.own_account(), peer.host_platform()
+    except OSError as exc:
+        raise WfRejected("ars", f"cannot read this process's account: {exc}") from exc
+    accounts.parse_accounts(ars, own_account=own, platform=plat)
 
 
 def _reconciled(st: dict[str, Any]) -> bool | None:
@@ -194,7 +237,8 @@ def _binding_session(conn: sqlite3.Connection, job: str, role: str) -> tuple[str
 
 def _append(db: str, job: str, faults: Faults, oplog: OpLog, *, etype: str, content: dict, msg_id: str,
             role: str, session: str, generation: int, reply_to: str | None = None, grant_ref: str | None = None,
-            pre_insert=None, allow_no_contract: bool = False, allow_abandoned: bool = False) -> dict[str, Any]:
+            pre_insert=None, allow_no_contract: bool = False, allow_abandoned: bool = False,
+            caller: peer.Caller | None = None) -> dict[str, Any]:
     check_job_id(job)
 
     def build(conn: sqlite3.Connection, head_seq: int, head_self: str) -> dict[str, Any]:
@@ -208,7 +252,7 @@ def _append(db: str, job: str, faults: Faults, oplog: OpLog, *, etype: str, cont
             csha = sha256_obj(content["contract"])
             ccontent = content["contract"]
         rows = _guard(conn, job, etype=etype, role=role, session=session, generation=generation, msg_id=msg_id,
-                      contract_sha=csha)
+                      contract_sha=csha, caller=caller)
         if etype == "ack-assignment":
             bind.check_ack_assignment(conn, job, role=role, session=session, content=content)
         elif etype == "stop-confirmed":
@@ -274,12 +318,13 @@ def _scope_overlaps(read_scope: list, write_scope: list) -> list[str]:
 
 
 def job_new(db: str, job: str, contract_src: str, msg_id: str, role: str, session: str, generation: int,
-            faults: Faults, oplog: OpLog) -> dict[str, Any]:
+            faults: Faults, oplog: OpLog, *, caller: peer.Caller | None = None) -> dict[str, Any]:
+    _caller_entry(db, job, caller, role=role, session=session)
     # I1 name rules, and the case clash against the ids already in the ledger, read-only and BEFORE txn.write_event:
     # its marker guard would otherwise act on the clashing job's markers first (`pending\JOB1` is `pending\job1` on
     # NTFS; review WF-027 S1). The build re-checks the clash under the reservation for a concurrent `job new`.
     validate.check_new_job_id(job, _existing_jobs(db))
-    contract = _load_json(contract_src)
+    contract = _load_json(contract_src, inline_only=caller is not None)
     validate_contract(contract)
     csha = sha256_obj(contract)
 
@@ -301,7 +346,7 @@ def job_new(db: str, job: str, contract_src: str, msg_id: str, role: str, sessio
     # and the contract-first-event rule are unchanged; validate_content still requires only "contract").
     res = _append(db, job, faults, oplog, etype="contract", content={"contract": contract, "baseline_manifest": base},
                   msg_id=msg_id, role=role, session=session, generation=generation, pre_insert=pre_insert,
-                  allow_no_contract=True)
+                  allow_no_contract=True, caller=caller)
     res["contract_sha256"] = csha
     res["baseline_entries"] = len(base.get("entries", {}))
     overlaps = _scope_overlaps(contract.get("read_scope", []), contract.get("write_scope", []))
@@ -359,15 +404,17 @@ def _render_block(text: str, h: str) -> str:
 
 
 def grant_propose(db: str, job: str, grant_src: str, msg_id: str, role: str, session: str, generation: int,
-                  faults: Faults, oplog: OpLog) -> dict[str, Any]:
-    proposal = _load_json(grant_src)
+                  faults: Faults, oplog: OpLog, *, caller: peer.Caller | None = None) -> dict[str, Any]:
+    _caller_entry(db, job, caller, role=role, session=session)
+    proposal = _load_json(grant_src, inline_only=caller is not None)
     if not isinstance(proposal, dict):
         raise WfRejected("malformed", "grant must be a JSON object")
+    _grant_accounts(proposal.get("ars"))
     content = dict(proposal)
     content["state"] = "proposed"
     content.pop("block_hash", None)
     res = _append(db, job, faults, oplog, etype="grant", content=content, msg_id=msg_id, role=role,
-                  session=session, generation=generation)
+                  session=session, generation=generation, caller=caller)
     if res.get("outcome") == "COMMITTED":
         conn = dbm.connect(db, create=False)
         try:
@@ -392,7 +439,9 @@ def _latest_grant(conn: sqlite3.Connection, job: str) -> dict | None:
 
 
 def grant_activate(db: str, job: str, owner_hash: str, quote: str, turn: str, msg_id: str, role: str,
-                   session: str, generation: int, faults: Faults, oplog: OpLog) -> dict[str, Any]:
+                   session: str, generation: int, faults: Faults, oplog: OpLog, *,
+                   caller: peer.Caller | None = None) -> dict[str, Any]:
+    _caller_entry(db, job, caller, role=role, session=session)
     if not turn or not turn.strip():
         raise WfRejected("no-provenance", "--turn (owner confirmation turn reference) is required")
     if not quote or not quote.strip():
@@ -404,10 +453,11 @@ def grant_activate(db: str, job: str, owner_hash: str, quote: str, turn: str, ms
 
     def build(conn: sqlite3.Connection, head_seq: int, head_self: str) -> dict[str, Any]:
         _guard(conn, job, etype="grant", role=role, session=session, generation=generation, msg_id=msg_id,
-               contract_sha=_ctx(conn, job)[0])
+               contract_sha=_ctx(conn, job)[0], caller=caller)
         g = _latest_grant(conn, job)
         if g is None or g.get("state") != "proposed":
             raise WfRefused("no proposed grant to activate")
+        _grant_accounts(g.get("ars"))
         text, h = grant.block(job, g, g["_seq"])
         if not h.startswith(oh):
             raise WfRejected("unbound-approval", f"owner hash {oh[:12]} does not match block hash {h[:12]}")
@@ -427,14 +477,16 @@ def grant_activate(db: str, job: str, owner_hash: str, quote: str, turn: str, ms
 # ---------------------------------------------------------------- append
 
 def append(db: str, job: str, etype: str, content_src: str, msg_id: str, role: str, session: str,
-           generation: int, reply_to: str | None, grant_ref: str | None, faults: Faults, oplog: OpLog) -> dict[str, Any]:
+           generation: int, reply_to: str | None, grant_ref: str | None, faults: Faults, oplog: OpLog, *,
+           caller: peer.Caller | None = None) -> dict[str, Any]:
+    _caller_entry(db, job, caller, role=role, session=session)
     if etype not in APPEND_TYPES:
         raise WfUsage(f"--type must be one of {', '.join(APPEND_TYPES)}")
-    content = _load_json(content_src)
+    content = _load_json(content_src, inline_only=caller is not None)
     if not isinstance(content, dict):
         raise WfRejected("malformed", "content must be a JSON object")
     return _append(db, job, faults, oplog, etype=etype, content=content, msg_id=msg_id, role=role,
-                   session=session, generation=generation, reply_to=reply_to, grant_ref=grant_ref)
+                   session=session, generation=generation, reply_to=reply_to, grant_ref=grant_ref, caller=caller)
 
 
 # ---------------------------------------------------------------- status / digest
@@ -1008,10 +1060,11 @@ def _observed_changes(db: str, job: str, contract: dict, rows: list[dict[str, An
 
 
 def accept(db: str, job: str, results_src: str, msg_id: str, role: str, session: str, generation: int,
-           faults: Faults, oplog: OpLog) -> dict[str, Any]:
+           faults: Faults, oplog: OpLog, *, caller: peer.Caller | None = None) -> dict[str, Any]:
+    _caller_entry(db, job, caller, role=role, session=session)
     if role != "reviewer":
         raise WfRejected("role", f"accept may not be written by role {role}")
-    results = _load_json(results_src)
+    results = _load_json(results_src, inline_only=caller is not None)
     if not isinstance(results, dict) or not isinstance(results.get("criteria"), list):
         raise WfRefused("malformed results: object with 'criteria' list required (no event recorded)")
     for k in ("environment", "limits", "changed_paths"):
@@ -1024,7 +1077,7 @@ def accept(db: str, job: str, results_src: str, msg_id: str, role: str, session:
         if contract is None:
             raise WfRefused("job has no contract")
         _guard(conn, job, etype="accept", role=role, session=session, generation=generation, msg_id=msg_id,
-               contract_sha=csha)
+               contract_sha=csha, caller=caller)
         blocked = validate.existing_state(conn, job)["blocked_roles"]
         if blocked:  # FB1.4-A4 §3: no dependent work while a claimant conflict stands
             raise WfRejected("role-blocked", f"accept refused while roles are blocked: {sorted(blocked)}")
@@ -1084,7 +1137,8 @@ def accept(db: str, job: str, results_src: str, msg_id: str, role: str, session:
 # ---------------------------------------------------------------- close
 
 def close(db: str, job: str, intervention: str, msg_id: str, role: str, session: str, generation: int,
-          faults: Faults, oplog: OpLog) -> dict[str, Any]:
+          faults: Faults, oplog: OpLog, *, caller: peer.Caller | None = None) -> dict[str, Any]:
+    _caller_entry(db, job, caller, role=role, session=session)
     if not intervention.strip():
         raise WfUsage("--intervention is required (use 'none' when there was none)")
     v = verify(db, job)
@@ -1104,7 +1158,7 @@ def close(db: str, job: str, intervention: str, msg_id: str, role: str, session:
     content = {"intervention": intervention, "basis": basis, "verify": "clean",
                "head_at_close": st["head"]}
     return _append(db, job, faults, oplog, etype="close", content=content, msg_id=msg_id, role=role,
-                   session=session, generation=generation, allow_abandoned=(basis == "abandoned"))
+                   session=session, generation=generation, allow_abandoned=(basis == "abandoned"), caller=caller)
 
 
 # ---------------------------------------------------------------- B2 slice 1: bind / reconcile / recover begin
@@ -1122,9 +1176,12 @@ def _scope_defaults(contract: dict, role: str, tools: list[str] | None, paths_: 
 
 def bind_cmd(db: str, job: str, *, bind_role: str, bind_session: str, bind_generation: int,
              tools: list[str] | None, paths_: list[str] | None, msg_id: str, role: str, session: str,
-             generation: int, faults: Faults, oplog: OpLog) -> dict[str, Any]:
+             generation: int, faults: Faults, oplog: OpLog, bind_account: str | None = None,
+             caller: peer.Caller | None = None) -> dict[str, Any]:
     """`wf bind <job>` (spec 2B l.42-43, 4.1 l.169; T32). Coordinator only. All preconditions are checked by
-    bind.validate_bind inside the write transaction; a refusal writes nothing."""
+    bind.validate_bind inside the write transaction; a refusal writes nothing. `bind_account` (FIX3-II r2 section
+    4.2) is the bound session's account, checked against the in-force grant's `ars.accounts`."""
+    _caller_entry(db, job, caller, role=role, session=session)
     check_job_id(job)
     if role != "coordinator":
         raise WfRejected("role", f"bind may not be written by role {role}")
@@ -1137,14 +1194,15 @@ def bind_cmd(db: str, job: str, *, bind_role: str, bind_session: str, bind_gener
         if contract is None:
             raise WfRefused("job has no contract")
         _guard(conn, job, etype="bind", role=role, session=session, generation=generation, msg_id=msg_id,
-               contract_sha=csha)
+               contract_sha=csha, caller=caller)
         auth = grant.authority(dbm.rows(conn, job), job=job, now=_now())
         g = _latest_grant(conn, job) if auth["state"] == "in-force" else None  # S3 section 3: bind needs authority in force
         t, p = _scope_defaults(contract, bind_role, tools, paths_)
         content = bind.validate_bind(conn, job, role=bind_role, session=bind_session, generation=bind_generation,
                                      tools=t, paths=p, author_session=session, grant=g,
                                      grant_seq=g["_seq"] if g else None,
-                                     state=validate.existing_state(conn, job))
+                                     state=validate.existing_state(conn, job), account=bind_account,
+                                     account_map=accounts.map_of(g))
         holder.update(binding={"role": bind_role, "session": bind_session, "generation": bind_generation})
         return build_row(conn, job, head_seq, head_self, etype="bind", msg_id=msg_id, author_role=role,
                          session_id=session, generation=generation, reply_to=None, grant_ref=None,
@@ -1156,9 +1214,10 @@ def bind_cmd(db: str, job: str, *, bind_role: str, bind_session: str, bind_gener
 
 
 def reconcile_cmd(db: str, job: str, *, target_role: str, msg_id: str, role: str, session: str, generation: int,
-                  faults: Faults, oplog: OpLog) -> dict[str, Any]:
+                  faults: Faults, oplog: OpLog, caller: peer.Caller | None = None) -> dict[str, Any]:
     """`wf reconcile <job>` (spec 4.1 l.178, 6.2 step 3; T06). Coordinator only; compares the in-scope files
     with the baseline, receipts and intents and appends one `reconcile-report` row. Nothing on disk changes."""
+    _caller_entry(db, job, caller, role=role, session=session)
     check_job_id(job)
     if role != "coordinator":
         raise WfRejected("role", f"reconcile may not be written by role {role}")
@@ -1176,7 +1235,7 @@ def reconcile_cmd(db: str, job: str, *, target_role: str, msg_id: str, role: str
         if contract is None:
             raise WfRefused("job has no contract")
         rows = _guard(conn, job, etype="reconcile-report", role=role, session=session, generation=generation,
-                      msg_id=msg_id, contract_sha=csha)
+                      msg_id=msg_id, contract_sha=csha, caller=caller)
         baseline = json.loads(rows[0]["content"]).get("baseline_manifest") if rows else None
         if not isinstance(baseline, dict):
             raise WfRefused(_NO_BASELINE)
@@ -1195,25 +1254,28 @@ def reconcile_cmd(db: str, job: str, *, target_role: str, msg_id: str, role: str
 
 
 def ack_reconcile(db: str, job: str, *, report_seq: int, exceptions_src: str, note: str | None, msg_id: str,
-                  role: str, session: str, generation: int, faults: Faults, oplog: OpLog) -> dict[str, Any]:
+                  role: str, session: str, generation: int, faults: Faults, oplog: OpLog,
+                  caller: peer.Caller | None = None) -> dict[str, Any]:
     """`wf ack-reconcile <job>` — the explicit acknowledgement verb (owner disposition); identical to
     `wf append --type ack-reconcile` with the content assembled from the flags. Validity is checked in _append."""
-    ids = _load_json(exceptions_src)
+    _caller_entry(db, job, caller, role=role, session=session)
+    ids = _load_json(exceptions_src, inline_only=caller is not None)
     if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
         raise WfRejected("malformed", "--exceptions must be a JSON list of exception ids")
     content: dict[str, Any] = {"role": role, "session": session, "report_seq": report_seq, "exceptions": ids}
     if note:
         content["note"] = note
     return _append(db, job, faults, oplog, etype="ack-reconcile", content=content, msg_id=msg_id, role=role,
-                   session=session, generation=generation)
+                   session=session, generation=generation, caller=caller)
 
 
 def recover_begin(db: str, job: str, *, reason: str, turn: str, msg_id: str, role: str, session: str,
-                  generation: int, faults: Faults, oplog: OpLog) -> dict[str, Any]:
+                  generation: int, faults: Faults, oplog: OpLog, caller: peer.Caller | None = None) -> dict[str, Any]:
     """`wf recover begin <job>` (spec 3B l.131-136; T16-a). Coordinator only. Recoverable exceptions are
     collected read-only before the transaction (export state, orphan temp files; no gate log in R1); inside the
     transaction the whole chain is verified and, only if valid, one `recovery-opened` row is appended. An
     invalid chain appends nothing. `recover reconcile` / `recover close` are outside this slice."""
+    _caller_entry(db, job, caller, role=role, session=session)
     check_job_id(job)
     if role != "coordinator":
         raise WfRejected("role", f"recover begin may not be written by role {role}")
@@ -1229,7 +1291,7 @@ def recover_begin(db: str, job: str, *, reason: str, turn: str, msg_id: str, rol
         if contract is None:
             raise WfRefused("job has no contract")
         rows = _guard(conn, job, etype="recovery-opened", role=role, session=session, generation=generation,
-                      msg_id=msg_id, contract_sha=csha)
+                      msg_id=msg_id, contract_sha=csha, caller=caller)
         content = {"reason": reason, "owner_turn": turn, "exceptions": exceptions,
                    "chain_head": {"seq": head_seq, "self": head_self}}
         reconcile.validate_recover_begin(rows, job=job, content=content)
@@ -1409,10 +1471,11 @@ def _recovery_turn(job: str, turn: str) -> str:
 
 
 def recover_reconcile(db: str, job: str, *, turn: str, msg_id: str, role: str, session: str, generation: int,
-                      faults: Faults, oplog: OpLog) -> dict[str, Any]:
+                      faults: Faults, oplog: OpLog, caller: peer.Caller | None = None) -> dict[str, Any]:
     """`wf recover reconcile <job>` (spec 3B; INTERFACE-CONTRACT-S2 section 4). Coordinator only. Appends one
     `exception-acknowledged` row per exception the open `recovery-opened` row lists and no earlier row acknowledges;
     one write transaction per item, so a re-run after a kill appends only the missing ones (idempotent)."""
+    _caller_entry(db, job, caller, role=role, session=session)
     check_job_id(job)
     if role != "coordinator":
         raise WfRejected("role", f"recover reconcile may not be written by role {role}")
@@ -1441,7 +1504,7 @@ def recover_reconcile(db: str, job: str, *, turn: str, msg_id: str, role: str, s
             if contract is None:
                 raise WfRefused("job has no contract")
             rs = _guard(conn, job, etype="exception-acknowledged", role=role, session=session, generation=generation,
-                        msg_id=item_msg, contract_sha=csha)
+                        msg_id=item_msg, contract_sha=csha, caller=caller)
             reconcile.validate_exception_ack(rs, job=job, content=content)
             return build_row(conn, job, head_seq, head_self, etype="exception-acknowledged", msg_id=item_msg,
                              author_role=role, session_id=session, generation=generation, reply_to=None,
@@ -1456,9 +1519,10 @@ def recover_reconcile(db: str, job: str, *, turn: str, msg_id: str, role: str, s
 
 
 def recover_close(db: str, job: str, *, turn: str, msg_id: str, role: str, session: str, generation: int,
-                  faults: Faults, oplog: OpLog) -> dict[str, Any]:
+                  faults: Faults, oplog: OpLog, caller: peer.Caller | None = None) -> dict[str, Any]:
     """`wf recover close <job>` (spec 3B; INTERFACE-CONTRACT-S2 section 4; T30 d). Coordinator only. One transaction:
     open recovery, every listed exception acknowledged, whole chain valid -> `recovery-closed`; else nothing appended."""
+    _caller_entry(db, job, caller, role=role, session=session)
     check_job_id(job)
     if role != "coordinator":
         raise WfRejected("role", f"recover close may not be written by role {role}")
@@ -1471,7 +1535,7 @@ def recover_close(db: str, job: str, *, turn: str, msg_id: str, role: str, sessi
         if contract is None:
             raise WfRefused("job has no contract")
         rows = _guard(conn, job, etype="recovery-closed", role=role, session=session, generation=generation,
-                      msg_id=msg_id, contract_sha=csha)
+                      msg_id=msg_id, contract_sha=csha, caller=caller)
         opened = reconcile.recovery_open(rows)
         if opened is None:
             raise WfRejected("no-recovery", "no recovery is open for this job")
@@ -1521,11 +1585,12 @@ def _stopped_seq(conn: sqlite3.Connection, job: str, rows: list[dict[str, Any]],
 
 def recover_decide(db: str, job: str, *, decision: str, restore_paths: list[str] | None, unresolved: list[str] | None,
                    turn: str, note: str | None, msg_id: str, role: str, session: str, generation: int,
-                   faults: Faults, oplog: OpLog) -> dict[str, Any]:
+                   faults: Faults, oplog: OpLog, caller: peer.Caller | None = None) -> dict[str, Any]:
     """`wf recover decide <job>` (spec 6.2 step 4; INTERFACE-CONTRACT-S2 sections 1, 3, 5). Coordinator only; an
     ordinary mutation (refused while a recovery is open). Records resume | restore | abandon for the builder role
     against the latest reconcile report and the stop-confirmed row, naming every unresolvable path's disposition.
     `wf` writes no file: restore is an owner procedure recorded here."""
+    _caller_entry(db, job, caller, role=role, session=session)
     check_job_id(job)
     if role != "coordinator":
         raise WfRejected("role", f"recover decide may not be written by role {role}")
@@ -1538,7 +1603,7 @@ def recover_decide(db: str, job: str, *, decision: str, restore_paths: list[str]
         if contract is None:
             raise WfRefused("job has no contract")
         rows = _guard(conn, job, etype="recovery-decision", role=role, session=session, generation=generation,
-                      msg_id=msg_id, contract_sha=csha)
+                      msg_id=msg_id, contract_sha=csha, caller=caller)
         bsess, bgen = _binding_session(conn, job, "builder")
         binding = (bsess, bgen) if bsess is not None and bgen is not None else None
         stopped = _stopped_seq(conn, job, rows, "builder", bsess)
@@ -1562,9 +1627,12 @@ def recover_decide(db: str, job: str, *, decision: str, restore_paths: list[str]
 # ---------------------------------------------------------------- slice 3: lifecycle, grant-check, cancel, observe
 
 def _lifecycle_end(db: str, job: str, *, etype: str, reason: str, turn: str, msg_id: str, role: str, session: str,
-                   generation: int, faults: Faults, oplog: OpLog) -> dict[str, Any]:
+                   generation: int, faults: Faults, oplog: OpLog, caller: peer.Caller | None = None) -> dict[str, Any]:
     """`wf grant revoke|expire` (spec 2B l.48, 4.1; INTERFACE-CONTRACT-S3 sections 1-3). Ends the current in-force
-    revision at once; renewal stays possible (propose + owner confirmation + activate)."""
+    revision at once; renewal stays possible (propose + owner confirmation + activate). The entry check of
+    `grant_revoke` and `grant_expire` (FIX3-II r2 section 3.4) is this function's first statement: each of them only
+    delegates here."""
+    _caller_entry(db, job, caller, role=role, session=session)
     check_job_id(job)
     holder: dict[str, Any] = {}
 
@@ -1573,7 +1641,7 @@ def _lifecycle_end(db: str, job: str, *, etype: str, reason: str, turn: str, msg
         if contract is None:
             raise WfRefused("job has no contract")
         rows = _guard(conn, job, etype=etype, role=role, session=session, generation=generation, msg_id=msg_id,
-                      contract_sha=csha)
+                      contract_sha=csha, caller=caller)
         a = grant.authority(rows, job=job, now=_now())
         if a.get("state") != "in-force":  # D-S3-4: nothing in force to end (incl. cancelled) — before building content
             raise WfRejected("no-active-grant", f"no grant revision is in force to end (authority {a.get('state')})")
@@ -1590,12 +1658,14 @@ def _lifecycle_end(db: str, job: str, *, etype: str, reason: str, turn: str, msg
     return res
 
 
-def grant_revoke(db: str, job: str, *, reason: str, turn: str, **kw: Any) -> dict[str, Any]:
-    return _lifecycle_end(db, job, etype="grant-revoked", reason=reason, turn=turn, **kw)
+def grant_revoke(db: str, job: str, *, reason: str, turn: str, caller: peer.Caller | None = None,
+                 **kw: Any) -> dict[str, Any]:
+    return _lifecycle_end(db, job, etype="grant-revoked", reason=reason, turn=turn, caller=caller, **kw)
 
 
-def grant_expire(db: str, job: str, *, reason: str, turn: str, **kw: Any) -> dict[str, Any]:
-    return _lifecycle_end(db, job, etype="grant-expired", reason=reason, turn=turn, **kw)
+def grant_expire(db: str, job: str, *, reason: str, turn: str, caller: peer.Caller | None = None,
+                 **kw: Any) -> dict[str, Any]:
+    return _lifecycle_end(db, job, etype="grant-expired", reason=reason, turn=turn, caller=caller, **kw)
 
 
 def grant_check_cmd(db: str, job: str, *, check_role: str, action: str, path: str) -> dict[str, Any]:
@@ -1617,9 +1687,23 @@ def grant_check_cmd(db: str, job: str, *, check_role: str, action: str, path: st
     return dict(res, job=job, role=check_role, action=action, path=path)
 
 
+def whoami_job(db: str, job: str, account: str) -> dict[str, Any]:
+    """FIX3-II r2 section 4.5 (read-only): what the map in force gives `account` in `job`: whether a map is in force,
+    the roles whose list holds the account, and the sessions its `bind` rows name. A job with no rows (or no ledger)
+    gives false, [] and []. Nothing is written."""
+    check_job_id(job)
+    rows = _job_rows(db, job)
+    m = accounts.map_in_force(rows)
+    roles = [r for r in accounts.MAPPED_ROLES if m is not None and account in m.get(r, ())]
+    sessions = [{"role": r, "session": s, "generation": g, "bind_seq": q}
+                for r, s, g, q in accounts.bound_sessions(rows, account)]
+    return {"job": job, "map_in_force": m is not None, "roles": roles, "sessions": sessions}
+
+
 def cancel(db: str, job: str, *, reason: str, turn: str, msg_id: str, role: str, session: str, generation: int,
-           faults: Faults, oplog: OpLog) -> dict[str, Any]:
+           faults: Faults, oplog: OpLog, caller: peer.Caller | None = None) -> dict[str, Any]:
     """`wf cancel` (spec 4.1, 6.3; INTERFACE-CONTRACT-S3 section 5). Records the owner's cancellation."""
+    _caller_entry(db, job, caller, role=role, session=session)
     check_job_id(job)
 
     def build(conn: sqlite3.Connection, head_seq: int, head_self: str) -> dict[str, Any]:
@@ -1627,7 +1711,7 @@ def cancel(db: str, job: str, *, reason: str, turn: str, msg_id: str, role: str,
         if contract is None:
             raise WfRefused("job has no contract")
         rows = _guard(conn, job, etype="job-cancelled", role=role, session=session, generation=generation,
-                      msg_id=msg_id, contract_sha=csha)
+                      msg_id=msg_id, contract_sha=csha, caller=caller)
         content = {"reason": reason, "owner_turn": turn}
         grant.validate_cancel(rows, job=job, content=content)
         return build_row(conn, job, head_seq, head_self, etype="job-cancelled", msg_id=msg_id, author_role=role,
@@ -1640,8 +1724,10 @@ def cancel(db: str, job: str, *, reason: str, turn: str, msg_id: str, role: str,
 
 
 def log_intervention(db: str, job: str, *, label: str, necessity: str, minutes: str, note: str, msg_id: str,
-                     role: str, session: str, generation: int, faults: Faults, oplog: OpLog) -> dict[str, Any]:
+                     role: str, session: str, generation: int, faults: Faults, oplog: OpLog,
+                     caller: peer.Caller | None = None) -> dict[str, Any]:
     """`wf log-intervention` (spec 4.1, 6.2 step 6). Minutes are an integer or `unknown`, never estimated."""
+    _caller_entry(db, job, caller, role=role, session=session)
     m: int | str
     if minutes == "unknown":
         m = "unknown"
@@ -1652,7 +1738,7 @@ def log_intervention(db: str, job: str, *, label: str, necessity: str, minutes: 
             raise WfUsage("--minutes must be a non-negative integer or 'unknown'") from None
     content = {"label": label, "necessity": necessity, "minutes": m, "note": note or ""}
     return _append(db, job, faults, oplog, etype="intervention", content=content, msg_id=msg_id, role=role,
-                   session=session, generation=generation)
+                   session=session, generation=generation, caller=caller)
 
 
 def observe_cmd(db: str, job: str) -> dict[str, Any]:

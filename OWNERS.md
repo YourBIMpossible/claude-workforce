@@ -68,6 +68,24 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/tests/test_fixy_export.py | F2YL |
 | tools/wf/tests/test_fixz_hardening.py | F2ZL |
 | tools/wf/tests/test_fix3_parse.py | F3CL |
+| tools/wf/wfcore/peer.py | F3-BRK |
+| tools/wf/wfcore/wire.py | F3-BRK |
+| tools/wf/wfcore/client.py | F3-BRK |
+| tools/wf/wfcore/broker.py | F3-BRK |
+| tools/wf/wfbroker.py | F3-BRK |
+| tools/wf/tests/test_fix3ii_peer.py | F3-BRK |
+| tools/wf/tests/test_fix3ii_wire.py | F3-BRK |
+| tools/wf/tests/test_fix3ii_client.py | F3-BRK |
+| tools/wf/tests/test_fix3ii_broker.py | F3-BRK |
+| tools/wf/tests/fix3ii_fakes.py | F3-BRK |
+| tools/wf/wfcore/accounts.py | F3-ACC |
+| tools/wf/tests/test_fix3ii_accounts.py | F3-ACC |
+| tools/wf/tests/test_fix3ii_guard.py | F3-ACC |
+| tools/wf/wfcore/peer_win.py | F3-OSI-W |
+| tools/wf/tests/test_fix3ii_peer_win.py | F3-OSI-W |
+| tools/wf/wfcore/peer_linux.py | F3-OSI-L |
+| tools/wf/tests/test_fix3ii_peer_linux.py | F3-OSI-L |
+| tools/wf/tests/test_fix3ii_e2e.py | F3-E2E |
 | tools/wf/tests/test_fixz_links.py | F2ZP |
 | tools/wf/tests/test_fixz_wording.py | F2ZZ |
 | tools/wf/tests/test_fix2_wording.py | F2HZ |
@@ -388,3 +406,21 @@ Rows go back to their previous owners when FIX3 part 1 is integrated. The new te
 ## Integration 2026-10-20 (FIX3 part 1 into `fix3/integration`; coordinator Zen "Workforce Dev", lane D)
 
 `fix3/integration` (from main `a6c82bc`, PR #62) merges `fix3/lazy-cli` `bc936d4` (F3CL: FIX3 fix 2, `wf.py` refuses a global value option given more than once, design 2-i), VERIFIED (independent review Plexy WF-177 with the exact-head Windows gate; Linux MyBuddy 36c96167 WF-178 on Python 3.14 and 3.12). The relabels are restored: the wf.py and test_wf.py rows are removed (back to D), and the test_wf020_cli.py row is removed (back to the W20 glob). The new test file stays registered: test_fix3_parse.py F3CL. The README lines (:13, :16-18) are lane D's, from Lazy's WF-176 text, in the next commit. Fix 1 is not in this package: it waits for the owner's choice.
+
+## Registration 2026-10-21 (package FIX3-II: fix 1 option (ii), the unprivileged build; decided by the Foreman under the owner's delegation; coordinator Zen "Workforce Dev" while White is out)
+
+Package text: WorkForce collab `contracts/b2fix3/PACKAGE-FIX3-II.md` with `INTERFACE-CONTRACT-FIX3-II.md` r2 and `AMENDMENT-FIX3-II-A1.md` (frozen with SHA256SUMS), on SPEC-ii r2 and ACCEPTANCE-ii r2. Base: main `ff3cd2f` (PR #63) plus this registration commit. Out of scope, parked for the owner: accounts, ACL or permission changes, any service, the real-account tests (T1, T2), E1, anything on White.
+
+| Lane | Worker | Branch | Scope |
+|---|---|---|---|
+| F3-BRK | Lazy | `fix3/ii-lazy-broker` | the F3-BRK rows above: peer.py (P0, the first push), wire, client, broker, wfbroker, wf.py's `--broker`/`WF_BROKER`, client route, `whoami` and `bind --bind-account` |
+| F3-ACC | Plexy | `fix3/ii-plexy-accounts` (from P0) | the F3-ACC rows above: accounts.py, commands.py's account check and `caller`, bind.py's per-session account; test_t32_bind.py relabelled from S2B for this package only |
+| F3-OSI-W | Plexy | `fix3/ii-plexy-peerwin` | peer_win.py: the named-pipe endpoint and the client token's account, tested within one account |
+| F3-OSI-L | MyBuddy | `fix3/ii-mybuddy-peerlinux` (bundle; the coordinator pushes it) | peer_linux.py: the Unix socket endpoint and `SO_PEERCRED`, tested within one account |
+| F3-E2E | Lazy | `fix3/ii-lazy-e2e` (after the four code lanes integrate) | test_fix3ii_e2e.py |
+
+bind.py and test_t32_bind.py go back to S2B when FIX3-II is integrated; the new files stay registered to their lanes. README.md stays lane D: its doc lines are applied at integration.
+
+## Integration 2026-10-21 (FIX3-II into `fix3/ii-integration`; coordinator Zen "Workforce Dev", lane D)
+
+`fix3/ii-integration` (from `fix3/ii-registration` `ca7982ba`, on main `ff3cd2f`) merges, `--no-ff`: F3-ACC `cb3c335` (Plexy WF-196; includes F3-BRK's P0 `dee1d1e`; review Lazy WF-200 PASS; Linux MyBuddy WF-203 PASS), F3-OSI-L `cad39dd` (MyBuddy WF-198/WF-198-fix1; review Plexy WF-202 PASS), F3-OSI-W `96559f9` (Plexy WF-197 + fix1; review Lazy WF-201 and WF-201-fix1 PASS; Linux WF-203 PASS; WF-197-fix2 deferred as a follow-up while Plexy was unavailable) and F3-BRK `e72f9a5` (Lazy WF-195 + fix1..fix3; review Plexy WF-199, delta MyBuddy WF-199-fix3-R; Linux WF-203 PASS). The relabels are restored: the wf.py and commands.py rows are removed (back to D), and bind.py and test_t32_bind.py go back to S2B. The new files stay registered to their lanes. The README lines are lane D's, from the lanes' proposals, in the next commit. Out of scope and parked for the owner: accounts, ACL changes, any service, the real-account tests (T1, T2), E1. No PR into main without a further Foreman decision.
