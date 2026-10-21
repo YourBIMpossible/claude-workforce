@@ -134,6 +134,26 @@ class PeerWin(unittest.TestCase):
         self.listener.close()
         self.listener.close()
 
+    def test_a_closed_channel_never_reaches_the_pipe(self) -> None:
+        client, server = self._pair()
+        client.close()
+        with self.assertRaises(OSError):
+            client.send_all(b"x", _soon())
+        with self.assertRaises(OSError):
+            client.recv_exact(1, _soon(0.2))
+        server.close()
+        for call in (lambda: server.recv_exact(1, _soon(0.2)), lambda: server.send_all(b"x", _soon()),
+                     server.peer_account):
+            with self.assertRaises(OSError):
+                call()
+
+    def test_a_server_channel_is_unusable_after_its_listener_closes(self) -> None:
+        client, server = self._pair()
+        self.listener.close()
+        with self.assertRaises(OSError):
+            server.recv_exact(1, _soon(0.2))
+        server.close()  # still never raises
+
     def test_address_property(self) -> None:
         self.assertEqual(self.listener.address, self.addr)
 

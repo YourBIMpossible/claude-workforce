@@ -296,11 +296,17 @@ class Channel:
         self._io = _Io(handle)
         self._closed = False
 
+    def _open(self) -> _Io:
+        # A closed handle's value may already name another object, so a closed channel never reaches the API.
+        if self._closed:
+            raise OSError("the channel is closed")
+        return self._io
+
     def recv_exact(self, n: int, deadline: float) -> bytes:
-        return self._io.recv_exact(n, deadline)
+        return self._open().recv_exact(n, deadline)
 
     def send_all(self, data: bytes, deadline: float) -> None:
-        self._io.send_all(data, deadline)
+        self._open().send_all(data, deadline)
 
     def close(self) -> None:
         if self._closed:
@@ -324,17 +330,25 @@ class ServerChannel:
         self._wrote = False
         self._closed = False
 
+    def _open(self) -> _Io:
+        # The pipe handle is the listener's: once either is closed, the channel never reaches the API.
+        if self._closed or self._listener._closed:
+            raise OSError("the channel or its listener is closed")
+        return self._io
+
     def recv_exact(self, n: int, deadline: float) -> bytes:
-        return self._io.recv_exact(n, deadline)
+        return self._open().recv_exact(n, deadline)
 
     def send_all(self, data: bytes, deadline: float) -> None:
+        io = self._open()
         if data:
             self._wrote = True
-        self._io.send_all(data, deadline)
+        io.send_all(data, deadline)
 
     def peer_account(self) -> tuple[str, int | None]:
         """(the client token's user SID string, the client pid or None). Call it after reading the request frame.
         A failed RevertToSelf ends the process with exit 4 (§2.4), so nothing else runs as the client."""
+        self._open()
         api = _api()
         if not api.ImpersonateNamedPipeClient(self._h):
             raise _last("ImpersonateNamedPipeClient")
