@@ -60,13 +60,14 @@ INITIAL_GENERATION = 1
 _EXPIRY = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 #: §1 schemas: exact key sets (the wiring injects `contract_sha256` into every row's content before validation).
-#: `bind` may carry `replaces_seq` (S2 §6): absent or None at generation 1, an int at generation >= 2.
+#: `bind` may carry `replaces_seq` (S2 §6): absent or None at generation 1, an int at generation >= 2; and `account`
+#: (FIX3-II r2 §4.2): the OS account the bound builder or reviewer session runs as, present only when given.
 _SCHEMA_KEYS: dict[str, frozenset[str]] = {
     "bind": frozenset({"role", "session", "generation", "tools", "paths", "grant_seq"}),
     "ack-assignment": frozenset({"role", "session", "bind_seq"}),
     "stop-confirmed": frozenset({"role", "session", "generation", "how", "when", "owner_check", "owner_turn"}),
 }
-_OPTIONAL_KEYS: dict[str, frozenset[str]] = {"bind": frozenset({"replaces_seq"})}
+_OPTIONAL_KEYS: dict[str, frozenset[str]] = {"bind": frozenset({"replaces_seq", "account"})}
 _INJECTED = frozenset({"contract_sha256"})
 
 
@@ -81,6 +82,7 @@ class Binding:
     tools: tuple[str, ...] = ()
     paths: tuple[str, ...] = ()
     replaces_seq: int | None = None
+    account: str | None = None  # FIX3-II r2 §4.2 (D18): last, with a default, so positional constructions stay valid
 
 
 # ---------------------------------------------------------------------------------------------- small helpers
@@ -255,7 +257,8 @@ def active_roles(conn: sqlite3.Connection, job: str) -> dict[str, Binding]:
             tools = tuple(c["tools"]) if _str_list(c.get("tools")) else ()
             paths = tuple(c["paths"]) if _str_list(c.get("paths")) else ()
             rs = c.get("replaces_seq") if _is_int(c.get("replaces_seq")) else None
-            table[role] = Binding(role, c["session"], gen, r["seq"], None, None, tools, paths, rs)
+            acct = c.get("account") if isinstance(c.get("account"), str) else None
+            table[role] = Binding(role, c["session"], gen, r["seq"], None, None, tools, paths, rs, acct)
             continue
         b = table.get(role) if isinstance(role, str) else None
         if b is None:
@@ -263,11 +266,11 @@ def active_roles(conn: sqlite3.Connection, job: str) -> dict[str, Binding]:
         if t == "ack-assignment":
             if b.ack_seq is None and c.get("session") == b.session and c.get("bind_seq") == b.bind_seq:
                 table[role] = Binding(b.role, b.session, b.generation, b.bind_seq, r["seq"], b.stopped_seq,
-                                      b.tools, b.paths, b.replaces_seq)
+                                      b.tools, b.paths, b.replaces_seq, b.account)
         elif t == "stop-confirmed":
             if b.stopped_seq is None and c.get("session") == b.session and c.get("generation") == b.generation:
                 table[role] = Binding(b.role, b.session, b.generation, b.bind_seq, b.ack_seq, r["seq"],
-                                      b.tools, b.paths, b.replaces_seq)
+                                      b.tools, b.paths, b.replaces_seq, b.account)
     return table
 
 
@@ -299,14 +302,22 @@ def _resume_decision(rs: list[dict[str, Any]], *, role: str, report_seq: int, st
 
 def validate_bind(conn: sqlite3.Connection, job: str, *, role: str, session: str, generation: int,
                   tools: list[str], paths: list[str], author_session: str, grant: dict | None,
-                  grant_seq: int | None, state: dict) -> dict:
+                  grant_seq: int | None, state: dict, account: str | None = None,
+                  account_map: dict[str, tuple[str, ...]] | None = None) -> dict:
     """`wf bind` preconditions in contract order; returns the `bind` row content (§1 + `replaces_seq`). Each failure
     is a `WfRejected` and nothing is written. Defaults for omitted --tool/--path are applied by the caller (wiring).
 
     Common order: input shape (malformed) -> job has a contract (malformed) -> not closed (closed) -> recovery not
     open (recovery-open) -> actor (explicit mode: the author is the bound, not-stopped coordinator: unbound-session /
     stopped-session) -> activated grant (no-grant) -> ARS parses and names the role (ars) -> declared tools/paths
-    inside the ARS (ars). Then:
+    inside the ARS (ars) -> the bind account (FIX3-II r2 §4.2, ars). Then:
+
+    The bind account: an `account` on a coordinator bind is an input-shape refusal (malformed). `account_map` is the
+    in-force grant's `ars.accounts` (`accounts.map_of`, passed in by the wiring: this module does not import
+    `accounts`, D17). With a map, a builder or reviewer bind needs an `account` in `account_map[role]` that no other
+    session's `bind` row of the job names, at any generation; with no map, any `account` is refused. A generation-2
+    bind needs no extra rule: one id per session already forces a new id (SII:88). The row holds `account` only when
+    it is given.
 
     generation 1 (v1 §3 + S2 A-1): role not already bound (bound) -> A-1 implicit claimant: for role builder, an
     implicit builder session other than `session` that no `stop-confirmed` names (implicit-claimant) -> bootstrap
@@ -331,6 +342,8 @@ def validate_bind(conn: sqlite3.Connection, job: str, *, role: str, session: str
         raise WfRejected("malformed", "bind generation must be an integer >= 1")
     if not _str_list(tools) or not _str_list(paths):
         raise WfRejected("malformed", "bind tools and paths must be lists of strings")
+    if account is not None and role == "coordinator":
+        raise WfRejected("malformed", "a coordinator bind names no account (the coordinator runs as the owner account)")
     rs = rows(conn, job)
     if not rs or rs[0]["type"] != "contract":
         raise WfRejected("malformed", "job has no contract")
@@ -354,8 +367,11 @@ def validate_bind(conn: sqlite3.Connection, job: str, *, role: str, session: str
     reasons = declared_subset(tools, paths, ars[role])
     if reasons:
         raise WfRejected("ars", "; ".join(reasons))
+    _check_bind_account(rs, role=role, session=session, account=account, account_map=account_map)
     content: dict[str, Any] = {"role": role, "session": session, "generation": generation, "tools": list(tools),
                                "paths": list(paths), "grant_seq": grant_seq}
+    if account is not None:
+        content["account"] = account
     if generation == INITIAL_GENERATION:
         _initial_bind(rs, table, role=role, session=session, author_session=author_session, state=state)
         content["replaces_seq"] = None
@@ -363,6 +379,29 @@ def validate_bind(conn: sqlite3.Connection, job: str, *, role: str, session: str
     content["replaces_seq"] = _replacement_bind(conn, job, rs, table, role=role, session=session,
                                                 generation=generation, tools=tools, paths=paths, grant=grant)
     return content
+
+
+def _check_bind_account(rs: list[dict[str, Any]], *, role: str, session: str, account: str | None,
+                        account_map: dict[str, tuple[str, ...]] | None) -> None:
+    """FIX3-II r2 §4.2: the bind account against the map in force; each failure is `rejected(ars)`."""
+    if account_map is None:
+        if account is not None:
+            raise WfRejected("ars", "the grant in force has no ars.accounts, so a bind names no account")
+        return
+    if role == "coordinator":
+        return
+    if account is None:
+        raise WfRejected("ars", f"the grant in force maps accounts, so a {role} bind must name the session's account")
+    if account not in account_map.get(role, ()):
+        raise WfRejected("ars", f"account {account} is not in the grant's ars.accounts[{role!r}]")
+    for r in rs:
+        if r["type"] != "bind" or r["author_role"] != "coordinator":
+            continue
+        c = _content(r)
+        if (c.get("role") in ARS_ROLES and _nonempty_str(c.get("session")) and _is_int(c.get("generation"))
+                and c.get("account") == account and c["session"] != session):
+            raise WfRejected("ars", f"account {account} is already bound to session {c['session']!r} "
+                                    f"(bind seq {r['seq']}); one account per session")
 
 
 def _initial_bind(rs: list[dict[str, Any]], table: dict[str, Binding], *, role: str, session: str,
@@ -469,7 +508,8 @@ def check_actor(conn: sqlite3.Connection, job: str, *, role: str, session: str, 
 def validate_content(etype: str, content: dict, contract: dict, grant_state: dict | None) -> None:
     """Schemas of `bind`, `ack-assignment`, `stop-confirmed`; any defect is `rejected(malformed)`. Exact key sets: a
     key outside the schema (other than the injected `contract_sha256` and, for `bind`, `replaces_seq`) is malformed.
-    `bind.replaces_seq`: absent or None at generation 1; an integer >= 1 at generation >= 2."""
+    `bind.replaces_seq`: absent or None at generation 1; an integer >= 1 at generation >= 2. `bind.account`
+    (FIX3-II r2 §4.2): absent, or a non-empty string."""
     if etype not in CONTENT_TYPES:
         raise WfRejected("malformed", f"{etype!r} is not a bind event type")
     if not isinstance(content, dict):
@@ -498,6 +538,8 @@ def validate_content(etype: str, content: dict, contract: dict, grant_state: dic
             raise WfRejected("malformed", "bind replaces_seq must be absent or null at generation 1")
         if gen >= 2 and (not _is_int(rs) or rs < 1):
             raise WfRejected("malformed", "bind replaces_seq must be an integer >= 1 at generation >= 2")
+        if "account" in content and not _nonempty_str(content["account"]):
+            raise WfRejected("malformed", "bind account must be a non-empty string")
     elif etype == "ack-assignment":
         if not _is_int(content["bind_seq"]) or content["bind_seq"] < 1:
             raise WfRejected("malformed", "ack-assignment bind_seq must be an integer >= 1")
