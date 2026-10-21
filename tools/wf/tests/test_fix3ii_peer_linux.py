@@ -218,6 +218,11 @@ class PeerLinux(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             peer_linux.listen(self.addr(), [])
         self.assertEqual(os.lstat(self.addr()).st_ino, ino)
+        # The refusal's liveness probe connected and closed with nothing sent: the live listener sees one empty
+        # connection first, which a broker closes with no answer (contract §1.8 step 1, EOF before a frame).
+        probe = self.accept(first)
+        with self.assertRaises(EOFError):
+            probe.recv_exact(1, time.monotonic() + 2)
         ch = self.connect(self.addr())
         sch = self.accept(first)
         ch.send_all(b"1", time.monotonic() + 2)
