@@ -533,19 +533,64 @@ class Log(_Broker):
             self.assertEqual(list(line), list(broker.LOG_KEYS))
             self.assertRegex(line["ts"], TS)
             self.assertIsInstance(line["ms"], int)
-        self.assertEqual({k: lines[0][k] for k in ("peer", "pid", "op", "cmd", "job", "msg_id", "exit", "code")},
+        self.assertEqual({k: lines[0][k] for k in ("peer", "pid", "op", "cmd", "job", "msg_id", "exit", "code", "reason")},
                          {"peer": FAKE["B1"], "pid": 4242, "op": "run", "cmd": "append", "job": "j", "msg_id": "m-log",
-                          "exit": 0, "code": "COMMITTED"})
-        self.assertEqual({k: lines[1][k] for k in ("peer", "op", "cmd", "exit", "code")},
-                         {"peer": FAKE["unlisted"], "op": None, "cmd": None, "exit": 1, "code": "rejected"})
-        self.assertEqual({k: lines[2][k] for k in ("peer", "op", "exit", "code")},
-                         {"peer": FAKE["B1"], "op": None, "exit": 1, "code": "rejected"})
-        self.assertEqual({k: lines[3][k] for k in ("peer", "op", "cmd", "exit", "code")},
-                         {"peer": FAKE["own"], "op": "stop", "cmd": None, "exit": 0, "code": "STOPPING"})
+                          "exit": 0, "code": "COMMITTED", "reason": None})
+        self.assertEqual({k: lines[1][k] for k in ("peer", "op", "cmd", "exit", "code", "reason")},
+                         {"peer": FAKE["unlisted"], "op": None, "cmd": None, "exit": 1, "code": "rejected",
+                          "reason": "caller-unattributed"})
+        self.assertEqual({k: lines[2][k] for k in ("peer", "op", "exit", "code", "reason")},
+                         {"peer": FAKE["B1"], "op": None, "exit": 1, "code": "rejected", "reason": "wire"})
+        self.assertEqual({k: lines[3][k] for k in ("peer", "op", "cmd", "exit", "code", "reason")},
+                         {"peer": FAKE["own"], "op": "stop", "cmd": None, "exit": 0, "code": "STOPPING", "reason": None})
         with open(self.log_path, encoding="ascii") as fh:
             text = fh.read()
         for value in (secret, "SECRET-REF-1d7e", "intent", "jobs/j/work"):
             self.assertNotIn(value, text)
+
+    def test_a2_the_reason_names_each_refusal(self):
+        """AMENDMENT-FIX3-II-A2 item 3: `reason` is the refusal's name without the `rejected(…)` wrapper, null for any
+        other result; `code` is unchanged. Through the production run, wf.run_brokered."""
+        self.new_job()
+        running = self.serving()
+        g = ["--role=builder", "--session=B1", "--generation=1"]
+        cases = (
+            ("version-mismatch", "rejected", lambda: self.call("B1", g + ["--msg-id=m1", "whoami"], wfcore="b" * 64)),
+            ("not-brokered", "rejected", lambda: self.call("B1", g + ["--msg-id=m2", "export", "j"])),
+            ("wire", "rejected", lambda: self.call("B1", g + ["whoami"])),  # no --msg-id
+            ("usage", "usage", lambda: self.call("B1", g + ["--msg-id=m3", "status", "j", "--role=x"])),
+            ("caller-mismatch", "rejected", lambda: self.call("B1", [], op="stop")),
+            ("caller-unattributed", "rejected", lambda: self.call("unlisted", g + ["--msg-id=m4", "whoami"])),
+            (None, None, lambda: self.call("B1", g + ["--msg-id=m5", "whoami"])),  # answered, not a refusal
+        )
+        for reason, _, do in cases:
+            with self.subTest(reason=reason):
+                code, res = do()
+                self.assertEqual(code, 0 if reason is None else (2 if reason == "usage" else 1), res)
+        running.stop()
+        lines = self.log_lines()
+        self.assertEqual([(x["reason"], x["code"]) for x in lines],
+                         [(reason, code) for reason, code, _ in cases] + [(None, "STOPPING")])
+        self.assertTrue(all(list(x) == list(broker.LOG_KEYS) for x in lines))
+
+    def test_a2_refusal_name(self):
+        cases = (
+            ({"ok": False, "code": "rejected", "error": "rejected(caller-mismatch): x"}, "caller-mismatch"),
+            ({"ok": False, "code": "usage", "error": "rejected(usage): option --role given more than once"}, "usage"),
+            ({"ok": False, "code": "rejected", "error": "rejected(wire)"}, "wire"),
+            ({"ok": False, "code": "rejected", "error": "rejected(claimant-conflict): builder generation 1"},
+             "claimant-conflict"),
+            ({"ok": False, "code": "internal-error", "error": "ValueError: rejected(x): y"}, None),
+            ({"ok": False, "code": "refused", "error": "ledger not found: x"}, None),
+            ({"ok": True, "outcome": "COMMITTED", "error": "rejected(x): y"}, None),
+            ({"ok": False, "code": "rejected", "error": "rejected(Bad Name): x"}, None),
+            ({"ok": False, "code": "rejected", "error": "rejected(x)y"}, None),
+            ({"ok": False, "error": 5}, None),
+            ({}, None),
+        )
+        for result, want in cases:
+            with self.subTest(result=result):
+                self.assertEqual(broker.refusal_name(result), want)
 
     def _snapshot(self, skip: set[str]) -> dict[str, tuple[int, int, str]]:
         out = {}

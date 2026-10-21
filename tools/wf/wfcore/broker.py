@@ -17,7 +17,8 @@ The broker never reads the client's environment, command line, process tree or p
 the connection. It dispatches only through `run`; production passes `wf.run_brokered`.
 
 The log (section 3.5; D27): one JSON line per connection in `log_path`, with the keys of LOG_KEYS, null where the step
-that sets one was not reached, and never an argv value or an input. At LOG_MAX_BYTES the file is renamed to its `.1`
+that sets one was not reached, and never an argv value or an input. `reason` (AMENDMENT-FIX3-II-A2 item 3) names a
+refusal: the `<name>` of a `rejected(<name>)` result, null otherwise. At LOG_MAX_BYTES the file is renamed to its `.1`
 name, replacing the previous one, and a new file starts. Rotation touches those two files only. Refusals are recorded
 here and nowhere else: no refusal writes a ledger row, a marker or an export (section 5).
 
@@ -27,6 +28,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 from typing import Any, Callable, Sequence
@@ -37,8 +39,9 @@ READ_BOUND_S = 10.0    # from accept until the whole request frame is read (sect
 WRITE_BOUND_S = 10.0   # for the response write (section 1.4)
 ACCEPT_STEP_S = 1.0    # serve() waits for a connection in steps of this, re-checking for a stop between them
 LOG_MAX_BYTES = 16 * 1024 * 1024
-LOG_KEYS = ("ts", "peer", "pid", "op", "cmd", "job", "msg_id", "exit", "code", "ms")
+LOG_KEYS = ("ts", "peer", "pid", "op", "cmd", "job", "msg_id", "exit", "code", "reason", "ms")
 EXIT_ERR, EXIT_INTERNAL = 1, 4
+_REFUSAL = re.compile(r"rejected\(([a-z][a-z0-9-]*)\)(?::|\Z)")
 
 RunFn = Callable[..., tuple[int, dict]]
 
@@ -53,6 +56,17 @@ def previous_log_path(log_path: str) -> str:
     """The one rotated file: `broker-log.jsonl` -> `broker-log.1.jsonl`, beside it."""
     stem, ext = os.path.splitext(log_path)
     return f"{stem}.1{ext}"
+
+
+def refusal_name(result: dict) -> str | None:
+    """AMENDMENT-FIX3-II-A2 item 3: the name in a refusal's `rejected(<name>)` error (`caller-mismatch`, `wire`, `usage`,
+    …), without the wrapper; None for any other result, whose `code` then says what it was."""
+    error = result.get("error")
+    if result.get("ok") is False and isinstance(error, str):
+        match = _REFUSAL.match(error)
+        if match:
+            return match.group(1)
+    return None
 
 
 def _msg_id(argv: list[str]) -> str | None:
@@ -107,6 +121,7 @@ class Broker:
                 entry["exit"] = exit_code
                 code = result.get("code", result.get("outcome"))
                 entry["code"] = code if isinstance(code, str) else None
+                entry["reason"] = refusal_name(result)
                 try:
                     channel.send_all(data, time.monotonic() + WRITE_BOUND_S)
                 except OSError:  # TimeoutError, BrokenPipeError, ConnectionError: the outcome stands (A1 item 1)
