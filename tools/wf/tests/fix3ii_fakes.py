@@ -9,6 +9,7 @@ imports it, and no environment variable, option or file selects a fake: a test i
 - ScriptedPeerListener(inner, script): wraps any Listener, so each accepted channel's `peer_account()` gives the next
   scripted entry (AII:33's "fed a fake account … in memory or over the real pipe or socket").
 - BrokenSendListener(inner): every accepted channel's `send_all` fails, as a response write that breaks.
+- FailingAcceptListener(inner, failures): the first `failures` accepts raise OSError (None: every accept).
 - FAKE: account ids in the host's form for the broker's own account and the workers. They are fixed test ids, so they
   differ from the account a test host runs as (a test asserts it where the platform module exists).
 - direct_run: section 6.3's test `run`: a brokered write on F3-BRK's own head is `wf.run` on the ledger, with no caller.
@@ -211,6 +212,26 @@ class BrokenSendListener:
 
     def accept(self, deadline: float) -> _ScriptedChannel:
         return _ScriptedChannel(self.inner.accept(deadline), _INNER, BrokenPipeError("the response write broke"))
+
+    def close(self) -> None:
+        self.inner.close()
+
+
+class FailingAcceptListener:
+    """Wraps a Listener: its first `failures` accepts raise OSError, as a platform accept that fails and then re-arms;
+    `failures=None` fails every accept, as a dead endpoint. `accepts` counts the calls."""
+
+    def __init__(self, inner: Any, failures: int | None) -> None:
+        self.inner = inner
+        self.address = inner.address
+        self.failures = failures
+        self.accepts = 0
+
+    def accept(self, deadline: float) -> Any:
+        self.accepts += 1
+        if self.failures is None or self.accepts <= self.failures:
+            raise OSError(f"scripted accept failure {self.accepts}")
+        return self.inner.accept(deadline)
 
     def close(self) -> None:
         self.inner.close()

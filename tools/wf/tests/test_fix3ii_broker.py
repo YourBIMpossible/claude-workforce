@@ -382,6 +382,41 @@ class Stop(_Broker):
         self.assertEqual((code, res["code"], res["reason"]), (1, "broker-unavailable", "no-endpoint"))
 
 
+class AcceptErrors(_Broker):
+    """WF-195-fix1 (the coordinator's 04:24Z NOTE, from WF-201's Left-Flag): a failed accept, an OSError and not a
+    timeout, is logged and the broker keeps serving; ACCEPT_ERRORS_MAX failures in a row end it with that error."""
+
+    G = ["--role=builder", "--session=B1", "--generation=1", "--msg-id=m1", "whoami"]
+
+    def test_a_failed_accept_is_logged_and_serving_goes_on(self):
+        self.enterContext(mock.patch.object(broker, "ACCEPT_ERROR_PAUSE_S", 0.01))
+        listener = fakes.FailingAcceptListener(self.transport.listen(self.address, [FAKE["B1"]]), failures=2)
+        running = self.serving(run=self.recording_run(), listener=listener)
+        self.assertEqual(self.call("B1", self.G), (0, {"ok": True, "outcome": "RAN"}))
+        self.assertEqual(running.stop(), (0, {"ok": True, "outcome": "STOPPING"}))
+        self.assertEqual(running.served, 2)  # the failed accepts are not connections
+        lines = self.log_lines()
+        self.assertEqual([x["code"] for x in lines], ["accept-error", "accept-error", "RAN", "STOPPING"])
+        for line in lines[:2]:
+            self.assertEqual(list(line), list(broker.LOG_KEYS))
+            self.assertEqual({k for k, v in line.items() if v is not None}, {"ts", "code", "ms"})
+        with open(self.log_path, encoding="ascii") as fh:
+            self.assertNotIn("scripted accept failure", fh.read())  # the error text goes to stderr only
+
+    def test_a_dead_endpoint_ends_the_broker_after_the_limit(self):
+        self.enterContext(mock.patch.object(broker, "ACCEPT_ERROR_PAUSE_S", 0.01))
+        self.enterContext(mock.patch.object(broker, "ACCEPT_ERRORS_MAX", 3))
+        inner = self.transport.listen(self.address, [])
+        listener = fakes.FailingAcceptListener(inner, failures=None)
+        b = self.make(run=self.recording_run(), listener=listener)
+        with self.assertRaisesRegex(OSError, "scripted accept failure 3"):
+            b.serve()
+        self.assertEqual((listener.accepts, b.served), (3, 0))
+        self.assertTrue(inner.closed)
+        self.assertEqual([x["code"] for x in self.log_lines()], ["accept-error"] * 3)
+        self.assertEqual(self.ran, [])
+
+
 class Uncertain(_Broker):
     """BRK-10: the uncertain-write path through the broker, with a commit error injected through the broker's own
     environment on a fixtures/tmp ledger."""
@@ -716,6 +751,18 @@ class BrokerProcess(_Broker):
         t.join(10)
         self.assertEqual(exits, [0])
         self.assertEqual(fakes.ledger_state(self.db), before)
+
+    def test_a_dead_endpoint_is_reported_as_an_internal_error(self):
+        """WF-195-fix1: when serve() gives up on a listener whose every accept fails, wfbroker exits 4, visibly."""
+        self.new_job()
+        self.enterContext(mock.patch.object(broker, "ACCEPT_ERROR_PAUSE_S", 0.01))
+        self.enterContext(mock.patch.object(broker, "ACCEPT_ERRORS_MAX", 3))
+        dead = lambda a, c: fakes.FailingAcceptListener(self.transport.listen(a, c), failures=None)  # noqa: E731
+        with mock.patch.object(peer, "listen", dead):
+            self.assertEqual(wfbroker.main(self.argv()), 4)
+        self.assertEqual([e["code"] for e in self.emitted], ["broker-ready", "internal-error"])
+        self.assertEqual(self.emitted[-1], {"ok": False, "code": "internal-error",
+                                            "error": "OSError: scripted accept failure 3"})
 
     def test_the_log_location_and_the_production_run(self):
         self.new_job()

@@ -13,6 +13,9 @@ answers:
    exit 4, as `main()` answers one;
 8. encode (truncating past 8 MiB), send within WRITE_BOUND_S, and log one line.
 
+A failed accept (an OSError, not a timeout) is logged as `accept-error` and the broker keeps serving, since the
+listener re-arms; only ACCEPT_ERRORS_MAX failures in a row end it, with that error.
+
 The broker never reads the client's environment, command line, process tree or paths; the account comes only from
 the connection. It dispatches only through `run`; production passes `wf.run_brokered`.
 
@@ -38,6 +41,11 @@ from . import peer, wire
 READ_BOUND_S = 10.0    # from accept until the whole request frame is read (section 1.4)
 WRITE_BOUND_S = 10.0   # for the response write (section 1.4)
 ACCEPT_STEP_S = 1.0    # serve() waits for a connection in steps of this, re-checking for a stop between them
+# A failed accept (an OSError, not a timeout) is logged and the broker keeps serving: the platform listener re-arms on
+# the next accept. Consecutive failures pause between tries; past ACCEPT_ERRORS_MAX of them the listener is taken as
+# broken and serve() raises, so a dead endpoint ends the broker visibly instead of looping.
+ACCEPT_ERROR_PAUSE_S = 1.0
+ACCEPT_ERRORS_MAX = 10
 LOG_MAX_BYTES = 16 * 1024 * 1024
 LOG_KEYS = ("ts", "peer", "pid", "op", "cmd", "job", "msg_id", "exit", "code", "reason", "ms")
 EXIT_ERR, EXIT_INTERNAL = 1, 4
@@ -93,18 +101,37 @@ class Broker:
 
     def serve(self) -> int:
         """Answer connections one at a time until the own account asks the broker to stop. Returns `served`: the
-        connections accepted, the stop's included. The listener is closed on the way out."""
+        connections accepted, the stop's included. A failed accept is logged (code `accept-error`) and serving goes
+        on; ACCEPT_ERRORS_MAX failures in a row raise the last one. The listener is closed on the way out."""
+        failures = 0
         try:
             while not self._stopping:
                 try:
                     channel = self.listener.accept(time.monotonic() + ACCEPT_STEP_S)
                 except TimeoutError:
                     continue
+                except OSError as exc:
+                    failures += 1
+                    self._accept_failed(exc, failures)
+                    if failures >= ACCEPT_ERRORS_MAX:
+                        raise
+                    time.sleep(ACCEPT_ERROR_PAUSE_S)
+                    continue
+                failures = 0
                 self.served += 1
                 self.handle(channel)
         finally:
             self.listener.close()
         return self.served
+
+    def _accept_failed(self, exc: OSError, failures: int) -> None:
+        """One log line for a failed accept (no connection, so only `ts` and `code` are set), and its text on
+        stderr for the operator; the log never holds error text (section 3.5)."""
+        entry: dict[str, Any] = dict.fromkeys(LOG_KEYS)
+        entry["ts"], entry["code"], entry["ms"] = now_ts(), "accept-error", 0
+        self._log(entry)
+        print(f"broker: accept failed ({failures} in a row, at most {ACCEPT_ERRORS_MAX}): {type(exc).__name__}: {exc}",
+              file=sys.stderr, flush=True)
 
     def handle(self, channel: Any) -> None:
         """One connection, section 1.8's steps 1-8. An exception outside step 7 closes the connection and is logged
