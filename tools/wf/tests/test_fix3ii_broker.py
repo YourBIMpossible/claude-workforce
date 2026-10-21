@@ -19,6 +19,7 @@ import os
 import re
 import shutil
 import struct
+import sys
 import threading
 import time
 import unittest
@@ -695,6 +696,38 @@ class Seams(_Env):
         for path in names:
             with open(path, encoding="utf-8") as fh:
                 self.assertNotIn("fix3ii_fakes", fh.read(), path)
+
+    def test_section_6_1_imports(self):
+        """Section 6.1: what each F3-BRK module may import. Local imports are named; everything else is stdlib."""
+        allowed = {
+            os.path.join("wfcore", "wire.py"): set(),
+            os.path.join("wfcore", "client.py"): {"wfcore.wire", "wfcore.peer"},
+            os.path.join("wfcore", "broker.py"): {"wfcore.wire", "wfcore.peer"},
+            "wfbroker.py": {"wf", "wfcore.broker", "wfcore.peer", "wfcore.wire", "wfcore.db", "wfcore.changeset",
+                            "wfcore.paths"},
+            # ff3cd2f's imports, plus section 6.1's three
+            "wf.py": {"wfcore.checkpointcmp", "wfcore.commands", "wfcore.paths", "wfcore.db", "wfcore.faults",
+                      "wfcore.client", "wfcore.peer", "wfcore.wire"},
+        }
+        for rel, local_ok in allowed.items():
+            with self.subTest(module=rel):
+                with open(os.path.join(test_wf.WF_DIR, rel), encoding="utf-8") as fh:
+                    tree = ast.parse(fh.read())
+                local, other = set(), set()
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Import):
+                        for a in node.names:
+                            (local if a.name.split(".")[0] in ("wf", "wfcore") else other).add(a.name)
+                    elif isinstance(node, ast.ImportFrom):
+                        if node.level:  # `from . import x`, inside wfcore
+                            local |= {f"wfcore.{a.name}" for a in node.names}
+                        elif node.module.split(".")[0] in ("wf", "wfcore"):
+                            local |= {f"{node.module}.{a.name}" if node.module == "wfcore" else node.module
+                                      for a in node.names}
+                        else:
+                            other.add(node.module)
+                self.assertLessEqual(local, local_ok)
+                self.assertEqual(sorted(m for m in other if m.split(".")[0] not in sys.stdlib_module_names), [])
 
     def test_fake_ids_are_in_the_hosts_form_and_distinct(self):
         self.assertEqual(len(set(FAKE.values())), len(FAKE))
