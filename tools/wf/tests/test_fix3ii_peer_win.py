@@ -4,6 +4,7 @@ account that connects, so `peer_account()` must equal `own_account()`. A second 
 own at creation, admin and services are out of scope for this lane. Off Windows every test skips ("Windows only")."""
 from __future__ import annotations
 
+import errno
 import os
 import re
 import subprocess
@@ -205,12 +206,18 @@ class PeerWin(unittest.TestCase):
 
     # -- bad input -----------------------------------------------------------------------------------------------
     def test_bad_address_or_id_is_value_error(self) -> None:
+        """`listen` refuses a bad address or id with ValueError; `connect` refuses a bad address with
+        OSError(EINVAL), at once (§2.3's `connect` row lists OSError only; as F3-OSI-L; WF-197-fix2)."""
         for bad in ("wf-broker", r"\\server\pipe\wf", r"\\.\pipe\\", r"\\.\pipe\a b", r"\\.\pipe\\" + "a" * 201):
             with self.subTest(addr=bad):
                 with self.assertRaises(ValueError):
                     peer_win.listen(bad, [self.own])
-                with self.assertRaises(ValueError):
-                    peer_win.connect(bad, _soon(0.1))
+                start = time.monotonic()
+                with self.assertRaises(OSError) as cm:
+                    peer_win.connect(bad, start + 5)
+                self.assertNotIsInstance(cm.exception, ValueError)
+                self.assertEqual(cm.exception.errno, errno.EINVAL)
+                self.assertLess(time.monotonic() - start, 1.0, "a bad address is not retried")
         for bad_id in ("", "S-1", "S-01-5-21", "1000", "S-1-5-21-x"):
             with self.subTest(account=bad_id):
                 with self.assertRaises(ValueError):
