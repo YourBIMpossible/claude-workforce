@@ -14,6 +14,7 @@ The one `recovery-opened` row used (recovery gate input) is written as a fully h
 from __future__ import annotations
 
 import copy
+import dataclasses
 import json
 import os
 import sqlite3
@@ -21,6 +22,7 @@ import unittest
 from typing import Any
 
 from test_wf import Base, CONTRACT, GRANT  # noqa: E402
+from test_fix3ii_accounts import B1, B2, R1  # noqa: E402
 from wfcore import bind, db as dbm, txn, validate  # noqa: E402
 from wfcore.canon import canonical, event_self_hash, sha256_text  # noqa: E402
 from wfcore.db import OpLog, WfRejected  # noqa: E402
@@ -638,6 +640,94 @@ class DigestRows(_Engine):
             self.assertEqual(bind.digest_rows(c, "j", {}), [])
         finally:
             c.close()
+
+
+# ===================================================================================== FIX3-II bind account
+
+ACC_MAP = {"builder": (B1, B2), "reviewer": (R1,)}
+
+
+class BindAccount(_Engine):
+    """FIX3-II lane F3-ACC (WF-196): interface contract r2 §4.2 at module level (ACCEPTANCE-ii MAP-4). `validate_bind`
+    takes `account` and `account_map` (passed in by `commands.bind_cmd`, D17). A coordinator bind with an account is
+    an input-shape refusal (malformed); after the ARS checks and before the generation tails, a mapped builder or
+    reviewer bind needs an account in `account_map[role]` that no other session's `bind` row names (ars); with no map,
+    any account is refused (ars). `Binding.account` is the last field, kept through the ack and stop updates."""
+
+    def acct_bind(self, role: str, session: str, account: str | None, account_map: dict | None = ACC_MAP, *,
+                  author: str = "C1", generation: int = 1, tools: list[str] | None = None) -> object:
+        dt, dp = DEFAULTS[role]
+
+        def content(conn: sqlite3.Connection) -> dict:
+            st = validate.existing_state(conn, "j")
+            grant_rows = [r for r in dbm.rows(conn, "j") if r["type"] == "grant"]
+            grant_seq = grant_rows[-1]["seq"] if grant_rows else None
+            return bind.validate_bind(conn, "j", role=role, session=session, generation=generation,
+                                      tools=dt if tools is None else tools, paths=dp, author_session=author,
+                                      grant=st["grant"], grant_seq=grant_seq, state=st, account=account,
+                                      account_map=account_map)
+        return self._write(etype="bind", role="coordinator", session=author, generation=1, content_fn=content)
+
+    def last_content(self) -> dict:
+        c = self.conn()
+        try:
+            return json.loads(dbm.rows(c, "j")[-1]["content"])
+        finally:
+            c.close()
+
+    def test_a_mapped_bind_records_the_account_and_the_binding_keeps_it(self):
+        self.new_job(); self.activate()
+        self.acct_bind("coordinator", "C1", None)
+        self.assertNotIn("account", self.last_content())
+        self.assertIsNone(self.table()["coordinator"].account)
+        self.acct_bind("builder", "B1", B1)
+        self.assertEqual(self.last_content()["account"], B1)
+        self.assertEqual(self.table()["builder"].account, B1)
+        self.do_ack("builder", "B1")
+        b = self.table()["builder"]
+        self.assertEqual((b.account, b.ack_seq is not None), (B1, True))
+        self.do_stop("builder", "B1")
+        b = self.table()["builder"]
+        self.assertEqual((b.account, b.stopped_seq is not None), (B1, True))
+
+    def test_MAP4_refusals(self):
+        self.new_job(); self.activate()
+        self.acct_bind("coordinator", "C1", None)
+        self.assertRejected("ars", self.acct_bind, "builder", "B1", R1)              # (a) not in map[builder]
+        self.assertRejected("ars", self.acct_bind, "builder", "B1", None)            # (c) omitted with a map
+        self.assertRejected("malformed", self.acct_bind, "coordinator", "C2", B1)    # (d) coordinator + account
+        self.assertRejected("ars", self.acct_bind, "builder", "B1", B1, None)        # an account with no map
+        self.assertRejected("ars", self.acct_bind, "reviewer", "R1", R1, {"builder": (B1,)})  # no reviewer list
+        self.acct_bind("builder", "B1", B1)
+        # (b) another session's bind names B1; the account check runs before the generation tails ("bound")
+        e = self.assertRejected("ars", self.acct_bind, "builder", "B9", B1)
+        self.assertIn("B1", str(e))
+        self.assertRejected("bound", self.acct_bind, "builder", "B9", B2)
+
+    def test_an_account_on_a_coordinator_bind_is_an_input_shape_refusal(self):
+        self.new_job()                                                              # no grant yet
+        self.assertRejected("no-grant", self.acct_bind, "coordinator", "C1", None, None)
+        self.assertRejected("malformed", self.acct_bind, "coordinator", "C1", B1, None)
+
+    def test_the_ars_checks_come_before_the_account(self):
+        self.new_job(); self.activate()
+        self.acct_bind("coordinator", "C1", None)
+        e = self.assertRejected("ars", self.acct_bind, "builder", "B1", R1, tools=["Bash"])
+        self.assertIn("Bash", str(e))
+
+    def test_schema_account(self):
+        good = dict(Schemas.GOOD["bind"], contract_sha256="0" * 64)
+        bind.validate_content("bind", dict(good, account=B1), CONTRACT, None)
+        for bad in ("", "  ", 5, None, [B1]):
+            with self.subTest(account=bad):
+                with self.assertRaises(WfRejected) as cm:
+                    bind.validate_content("bind", dict(good, account=bad), CONTRACT, None)
+                self.assertEqual(cm.exception.reason, "malformed")
+
+    def test_binding_account_is_the_last_field_with_a_default(self):
+        self.assertEqual([f.name for f in dataclasses.fields(bind.Binding)][-1], "account")
+        b = bind.Binding("builder", "B1", 1, 5, None, None, (), (), None)  # the positional form of bind.py
+        self.assertIsNone(b.account)
 
 
 if __name__ == "__main__":
