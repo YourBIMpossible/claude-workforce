@@ -15,6 +15,7 @@ Windows is harmless; every call there raises OSError. All I/O is overlapped, so 
 from __future__ import annotations
 
 import ctypes
+import errno
 import os
 import re
 import sys
@@ -549,8 +550,13 @@ def _create_pipe(address: str, sddl: str) -> Any:
 
 def connect(address: str, deadline: float) -> Channel:
     """Open the pipe at identification level. Retries "not found" and "busy" every 0.05 s until the deadline, then
-    raises FileNotFoundError or TimeoutError (the last seen); access denied raises PermissionError at once (§2.3)."""
-    _check_address(address)
+    raises FileNotFoundError or TimeoutError (the last seen); access denied raises PermissionError at once (§2.3). A
+    malformed address is OSError(EINVAL) at once, since retrying cannot fix it: §2.3's `connect` row lists only
+    OSErrors, and F3-OSI-L answers the same (WF-197-fix2). `listen` keeps ValueError."""
+    try:
+        _check_address(address)
+    except ValueError as exc:
+        raise OSError(errno.EINVAL, str(exc)) from None
     api = _api()
     last = "notfound"
     while True:
