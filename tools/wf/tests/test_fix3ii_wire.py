@@ -73,6 +73,22 @@ class Decode(_Env):
                     wire.decode(body)
                 self.assertIn(needle, str(cm.exception))
 
+    def test_n1_deep_nesting_never_raises_recursion_error(self):
+        """WF-199 N1: the checks after parsing walk iteratively, so nesting past Python's recursion limit either
+        decodes (valid JSON; the request's shape then refuses it, `rejected(wire)`, see broker BRK-7) or is a WireError
+        (a defect deep inside, or the parser's own depth limit), never a RecursionError."""
+        for body in (b'{"a":' + b"[" * 5000 + b"]" * 5000 + b"}", b'{"a":' + b'{"b":' * 5000 + b"1" + b"}" * 5001):
+            with self.subTest(size=len(body)):
+                self.assertIsInstance(wire.decode(body), dict)
+                with self.assertRaises(wire.WireError):
+                    wire.check_request(wire.decode(body))
+        for body in (b'{"a":' + b"[" * 5000 + b'"\\ud800"' + b"]" * 5000 + b"}",
+                     b'{"a":' + b"[" * 5000 + b"1e999" + b"]" * 5000 + b"}",
+                     b'{"a":' + b"[" * 1_000_000 + b"]" * 1_000_000 + b"}"):
+            with self.subTest(size=len(body)):
+                with self.assertRaises(wire.WireError):
+                    wire.decode(body)
+
     def test_a_valid_object(self):
         self.assertEqual(wire.decode('{"a":[1,"é","\\ud83d\\ude00"],"b":null}'.encode("utf-8")),
                          {"a": [1, "é", "\U0001f600"], "b": None})

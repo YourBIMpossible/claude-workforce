@@ -273,6 +273,20 @@ class Inputs(_Captured):
         self.assertEqual((code, res), (1, {"ok": False, "code": "rejected", "error": str(cm.exception)}))
         self.assertEqual(self.cap.requests, [])
 
+    def test_s1_inline_text_over_the_bound_is_malformed_and_nothing_is_sent(self):
+        """WF-199 S1, contract §1.4: the client applies the 1 MiB input bound to inline text too, with
+        `_check_size`'s text, and sends nothing."""
+        big = '"' + "x" * commands.MAX_JSON_INPUT_BYTES + '"'
+        n = len(big.encode("utf-8"))
+        code, res = wf.run(["--broker", ADDR, "append", "j", "--type", "intent", "--content", big])
+        self.assertEqual((code, res), (1, {"ok": False, "code": "rejected", "error":
+                                           f"rejected(malformed): inline JSON: {n} bytes; JSON input is limited to "
+                                           f"{commands.MAX_JSON_INPUT_BYTES} bytes"}))
+        self.assertEqual(self.cap.requests, [])
+        at_bound = '"' + "x" * (commands.MAX_JSON_INPUT_BYTES - 2) + '"'
+        self.assertEqual(self.sent("append", "j", "--type", "intent", "--content", at_bound)["inputs"],
+                         {"--content": at_bound})  # exactly at the bound it is sent
+
     def test_a_file_over_the_bound_is_malformed_and_nothing_is_sent(self):
         path = os.path.join(self.dir, "big.json")
         with open(path, "wb") as fh:
@@ -482,6 +496,81 @@ class WhoamiDirect(_Env, test_wf.Base):
                 mock.patch.object(sys, "argv", ["wf", "--db", self.db, "whoami"]), contextlib.redirect_stdout(out):
             self.assertEqual(wf.main(), 0)
         self.assertEqual(out.getvalue(), f'mode="direct" account="{FAKE["own"]}" note="direct mode: no account check"\n')
+
+
+#: ff3cd2f's plain-text keys (wf.py:353-354 there), for AMENDMENT-FIX3-II-A3's "byte-identical to ff3cd2f's".
+FF3CD2F_KEYS = ("outcome", "job", "seq", "self", "attempt_id", "commit_attempts", "axes", "head", "clean", "decision",
+                "block_hash", "binding", "exceptions", "recovery")
+
+
+def ff3cd2f_line(res: dict) -> str:
+    """The plain-text line ff3cd2f's main() prints for an ok result without `block_text`."""
+    return " ".join(f"{k}={json.dumps(res[k], default=str)}" for k in FF3CD2F_KEYS if k in res) + "\n"
+
+
+class PlainText(_Env, test_wf.Base):
+    """AMENDMENT-FIX3-II-A3: main() prints whoami's keys only for a whoami result (`mode` in it), so the five existing
+    results that carry `note` print exactly as at ff3cd2f."""
+
+    def main_line(self, *argv: str) -> tuple[str, dict]:
+        """main()'s plain-text output for `argv`, and the result dict main() printed it from."""
+        seen: list[tuple[int, dict]] = []
+        real = wf.run
+
+        def recording(a: list[str]) -> tuple[int, dict]:
+            seen.append(real(a))
+            return seen[-1]
+
+        out = io.StringIO()
+        with mock.patch.object(wf, "run", side_effect=recording), mock.patch.object(sys, "argv", ["wf", *argv]), \
+                contextlib.redirect_stdout(out):
+            self.assertEqual(wf.main(), 0)
+        return out.getvalue(), seen[0][1]
+
+    def test_a3_the_note_results_print_as_at_ff3cd2f(self):
+        """Four of the five run for real here; each prints ff3cd2f's line for the result it produced."""
+        self.new_job()
+        self.activate()
+        c = ["--db", self.db, "--role", "coordinator", "--session", "C1"]
+        cases = (
+            ("checkpoint", c + ["checkpoint", "j"]),
+            ("backup with a job", c + ["backup", "j", "--to", os.path.join(self.dir, "b1.db")]),
+            ("gate print-install", c + ["gate", "print-install", "--hooks-dir", os.path.join(self.dir, "hooks"),
+                                        "--root", self.dir]),
+            ("job abandon", c + ["job", "abandon", "j", "--reason", "a3"]),
+        )
+        for name, argv in cases:
+            with self.subTest(command=name):
+                line, res = self.main_line(*argv)
+                self.assertIn("note", res)
+                self.assertNotIn("block_text", res)
+                self.assertEqual(line, ff3cd2f_line(res))
+        line, _ = self.main_line(*c[:2], "gate", "print-install", "--hooks-dir", os.path.join(self.dir, "h2"),
+                                 "--root", self.dir)
+        self.assertEqual(line, "\n")  # as at ff3cd2f: none of its keys is in that result
+
+    def test_a3_each_line_equals_ff3cd2fs_for_its_result(self):
+        """The line is pinned against ff3cd2f's rule on the result main() was given, for each note-bearing shape."""
+        shapes = (
+            {"ok": True, "job": "j", "outcome": "ABANDONED", "note": "n"},                      # job abandon
+            {"ok": True, "job": "j", "seq": 3, "self": "s" * 64, "path": "p", "note": "n"},     # checkpoint
+            {"ok": True, "job": "j", "head_equal": {}, "note": "n"},                             # backup with a job
+            {"ok": True, "hook_sha256": "h", "config": {}, "note": "n", "written": []},           # gate print-install
+            {"ok": True, "outcome": "NOT-COMMITTED", "job": "j", "seq": 2, "note": "n"},         # resolve, changed marker
+        )
+        for res in shapes:
+            with self.subTest(res=res):
+                out = io.StringIO()
+                with mock.patch.object(wf, "run", return_value=(0, dict(res))), \
+                        mock.patch.object(sys, "argv", ["wf", "x"]), contextlib.redirect_stdout(out):
+                    self.assertEqual(wf.main(), 0)
+                self.assertEqual(out.getvalue(), ff3cd2f_line(res))
+        whoami = {"ok": True, "mode": "direct", "account": "a", "note": "direct mode: no account check"}
+        out = io.StringIO()
+        with mock.patch.object(wf, "run", return_value=(0, whoami)), mock.patch.object(sys, "argv", ["wf", "whoami"]), \
+                contextlib.redirect_stdout(out):
+            wf.main()
+        self.assertEqual(out.getvalue(), 'mode="direct" account="a" note="direct mode: no account check"\n')
 
 
 class RealAccountRows(unittest.TestCase):

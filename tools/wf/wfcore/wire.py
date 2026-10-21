@@ -118,22 +118,24 @@ def _pairs(pairs: list[tuple[str, Any]]) -> dict:
 
 
 def _check_text(obj: Any) -> None:
-    """A lone surrogate (from a `\\ud800` escape) in any key or string, and a float that overflowed to infinity."""
-    if isinstance(obj, str):
-        try:
-            obj.encode("utf-8")
-        except UnicodeEncodeError:
-            raise WireError("a string holds a lone surrogate") from None
-    elif isinstance(obj, float):
-        if not math.isfinite(obj):
-            raise WireError("a number is not finite")
-    elif isinstance(obj, dict):
-        for k, v in obj.items():
-            _check_text(k)
-            _check_text(v)
-    elif isinstance(obj, list):
-        for v in obj:
-            _check_text(v)
+    """A lone surrogate (from a `\\ud800` escape) in any key or string, and a float that overflowed to infinity.
+    Iterative, so a deeply nested body is checked in full and never raises RecursionError (WF-199 N1)."""
+    stack = [obj]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, str):
+            try:
+                item.encode("utf-8")
+            except UnicodeEncodeError:
+                raise WireError("a string holds a lone surrogate") from None
+        elif isinstance(item, float):
+            if not math.isfinite(item):
+                raise WireError("a number is not finite")
+        elif isinstance(item, dict):
+            stack.extend(item.keys())
+            stack.extend(item.values())
+        elif isinstance(item, list):
+            stack.extend(item)
 
 
 def decode(body: bytes) -> dict:

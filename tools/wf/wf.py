@@ -267,8 +267,10 @@ def _file_actions(cmd_parser: argparse.ArgumentParser) -> list[argparse.Action]:
 
 def _input_text(value: str) -> str:
     """Section 1.5: a file the caller names is checked by `_load_json` in the caller's own account, then read once
-    more and sent as text; any other value is sent unchanged, for the broker to parse as inline JSON."""
+    more and sent as text; any other value is sent unchanged (not converted), for the broker to parse as inline JSON.
+    Either way the 1 MiB input bound is the client's first (section 1.4; WF-199 S1): over it, nothing is sent."""
     if not os.path.isfile(value):
+        commands._check_size(len(value.encode("utf-8", "surrogatepass")), "inline JSON")  # _load_json's own measure
         return value
     commands._load_json(value)  # the size bound, strict UTF-8 and strict JSON, with today's texts (commands.py:89-97)
     with open(value, "rb") as fh:
@@ -585,10 +587,10 @@ def main() -> int:
             sys.stdout.write(res["block_text"] + "\n")
         elif res.get("ok", True):
             keys = [k for k in ("outcome", "job", "seq", "self", "attempt_id", "commit_attempts", "axes", "head",
-                                "clean", "decision", "block_hash", "binding", "exceptions", "recovery",
-                                # FIX3-II section 3.5: whoami's keys
-                                "mode", "account", "own", "broker", "map_in_force", "roles", "sessions", "note")
-                    if k in res]
+                                "clean", "decision", "block_hash", "binding", "exceptions", "recovery") if k in res]
+            if "mode" in res:  # FIX3-II section 3.5 and AMENDMENT A3: whoami's keys, for a whoami result only
+                keys += [k for k in ("mode", "account", "own", "broker", "map_in_force", "roles", "sessions", "note")
+                         if k in res]
             sys.stdout.write(" ".join(f"{k}={json.dumps(res[k], default=str)}" for k in keys) + "\n")
         else:
             sys.stdout.write(f"{res.get('code', 'error')}: {res.get('error', res.get('outcome'))}\n")

@@ -50,6 +50,7 @@ LOG_MAX_BYTES = 16 * 1024 * 1024
 LOG_KEYS = ("ts", "peer", "pid", "op", "cmd", "job", "msg_id", "exit", "code", "reason", "ms")
 EXIT_ERR, EXIT_INTERNAL = 1, 4
 _REFUSAL = re.compile(r"rejected\(([a-z][a-z0-9-]*)\)(?::|\Z)")
+_LOGGED_MSG_ID = re.compile(r"[A-Za-z0-9._:-]{1,128}")
 
 RunFn = Callable[..., tuple[int, dict]]
 
@@ -78,9 +79,12 @@ def refusal_name(result: dict) -> str | None:
 
 
 def _msg_id(argv: list[str]) -> str | None:
+    """The log's `msg_id`: the request's `--msg-id` only in a bounded form, else None (WF-199 S2), so no client can
+    inflate a log line and rotate the refusal record away (A2 item 2 (c))."""
     for a in argv:
         if a.startswith("--msg-id="):
-            return a[len("--msg-id="):]
+            value = a[len("--msg-id="):]
+            return value if _LOGGED_MSG_ID.fullmatch(value) else None
     return None
 
 

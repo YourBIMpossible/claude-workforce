@@ -13,12 +13,15 @@ Rows: BRK-2, BRK-5, BRK-6, BRK-7, BRK-8, BRK-9, BRK-10, BRK-11, BRK-12, ID-8, ID
 from __future__ import annotations
 
 import ast
+import contextlib
 import hashlib
+import io
 import json
 import os
 import re
 import shutil
 import struct
+import subprocess
 import sys
 import threading
 import time
@@ -287,6 +290,7 @@ class Refusals(_Broker):
             ("a missing field", wire.frame(json.dumps({"v": 1, "op": "run", "argv": [], "inputs": {}}).encode()), "B1"),
             ("not an object", wire.frame(b"[]"), "B1"),
             ("a duplicate key", wire.frame(b'{"v":1,"v":1}'), "B1"),
+            ("deep nesting (WF-199 N1)", wire.frame(b'{"v":' + b"[" * 5000 + b"]" * 5000 + b"}"), "B1"),
         )
         for name, data, peer_seen in bad:
             with self.subTest(case=name):
@@ -517,11 +521,14 @@ class ReadsAndWhoami(_Broker):
         self.assertFalse(os.path.exists(self.db))  # nothing written, no ledger opened
 
     def test_w3_the_owners_start_check(self):
+        self.new_job()
+        before = fakes.ledger_state(self.db)
         self.serving()
         code, res = self.wf_as("own", "whoami")
         self.assertEqual(code, 0, res)
-        self.assertEqual((res["account"], res["own"], res["broker"]), (FAKE["own"], True,
-                                                                      {"account": FAKE["own"], "wfcore": WFCORE}))
+        self.assertEqual((res["account"], res["own"], res["broker"], res["msg_id"]),
+                         (FAKE["own"], True, {"account": FAKE["own"], "wfcore": WFCORE}, None))
+        self.assertEqual(fakes.ledger_state(self.db), before)  # WF-199 N3: nothing written
 
 
 class Recovery(_Broker):
@@ -537,10 +544,15 @@ class Recovery(_Broker):
         code, res = self.intent()
         del os.environ["WF_TEST_FAULTS"]
         self.assertEqual(res["code"], "commit-uncertain")
+        today = {line: wf.run(["--db", self.db, line, "j"]) for line in ("status", "verify")}  # WF_BROKER unset
         os.environ["WF_BROKER"] = self.address
         with mock.patch.object(client, "call", side_effect=AssertionError("the broker route was taken")):
-            self.assertEqual(wf.run(["--db", self.db, "status", "j"])[0], 0)
-            self.assertIn("clean", wf.run(["--db", self.db, "verify", "j"])[1])
+            for line in ("status", "verify"):  # WF-199 N3: the exit code and the result, as today
+                with self.subTest(line=line):
+                    self.assertEqual(wf.run(["--db", self.db, line, "j"]), today[line])
+            self.assertEqual(today["status"][0], 0)
+            self.assertIn(today["verify"][0], (0, 1))
+            self.assertIn("clean", today["verify"][1])
             code, rr = wf.run(["--db", self.db, "resolve", "j", str(res["seq"]), "--attempt", res["attempt_id"]])
             self.assertEqual((code, rr["outcome"]), (0, "NOT-COMMITTED"), rr)
             code, ab = wf.run(["--db", self.db, "job", "abandon", "j", "--reason", "w4"])
@@ -607,6 +619,24 @@ class Log(_Broker):
         self.assertEqual([(x["reason"], x["code"]) for x in lines],
                          [(reason, code) for reason, code, _ in cases] + [(None, "STOPPING")])
         self.assertTrue(all(list(x) == list(broker.LOG_KEYS) for x in lines))
+
+    def test_s2_the_log_holds_msg_id_only_in_a_bounded_form(self):
+        """WF-199 S2: an oversized or odd `--msg-id` is logged as null, so no client can inflate a log line to rotate
+        the refusal record away (A2 item 2 (c)); a bounded one is logged as given."""
+        running = self.serving(run=self.recording_run())
+        g = ["--role=builder", "--session=B1", "--generation=1"]
+        cases = (("m-ok_1.2:3", "m-ok_1.2:3"), ("a" * 128, "a" * 128), ("a" * 129, None), ("has space", None),
+                 ("é", None), ("x" * 100_000, None))
+        for msg_id, logged in cases:
+            self.call("B1", g + [f"--msg-id={msg_id}", "whoami"], wfcore="b" * 64)  # refused: version-mismatch
+        running.stop()
+        lines = self.log_lines()
+        self.assertEqual([x["msg_id"] for x in lines], [logged for _, logged in cases] + [None])
+        self.assertTrue(all(x["reason"] == "version-mismatch" for x in lines[:-1]))
+        self.assertLess(os.path.getsize(self.log_path), 4096)
+
+    def test_n2_the_rotation_bound_is_16_mib(self):
+        self.assertEqual(broker.LOG_MAX_BYTES, 16 * 1024 * 1024)  # A2 item 2 (b): D27's bound
 
     def test_a2_refusal_name(self):
         cases = (
@@ -771,6 +801,32 @@ class BrokerProcess(_Broker):
         wfbroker.main(["--stop", "--address", self.address])
         t.join(10)
         self.assertEqual(len(self.log_lines()), 2)  # <root>/runtime/broker/broker-log.jsonl
+
+
+class BrokerStdout(_Env, test_wf.Base):
+    """WF-199 N6: wfbroker's ready, stopped and broker-config lines are each one JSON line on stdout."""
+
+    def test_n6_emit_writes_one_ascii_json_line(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            wfbroker._emit({"ok": True, "code": "broker-ready", "address": "a", "pid": 7, "db": "é\n"})
+        text = out.getvalue()
+        self.assertTrue(text.endswith("\n"))
+        self.assertEqual(text.count("\n"), 1)
+        text.encode("ascii")
+        self.assertEqual(json.loads(text), {"ok": True, "code": "broker-ready", "address": "a", "pid": 7, "db": "é\n"})
+        self.assertEqual(list(json.loads(text)), ["ok", "code", "address", "pid", "db"])  # key order kept
+
+    def test_n6_a_refused_start_prints_one_line(self):
+        """The real process: `python -I tools/wf/wfbroker.py`, refused by the env check, prints exactly one JSON line."""
+        env = dict(os.environ, WF_ROLE="x")
+        r = subprocess.run([sys.executable, "-I", "-B", wfbroker.__file__, "--db", self.db, "--address",
+                            fakes.address("n6")], env=env, capture_output=True, text=True, timeout=120)
+        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertEqual(r.stdout.count("\n"), 1)
+        out = json.loads(r.stdout)
+        self.assertEqual((out["ok"], out["code"], out["check"]), (False, "broker-config", "env"))
+        self.assertFalse(os.path.exists(self.db))
 
 
 class Seams(_Env):
