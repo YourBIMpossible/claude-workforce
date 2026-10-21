@@ -55,6 +55,43 @@ SPOOF = ["log-intervention", "j", "--label", "spoof", "--necessity", "unknown", 
 _COUNTER = iter(range(1, 1_000_000))
 
 
+class _BrokenSend:
+    """A server channel whose response write breaks; everything else is the real channel's."""
+
+    def __init__(self, inner: Any) -> None:
+        self._inner = inner
+
+    def recv_exact(self, n: int, deadline: float) -> bytes:
+        return self._inner.recv_exact(n, deadline)
+
+    def send_all(self, data: bytes, deadline: float) -> None:
+        raise BrokenPipeError("scripted: the response write broke")
+
+    def close(self) -> None:
+        self._inner.close()
+
+    def peer_account(self) -> tuple[str, int | None]:
+        return self._inner.peer_account()
+
+
+class _FirstSendBreaks:
+    """Wraps the listener: the first accepted connection's response write breaks while its client still waits
+    (A1 item 1); every later connection is the real channel, unchanged."""
+
+    def __init__(self, inner: Any) -> None:
+        self.inner, self.address, self._done = inner, inner.address, False
+
+    def accept(self, deadline: float) -> Any:
+        channel = self.inner.accept(deadline)
+        if self._done:
+            return channel
+        self._done = True
+        return _BrokenSend(channel)
+
+    def close(self) -> None:
+        self.inner.close()
+
+
 def stop_content(session: str, generation: int) -> str:
     return json.dumps({"role": "builder", "session": session, "generation": generation,
                        "how": "process exit observed", "when": "2026-10-21T04:00:00Z",
@@ -136,9 +173,9 @@ class _E2E(_Env, test_wf.Base):
                "--bind-account", B2)
 
     # ---- the broker -----------------------------------------------------------------------------------------------
-    def start(self, *who: Any, db: str | None = None, clients: tuple[str, ...] = (B1, B2, R1)) -> None:
+    def start(self, *who: Any, db: str | None = None, clients: tuple[str, ...] = (B1, B2, R1), wrap=None) -> None:
         """wfbroker.main serving on a thread. The n-th connection is read as `who[n]` (a name of self.ids, or an
-        OSError); three more as the own account follow, for the stop."""
+        OSError); three more as the own account follow, for the stop. `wrap`, if given, wraps the scripted listener."""
         script = [w if isinstance(w, BaseException) else (self.ids[w], 4242) for w in who]
         script += [(self.own, os.getpid())] * 3
         real_listen = peer.listen
@@ -146,7 +183,7 @@ class _E2E(_Env, test_wf.Base):
         def listen(address: str, client_accounts):
             sl = fakes.ScriptedPeerListener(real_listen(address, client_accounts), script)
             self.listeners.append(sl)
-            return sl
+            return wrap(sl) if wrap is not None else sl
 
         self.enterContext(mock.patch.object(peer, "listen", listen))
         self.enterContext(mock.patch.object(wfbroker, "_emit", self.emitted.append))
@@ -410,15 +447,19 @@ class ReadsWhoamiMap(_E2E):
     """ID-8 (reads, the real transport), ID-10 and MAP-1 (`whoami <J>`), W-3 (W's start check)."""
 
     def test_id8_reads_from_workers_answer_as_directly(self):
+        """Every admitted account (WF-206 N1): the workers B1, B2 and R1, and the own account. An unlisted account is
+        refused at admission (D8), before any read."""
         self.explicit()
         lines = (["status", "j"], ["digest", "j"], ["verify", "j"], ["verify"],
                  ["grant-check", "j", "--check-role", "builder", "--action", "write", "--path", "jobs/j/work/a.txt"])
-        self.start(*["B1", "R1"] * len(lines))
+        accounts = ("B1", "B2", "R1", "own")
+        self.start(*list(accounts) * len(lines), "unlisted")
         for line in lines:
-            for who in ("B1", "R1"):
+            for who in accounts:
                 with self.subTest(line=line, who=who):
                     self.assertEqual(self.wf_b("--role", "builder", "--session", "B1", *line),
                                      self.direct("builder", "B1", *line))
+        self.assertRefused(self.wf_b("--role", "builder", "--session", "B1", "status", "j"), "caller-unattributed")
 
     def test_id10_and_map1_whoami_with_the_job(self):
         self.explicit()
@@ -494,6 +535,22 @@ class Broker(_E2E):
         code, res = self.wf_b(*self.intent_argv("m-part"))
         self.assertEqual((code, res.get("outcome")), (0, "COMMITTED"), res)
         self.assertEqual((len(self.msg_rows("m-lost")), len(self.msg_rows("m-part"))), (1, 1))
+
+    def test_brk2_a_lost_response_while_the_client_lives(self):
+        """WF-206 N2: the broker's response write breaks while the real client waits on the real transport. The
+        command committed, the broker logs `response-unsent` with the formed exit (A1 item 1), the client gets
+        `broker-response-lost` with its msg_id, and the re-send is DUPLICATE-IGNORED: one row."""
+        self.explicit()
+        self.start("B1", "B1", wrap=_FirstSendBreaks)
+        code, res = self.wf_b(*self.intent_argv("m-live"))
+        self.assertEqual((code, res["code"], res["msg_id"], res["action"]),
+                         (1, "broker-response-lost", "m-live", "re-send the same command with --msg-id m-live"), res)
+        line = self.logged(1)[0]
+        self.assertEqual((line["exit"], line["code"], line["msg_id"]), (0, "response-unsent", "m-live"))
+        self.assertEqual(len(self.msg_rows("m-live")), 1)
+        code, res = self.wf_b(*self.intent_argv("m-live"))
+        self.assertEqual((code, res.get("outcome")), (0, "DUPLICATE-IGNORED"), res)
+        self.assertEqual(len(self.msg_rows("m-live")), 1)
 
     def test_brk4_a_file_name_of_the_brokers_is_never_read(self):
         """A raw client sends the name of a JSON file that exists in the broker's account as inline input: the broker
