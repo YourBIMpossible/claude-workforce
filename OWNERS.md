@@ -86,6 +86,8 @@ Glob syntax: fnmatch on forward-slash repo-relative paths; `**` matches any dept
 | tools/wf/wfcore/peer_linux.py | F3-OSI-L |
 | tools/wf/tests/test_fix3ii_peer_linux.py | F3-OSI-L |
 | tools/wf/tests/test_fix3ii_e2e.py | F3-E2E |
+| tools/wf/tests/test_fix3ii_ra.py | F3-RA |
+| tools/wf/ra/** | F3-RA |
 | tools/wf/tests/test_fixz_links.py | F2ZP |
 | tools/wf/tests/test_fixz_wording.py | F2ZZ |
 | tools/wf/tests/test_fix2_wording.py | F2HZ |
@@ -424,3 +426,13 @@ bind.py and test_t32_bind.py go back to S2B when FIX3-II is integrated; the new 
 ## Integration 2026-10-21 (FIX3-II into `fix3/ii-integration`; coordinator Zen "Workforce Dev", lane D)
 
 `fix3/ii-integration` (from `fix3/ii-registration` `ca7982ba`, on main `ff3cd2f`) merges, `--no-ff`: F3-ACC `cb3c335` (Plexy WF-196; includes F3-BRK's P0 `dee1d1e`; review Lazy WF-200 PASS; Linux MyBuddy WF-203 PASS), F3-OSI-L `cad39dd` (MyBuddy WF-198/WF-198-fix1; review Plexy WF-202 PASS), F3-OSI-W `96559f9` (Plexy WF-197 + fix1; review Lazy WF-201 and WF-201-fix1 PASS; Linux WF-203 PASS; WF-197-fix2 deferred as a follow-up while Plexy was unavailable) and F3-BRK `e72f9a5` (Lazy WF-195 + fix1..fix3; review Plexy WF-199, delta MyBuddy WF-199-fix3-R; Linux WF-203 PASS). The relabels are restored: the wf.py and commands.py rows are removed (back to D), and bind.py and test_t32_bind.py go back to S2B. The new files stay registered to their lanes. The README lines are lane D's, from the lanes' proposals, in the next commit. Out of scope and parked for the owner: accounts, ACL changes, any service, the real-account tests (T1, T2), E1. No PR into main without a further Foreman decision.
+
+## Registration 2026-10-21 (lane F3-RA: the real-account tests, AMENDMENT-FIX3-II-A4; decided by the Foreman under the owner's delegation; coordinator Zen "Workforce Dev" while White is out)
+
+Package text: WorkForce collab `contracts/b2fix3/AMENDMENT-FIX3-II-A4.md` (frozen with SHA256SUMS), with PACKAGE-FIX3-II, the interface contract r2 and A1-A3, on ACCEPTANCE-ii r2's RA rows. A4 replaces the contract's D23 ("No RA test file in this build"). Base: `fix3/ii-integration` `2d4ab93` (PR #64's head) plus this registration commit; this branch does not touch `fix3/ii-integration` or PR #64.
+
+| Lane | Worker | Branch | Scope |
+|---|---|---|---|
+| F3-RA | Lazy | `fix3/ii-lazy-ra` | test_fix3ii_ra.py (the RA rows; every test skips without `WF_TEST_OS_ACCOUNTS`) and tools/wf/ra/** (the fixed RA client entry point, its allowlist, and the T1/T2 templates; nothing installed) |
+
+Out of scope, owner-only: preparing T1 or T2, running the RA rows there, any account, ACL, task or sudoers change, and any merge to main. README.md stays lane D.
