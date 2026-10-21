@@ -196,6 +196,8 @@ Auto-resolve is skipped for injected COMMIT errors so fixtures can resolve expli
   preventable target (D-027).
 
 ## Through the broker: `--broker` (FIX3-II)
+**Status: fix 1 code merged, NOT qualified.** The broker and the account check are opt-in (`--broker`); direct mode (`--db`) behaves as before. Qualification still needs the real-account tests on prepared Windows and Linux hosts (T1, T2) and an owner-named security review. Until then, rely on the limits in Identity and limits above.
+
 - **`--broker <address>`** (or `WF_BROKER`) sends the command to the account-checking broker. wf then opens no ledger.
   - The address is a named pipe `\\.\pipe\<name>` on Windows, or an absolute socket path of at most 107 bytes on Linux.
   - Give `--db` or `--broker`, never both: `rejected(usage)`, exit 2. The same holds for `WF_DB` with `WF_BROKER`.
