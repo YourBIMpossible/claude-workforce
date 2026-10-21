@@ -111,6 +111,52 @@ class PeerWin(unittest.TestCase):
         # FILE_GENERIC_READ | FILE_WRITE_DATA, and no FILE_CREATE_PIPE_INSTANCE (0x4) for a listed client.
         self.assertEqual(int(parsed[UNUSED_SID], 16), 0x0012008B, sddl)
 
+    def test_a_client_holding_only_the_client_rights_connects(self) -> None:
+        """Lazy WF-201 M1: a pipe whose access list gives this account only the client ACE (0x0012008B) accepts
+        `connect` and a round trip, so `connect` asks for no right beyond it. Within one account; the pipe is the
+        test's own and ends with it."""
+        addr = _addr()
+        client_only = f"D:P(A;;0x{peer_win._CLIENT_RIGHTS:08x};;;{self.own})"
+        lst = peer_win.Listener(addr, peer_win._create_pipe(addr, client_only))
+        self.addCleanup(lst.close)
+        self.assertEqual(re.findall(r"\(([^)]*)\)", lst._dacl_sddl()), [f"A;;0x12008b;;;{self.own}"])
+        client = peer_win.connect(addr, _soon())
+        self.addCleanup(client.close)
+        server = lst.accept(_soon())
+        self.addCleanup(server.close)
+        client.send_all(b"ping", _soon())
+        self.assertEqual(server.recv_exact(4, _soon()), b"ping")
+        self.assertEqual(server.peer_account()[0], self.own)
+        server.send_all(b"pong", _soon())
+        self.assertEqual(client.recv_exact(4, _soon()), b"pong")
+        client.close()  # the client leaves first, so the server close's linger ends at once
+
+    def test_the_linger_reads_a_buffer_at_a_time(self) -> None:
+        """Lazy WF-201 N1: extra bytes the client sends while the server close lingers are read in buffer-sized
+        reads, not one byte per ReadFile."""
+        import threading
+        from unittest import mock
+
+        client, server = self._pair()
+        client.send_all(b"q", _soon())
+        server.recv_exact(1, _soon())
+        server.send_all(b"answer", _soon())
+        extra = os.urandom(512 * 1024)
+
+        def client_side() -> None:
+            client.send_all(extra, _soon(30))
+            self.assertEqual(client.recv_exact(6, _soon(30)), b"answer")
+            client.close()
+
+        real = peer_win._Io.read_some
+        with mock.patch.object(peer_win._Io, "read_some", autospec=True, side_effect=real) as spy:
+            sender = threading.Thread(target=client_side)
+            sender.start()
+            server.close()
+            sender.join(30)
+        self.assertFalse(sender.is_alive())
+        self.assertLess(spy.call_count, 64, "512 KiB in 64 KiB reads takes about 8, plus the end of file")
+
     def test_closing_a_channel_re_arms_the_single_instance(self) -> None:
         client, server = self._pair()
         client.send_all(b"x", _soon())

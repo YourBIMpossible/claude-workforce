@@ -40,7 +40,7 @@ _PIPE_READMODE_BYTE = 0x00000000
 _PIPE_WAIT = 0x00000000
 _PIPE_REJECT_REMOTE_CLIENTS = 0x00000008
 _GENERIC_READ = 0x80000000
-_GENERIC_WRITE = 0x40000000
+_FILE_WRITE_DATA = 0x00000002
 _OPEN_EXISTING = 3
 _SECURITY_SQOS_PRESENT = 0x00100000
 _SECURITY_IDENTIFICATION = 0x00010000
@@ -64,6 +64,10 @@ _ERROR_OPERATION_ABORTED = 995
 _ERROR_IO_PENDING = 997
 _INVALID_HANDLE = ctypes.c_void_p(-1).value
 # FILE_GENERIC_READ (0x120089) | FILE_WRITE_DATA (0x2): read and write, and no FILE_CREATE_PIPE_INSTANCE (0x4).
+# `connect` asks for exactly these rights (GENERIC_READ maps to FILE_GENERIC_READ): GENERIC_WRITE would also ask for
+# FILE_APPEND_DATA (= FILE_CREATE_PIPE_INSTANCE), FILE_WRITE_ATTRIBUTES and FILE_WRITE_EA, which the client ACE does not
+# grant, so every listed account but the own one would be refused (Lazy WF-201 M1).
+_CLIENT_OPEN = _GENERIC_READ | _FILE_WRITE_DATA
 _CLIENT_RIGHTS = 0x0012008B
 
 _API: Any = None
@@ -251,21 +255,28 @@ class _Io:
             raise _winerror(err, what)
         return self._wait(ov, deadline, what)
 
+    def read_some(self, size: int, deadline: float) -> bytes:
+        """One ReadFile of at most `size` bytes. EOFError when the peer has closed; TimeoutError at the deadline."""
+        buf = ctypes.create_string_buffer(size)
+        try:
+            got = self._op(self._api.ReadFile, buf, size, deadline, "ReadFile")
+        except OSError as exc:
+            if getattr(exc, "winerror", None) in (_ERROR_BROKEN_PIPE, _ERROR_PIPE_NOT_CONNECTED, _ERROR_NO_DATA):
+                raise EOFError("the peer closed the pipe") from exc
+            raise
+        return buf.raw[:got]
+
     def recv_exact(self, n: int, deadline: float) -> bytes:
         if n < 0:
             raise ValueError("n must be >= 0")
         out = bytearray()
         while len(out) < n:
-            want = min(n - len(out), _BUFFER)
-            buf = ctypes.create_string_buffer(want)
             try:
-                got = self._op(self._api.ReadFile, buf, want, deadline, "ReadFile")
-            except OSError as exc:
-                if getattr(exc, "winerror", None) in (_ERROR_BROKEN_PIPE, _ERROR_PIPE_NOT_CONNECTED, _ERROR_NO_DATA):
-                    raise EOFError(f"the peer closed after {len(out)} of {n} bytes") from exc
-                raise
-            out += buf.raw[:got]
-            if got == 0 and time.monotonic() >= deadline:
+                chunk = self.read_some(min(n - len(out), _BUFFER), deadline)
+            except EOFError as exc:
+                raise EOFError(f"the peer closed after {len(out)} of {n} bytes") from exc
+            out += chunk
+            if not chunk and time.monotonic() >= deadline:
                 raise TimeoutError("ReadFile: deadline passed")
         return bytes(out)
 
@@ -377,11 +388,11 @@ class ServerChannel:
             if not listener._closed:  # a closed listener's handle value may already name another object
                 if self._wrote:
                     # Linger: read until the client closes its end, so a written response is never discarded by the
-                    # disconnect. Bounded; any extra bytes the client sends are dropped.
+                    # disconnect. Bounded; any extra bytes the client sends are read a buffer at a time and dropped.
                     deadline = time.monotonic() + _LINGER_S
                     while time.monotonic() < deadline:
                         try:
-                            self._io.recv_exact(1, deadline)
+                            self._io.read_some(_BUFFER, deadline)
                         except (EOFError, TimeoutError, OSError):
                             break
                 _api().DisconnectNamedPipe(self._h)
@@ -506,10 +517,17 @@ def listen(address: str, client_accounts: Iterable[str]) -> Listener:
     in use; ValueError for a bad address or id; OSError otherwise."""
     _check_address(address)
     clients = _check_ids(client_accounts)
-    api = _api()
     own = own_account()
     sddl = f"D:P(A;;FA;;;{own})" + "".join(
         f"(A;;0x{_CLIENT_RIGHTS:08x};;;{sid})" for sid in dict.fromkeys(clients) if sid != own)
+    return Listener(address, _create_pipe(address, sddl))
+
+
+def _create_pipe(address: str, sddl: str) -> Any:
+    """The first and only instance of the pipe at `address`, with the security descriptor `sddl` set at creation.
+    FileExistsError when the address is in use; OSError otherwise. `listen` builds the §2.4 access list; the lane's
+    test also uses it for a pipe whose access list holds only the client rights (Lazy WF-201 M1)."""
+    api = _api()
     p_sd = ctypes.c_void_p()
     if not api.ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl, _SDDL_REVISION_1, ctypes.byref(p_sd), None):
         raise _last("ConvertStringSecurityDescriptorToSecurityDescriptorW")
@@ -526,7 +544,7 @@ def listen(address: str, client_accounts: Iterable[str]) -> Listener:
         if err in (_ERROR_ACCESS_DENIED, _ERROR_PIPE_BUSY):
             raise FileExistsError(None, f"the pipe address is in use: {address}", None, err)
         raise _winerror(err, "CreateNamedPipeW")
-    return Listener(address, handle)
+    return handle
 
 
 def connect(address: str, deadline: float) -> Channel:
@@ -536,7 +554,7 @@ def connect(address: str, deadline: float) -> Channel:
     api = _api()
     last = "notfound"
     while True:
-        handle = api.CreateFileW(address, _GENERIC_READ | _GENERIC_WRITE, 0, None, _OPEN_EXISTING,
+        handle = api.CreateFileW(address, _CLIENT_OPEN, 0, None, _OPEN_EXISTING,
                                  _FILE_FLAG_OVERLAPPED | _SECURITY_SQOS_PRESENT | _SECURITY_IDENTIFICATION, None)
         if handle is not None and handle != _INVALID_HANDLE:
             try:
