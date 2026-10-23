@@ -53,6 +53,31 @@ def intent_content(note: str = "n", name: str = "a") -> str:
     return json.dumps({"path": f"jobs/j/work/{name}.txt", "sha_before": "", "note": note})
 
 
+_STAMP = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z")
+_HEX = re.compile(r"\b[0-9a-f]{32}(?:[0-9a-f]{32})?\b")
+
+
+def normalised(obj: object, root: str) -> str:
+    """`obj` as sorted JSON, with what differs between two ledgers built alike masked: the ledger's root (raw and
+    JSON-escaped, either separator), timestamps, and 32- and 64-hex ids and hashes (msg_ids, row hashes)."""
+    text = json.dumps(obj, sort_keys=True, default=str)
+    for form in {root, root.replace("\\", "/")}:
+        text = text.replace(json.dumps(form)[1:-1], "<ROOT>")
+    return _HEX.sub("<HEX>", _STAMP.sub("<TS>", text))
+
+
+def ledger_rows(db: str, job: str = "j") -> dict[str, list[dict]]:
+    """A job's ledger state: its event rows and its `contracts` row (where `job abandon` writes)."""
+    conn = dbm.connect(db, create=False)
+    try:
+        with dbm.read_snapshot(conn):
+            cur = conn.execute("SELECT * FROM contracts WHERE job=?", (job,))
+            names = [d[0] for d in cur.description]
+            return {"events": dbm.rows(conn, job), "contracts": [dict(zip(names, r)) for r in cur.fetchall()]}
+    finally:
+        conn.close()
+
+
 class _Env(unittest.TestCase):
     """Every new test scrubs the route and fault variables (contract section 6.3) and records WF_BROKER unset (O5)."""
 
@@ -234,23 +259,49 @@ class Routing(_Broker):
 
     def test_brk5_the_own_account_runs_every_command(self):
         """On this head the own account's role-free commands run for real; the role-bearing writes reach `commands`
-        with the caller (next test), where F3-ACC's check runs on the combined candidate."""
+        with the caller (next test), where F3-ACC's check runs on the combined candidate.
+
+        WF-232 S4: BRK-5 says the own account runs these "as direct". Each owner command runs through the broker on
+        the broker's ledger, and directly on a twin ledger built the same way, in the same order. The exit codes, the
+        normalised results and the normalised ledger rows must be equal after every command; resolve's exit too."""
         self.new_job()
         self.activate()
+        twin_root = os.path.join(self.dir, "twin")
+        twin = self.twin_ledger(twin_root)
         self.serving()
         for line in (["status", "j"], ["digest", "j"], ["verify", "j"]):
             with self.subTest(line=line):
                 self.assertEqual(self.wf_as("own", "--role", "coordinator", "--session", "C1", *line),
                                  self.run_wf(*line, role="coordinator", session="C1"))
-        for line in (["checkpoint", "j"], ["observe", "j"], ["export", "j"], ["resolve", "j", "1"],
-                     ["gate", "print-install", "--hooks-dir", os.path.join(self.dir, "h"), "--root", self.dir],
-                     ["backup", "j", "--to", os.path.join(self.dir, "b.db")], ["job", "abandon", "j", "--reason", "r"]):
-            with self.subTest(line=line):
-                code, res = self.wf_as("own", "--role", "coordinator", "--session", "C1", *line)
+
+        def owner_lines(root: str) -> list[list[str]]:
+            return [["checkpoint", "j"], ["observe", "j"], ["export", "j"], ["resolve", "j", "1"],
+                    ["gate", "print-install", "--hooks-dir", os.path.join(root, "h"), "--root", root],
+                    ["backup", "j", "--to", os.path.join(root, "b.db")], ["job", "abandon", "j", "--reason", "r"]]
+
+        c1 = ["--role", "coordinator", "--session", "C1"]
+        for line, twin_line in zip(owner_lines(self.dir), owner_lines(twin_root)):
+            with self.subTest(line=line[:2]):
+                code, res = self.wf_as("own", *c1, *line)
                 self.assertNotIn("not-brokered", json.dumps(res))
                 self.assertNotEqual(res.get("code"), "internal-error", res)
-                if line[0] != "resolve":  # no pending marker: resolve answers as it does directly
+                d_code, d_res = wf.run(["--db", twin, *c1, *twin_line])
+                self.assertEqual((code, normalised(res, self.dir)), (d_code, normalised(d_res, twin_root)))
+                self.assertEqual(normalised(ledger_rows(self.db), self.dir), normalised(ledger_rows(twin), twin_root))
+                if line[0] != "resolve":  # no pending marker: resolve answers as it does directly, compared above
                     self.assertEqual(code, 0, res)
+
+    def twin_ledger(self, root: str) -> str:
+        """A second ledger under `root`, built as this test's own was (job j, grant activated); its path."""
+        twin = os.path.join(root, "ledger", "l.db")
+        os.makedirs(os.path.dirname(twin))
+        own, self.db = self.db, twin
+        try:
+            self.new_job()
+            self.activate()
+        finally:
+            self.db = own
+        return twin
 
     def test_brk5_role_bearing_writes_reach_commands_with_the_caller(self):
         g = ["--role=builder", "--session=B1", "--generation=1", "--msg-id=m1"]
