@@ -162,15 +162,17 @@ class _E2E(_Env, test_wf.Base):
         self.w("bind", job, "--bind-role", "coordinator", "--bind-session", "C1", db=db)
         self.w("bind", job, "--bind-role", "builder", "--bind-session", "B1", "--bind-account", B1, db=db)
 
-    def replaced(self) -> None:
+    def replaced(self, db: str | None = None) -> None:
         """explicit(); B1 intent; stop B1; reconcile; resume; B2 bound at generation 2 to B2's account."""
-        self.explicit()
-        self.assertEqual(self.direct("builder", "B1", "append", "j", "--type", "intent", "--content", INTENT)[0], 0)
-        self.w("append", "j", "--type", "stop-confirmed", "--content", stop_content("B1", 1))
-        self.w("reconcile", "j")
-        self.w("recover", "decide", "j", "--decision", "resume", "--turn", "owner turn: resume job j with a new builder")
+        self.explicit(db=db)
+        self.assertEqual(self.direct("builder", "B1", "append", "j", "--type", "intent", "--content", INTENT,
+                                     db=db)[0], 0)
+        self.w("append", "j", "--type", "stop-confirmed", "--content", stop_content("B1", 1), db=db)
+        self.w("reconcile", "j", db=db)
+        self.w("recover", "decide", "j", "--decision", "resume", "--turn", "owner turn: resume job j with a new builder",
+               db=db)
         self.w("bind", "j", "--bind-role", "builder", "--bind-session", "B2", "--bind-generation", "2",
-               "--bind-account", B2)
+               "--bind-account", B2, db=db)
 
     # ---- the broker -----------------------------------------------------------------------------------------------
     def start(self, *who: Any, db: str | None = None, clients: tuple[str, ...] = (B1, B2, R1), wrap=None) -> None:
@@ -336,15 +338,35 @@ class Identity(_E2E):
         self.assertEqual((self.state("j"), self.state("m")), before)
 
     def test_id13_a_builder_claims_the_other_builders_session(self):
+        """ACCEPTANCE-ii ID-13, with WF-232 S3. B2's session holds builder generation 2.
+        - The row's claim, B2's session at generation 2, as B1's and as R1's account: caller-mismatch, ledger unchanged.
+          It matches B2's binding, so direct mode writes no conflict row for it either (on this ledger it is refused
+          as unreconciled, until B2 acknowledges the reconcile report).
+        - So that "no claimant-conflict row" shows the check acting first, a claim that does conflict in direct mode:
+          session B3, which no bind row names, at generation 2. On a twin ledger, direct mode records it as a
+          claimant-conflict `blocker` row. Through the broker, the account check refuses it from either account, and
+          no row is written."""
+        spoof = ("--role", "builder", "--session", "B2", "--generation", "2", "append", "j", "--type", "intent",
+                 "--content", INTENT)
+        conflict = ("--role", "builder", "--session", "B3", "--generation", "2", "append", "j", "--type", "intent",
+                    "--content", INTENT)
+        twin = os.path.join(self.dir, "twin", "ledger", "l.db")
+        os.makedirs(os.path.dirname(twin))
+        self.replaced(db=twin)
+        twin_before = self.state(db=twin)
+        self.assertRefused(wf.run(["--db", twin, *conflict]), "claimant-conflict")
+        added = self.rows(db=twin)[twin_before[0]:]
+        self.assertEqual([(r["type"], json.loads(r["content"])["reason"]) for r in added],
+                         [("blocker", "claimant-conflict")])
         self.replaced()
         before = self.state()
-        self.start("B1", "R1")
-        for who in ("B1", "R1"):
-            with self.subTest(who=who):
-                self.assertRefused(self.wf_b("--role", "builder", "--session", "B2", "--generation", "2", "append",
-                                             "j", "--type", "intent", "--content", INTENT), "caller-mismatch")
+        self.start("B1", "R1", "B1", "R1")
+        for claim in (spoof, conflict):
+            for who in ("B1", "R1"):
+                with self.subTest(session=claim[3], who=who):
+                    self.assertRefused(self.wf_b(*claim), "caller-mismatch")
         self.assertEqual(self.state(), before)
-        self.assertFalse([r for r in self.rows() if r["type"] == "claimant-conflict"])
+        self.assertFalse([r for r in self.rows() if r["type"] == "blocker"])
 
 
 class ShellForms(_E2E):
