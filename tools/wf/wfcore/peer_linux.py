@@ -10,6 +10,11 @@ depends on no other lane (contract §2.3, D12). `peer.py` imports it lazily, on 
 
 Deadlines are `time.monotonic()` values. The only mode set is the socket's own 0660, at creation; the owner, the
 group and the directory are never changed (contract §2.4, D24). The directory's access list is setup S8.
+
+The group is checked, never set (WF-232 S2): the socket takes its group from the directory, which setup S8 makes the
+group `<wf-clients>` of the worker accounts (SPEC-ii §8.3). If S8 is missing, the socket takes the broker's primary
+group and its 0660 group bits admit no worker, so `listen` refuses to start when the socket's group does not admit
+every client account it can look up, instead of each worker failing later as access denied.
 """
 from __future__ import annotations
 
@@ -69,6 +74,38 @@ def _is_uid(value: object) -> bool:
     if len(value) > 10 or (len(value) > 1 and value[0] == "0"):
         return False
     return int(value) <= _UID_MAX
+
+
+def _group_problem(gid: int, client_accounts: tuple[str, ...]) -> str | None:
+    """Why the socket's group `gid` does not admit every client account, or None when it does (WF-232 S2).
+
+    A uid is admitted when `gid` is its primary group or its name is a member of `gid`. The broker's own uid owns the
+    socket and is not checked. A uid with no account entry is not checked either: its groups cannot be read, and it
+    is not an account that setup S2 created. `pwd` and `grp` are imported here, so the module still imports where
+    they do not exist."""
+    import grp
+    import pwd
+
+    try:
+        members = set(grp.getgrgid(gid).gr_mem)
+    except KeyError:  # a gid with no group entry: only a primary gid can match it
+        members = set()
+    own = os.geteuid()
+    outside = []
+    for value in client_accounts:
+        uid = int(value)
+        if uid == own:
+            continue
+        try:
+            entry = pwd.getpwuid(uid)
+        except KeyError:
+            continue
+        if entry.pw_gid != gid and entry.pw_name not in members:
+            outside.append(value)
+    if not outside:
+        return None
+    return (f"the socket's group {gid} does not admit client account(s) {', '.join(outside)}, so its 0660 group "
+            f"bits give them no access; setup S8 gives the socket's directory the client group (SPEC-ii section 8.3)")
 
 
 def _remaining(deadline: float, what: str) -> float:
@@ -152,7 +189,7 @@ class Listener:
         self._sock = sock
         self._address = address
         # The ids the broker admits besides its own (contract §1.8 step 3). On Linux the socket does not apply
-        # them; the directory's group (setup S8) and the broker's admission step do.
+        # them; the directory's group (setup S8, checked by `listen`) and the broker's admission step do.
         self._client_accounts = client_accounts
         self._ident = ident
         self._closed = False
@@ -253,6 +290,9 @@ def listen(address: str, client_accounts: Sequence[str]) -> Listener:
         if not stat.S_ISSOCK(st.st_mode) or stat.S_IMODE(st.st_mode) != _SOCKET_MODE or st.st_uid != os.geteuid():
             raise OSError(errno.EPERM, f"the socket file is not this account's mode-0660 socket: {oct(st.st_mode)}",
                           address)
+        group_problem = _group_problem(st.st_gid, accounts)
+        if group_problem:  # wfbroker reports a listen OSError as broker-config (WF-232 S2)
+            raise OSError(errno.EACCES, group_problem, address)
         ident = (st.st_dev, st.st_ino)
         sock.listen(_BACKLOG)
     except BaseException:
