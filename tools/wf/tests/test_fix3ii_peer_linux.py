@@ -588,7 +588,12 @@ class GroupProblem(unittest.TestCase):
 
 @unittest.skipUnless(LINUX, SKIP)
 class GroupThroughWfbroker(test_wf.Base):
-    """WF-232 S2 end to end: wfbroker refuses to start as broker-config, and leaves no socket."""
+    """WF-232 S2 end to end: wfbroker refuses to start as broker-config, and leaves no socket.
+
+    WF-237: without the group check `wfbroker.main` starts serving and never returns, so it runs in a daemon thread
+    and the test fails within BOUND_S instead of hanging; a broker that came up is stopped through its own `--stop`."""
+
+    BOUND_S = 5.0
 
     def setUp(self) -> None:
         env = mock.patch.dict(os.environ)
@@ -602,6 +607,26 @@ class GroupThroughWfbroker(test_wf.Base):
         self.sockdir = tempfile.mkdtemp(prefix="wfpl-", dir=base if len(base.encode("utf-8")) <= 40 else "/tmp")
         self.addCleanup(os.rmdir, self.sockdir)
 
+    def main_within_bound(self, wfbroker, argv: list[str], emitted: list[dict], address: str) -> int:
+        """`wfbroker.main(argv)`'s exit code, if it returns within BOUND_S without reporting `broker-ready`.
+        Otherwise the test fails within the bound: a broker that reported ready is stopped first (its `--stop`,
+        from this account, is the stop it serves), and a thread that is still running is a daemon, so it never
+        keeps the run from ending."""
+        exits: list[int] = []
+        thread = threading.Thread(target=lambda: exits.append(wfbroker.main(argv)), daemon=True)
+        thread.start()
+        end = time.monotonic() + self.BOUND_S
+        while thread.is_alive() and time.monotonic() < end:
+            if any(e.get("code") == "broker-ready" for e in emitted):
+                wfbroker.main(["--stop", "--address", address])
+                thread.join(self.BOUND_S)
+                self.fail("wfbroker.main started serving (broker-ready) instead of refusing as broker-config: the "
+                          "socket's group was not checked; the broker was stopped")
+            thread.join(0.02)
+        if thread.is_alive():
+            self.fail(f"wfbroker.main neither returned nor reported ready within {self.BOUND_S:g} s")
+        return exits[0]
+
     def test_s2_a_group_that_admits_no_client_is_broker_config(self) -> None:
         import wfbroker
         emitted: list[dict] = []
@@ -609,7 +634,8 @@ class GroupThroughWfbroker(test_wf.Base):
         with mock.patch.object(wfbroker, "_emit", emitted.append), \
                 mock.patch("pwd.getpwuid", return_value=_Entry("wf-s2-outsider", os.getegid() + 1)), \
                 mock.patch("grp.getgrgid", return_value=_Group([])):
-            code = wfbroker.main(["--db", self.db, "--address", address, "--client-account", "3999101"])
+            code = self.main_within_bound(
+                wfbroker, ["--db", self.db, "--address", address, "--client-account", "3999101"], emitted, address)
         self.assertEqual(code, 1)
         self.assertEqual([(e["ok"], e["code"], e["check"]) for e in emitted], [(False, "broker-config", "address")])
         self.assertIn("does not admit client account(s) 3999101", emitted[0]["error"])
