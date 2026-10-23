@@ -596,6 +596,9 @@ def main() -> int:
             sys.stdout.write(f"{res.get('code', 'error')}: {res.get('error', res.get('outcome'))}\n")
             if "action" in res:
                 sys.stdout.write(res["action"] + "\n")
+        if res.get("truncated") is True:  # FIX3-II section 1.4, WF-232 S1: a cut broker result is never shown as whole
+            sys.stdout.write("truncated: the broker cut this result to its key fields; it was over the response bound "
+                             "(section 1.4)\n")
     sys.stdout.flush()
     return code
 

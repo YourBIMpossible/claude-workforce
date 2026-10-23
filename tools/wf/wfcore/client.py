@@ -80,6 +80,8 @@ def call(address: str, request: dict, *, connect: Callable[[str, float], Any] | 
             resp = wire.check_response(wire.decode(raw))
         except wire.WireError as exc:
             return lost(msg_id, f"malformed response: {exc}")
+        if resp["truncated"]:  # section 1.4: the broker cut `result` to TRUNCATED_KEYS; the caller must see it (WF-232 S1)
+            return resp["exit"], {**resp["result"], "truncated": True}
         return resp["exit"], resp["result"]
     finally:
         channel.close()
