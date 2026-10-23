@@ -424,3 +424,14 @@ bind.py and test_t32_bind.py go back to S2B when FIX3-II is integrated; the new 
 ## Integration 2026-10-21 (FIX3-II into `fix3/ii-integration`; coordinator Zen "Workforce Dev", lane D)
 
 `fix3/ii-integration` (from `fix3/ii-registration` `ca7982ba`, on main `ff3cd2f`) merges, `--no-ff`: F3-ACC `cb3c335` (Plexy WF-196; includes F3-BRK's P0 `dee1d1e`; review Lazy WF-200 PASS; Linux MyBuddy WF-203 PASS), F3-OSI-L `cad39dd` (MyBuddy WF-198/WF-198-fix1; review Plexy WF-202 PASS), F3-OSI-W `96559f9` (Plexy WF-197 + fix1; review Lazy WF-201 and WF-201-fix1 PASS; Linux WF-203 PASS; WF-197-fix2 deferred as a follow-up while Plexy was unavailable) and F3-BRK `e72f9a5` (Lazy WF-195 + fix1..fix3; review Plexy WF-199, delta MyBuddy WF-199-fix3-R; Linux WF-203 PASS). The relabels are restored: the wf.py and commands.py rows are removed (back to D), and bind.py and test_t32_bind.py go back to S2B. The new files stay registered to their lanes. The README lines are lane D's, from the lanes' proposals, in the next commit. Out of scope and parked for the owner: accounts, ACL changes, any service, the real-account tests (T1, T2), E1. No PR into main without a further Foreman decision.
+
+## Package FIX3-II-F1 2026-10-23 (fix 1's follow-up for the independent review's SHOULD-FIX S1–S4; coordinator Zen "Workforce Dev", lane D)
+
+Package text: WorkForce collab `contracts/b2fix3/PACKAGE-FIX3-II-F1.md` `33c48ecd` (frozen with SHA256SUMS), on Twin's WF-232 review `0f83df60`. S5 (RA test gating) is out of scope: lane F3-RA is halted.
+
+| Lane | Worker | Branch | Scope |
+|---|---|---|---|
+| F1-A | Lazy | `fix3/ii-f1-a` `12c3d0b` | S1 client.py + wf.py text-mode print; S3 test_fix3ii_e2e.py (ID-13); S4 test_fix3ii_broker.py (BRK-5); test_fix3ii_client.py |
+| F1-B | Lazy (reassigned from MyBuddy) | `fix3/ii-f1-b` `c3daf0a` | S2 peer_linux.py socket-group check + test_fix3ii_peer_linux.py |
+
+No owner rows were moved: the lanes worked under the package's owned-paths table, and every changed path stays registered to its original lane (F3-BRK, F3-E2E, F3-OSI-L). `fix3/ii-f1-integration` (on main `e6eb709`) merges F1-A then F1-B, `--no-ff`; each equals git's automatic merge. Review: Twin WF-234 PASS 0/0/3.
