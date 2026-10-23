@@ -302,8 +302,8 @@ class PeerLinux(unittest.TestCase):
 
     def test_client_account_ids_must_be_canonical_uids(self) -> None:
         for good in ([], ["0"], ["1000"], [str(UID_MAX)], ["0", "1000", "1001"]):
-            with self.subTest(accounts=good):
-                lis = peer_linux.listen(self.addr("g"), good)
+            with self.subTest(accounts=good), mock.patch.object(peer_linux, "_group_problem", return_value=None):
+                lis = peer_linux.listen(self.addr("g"), good)  # the id form only: S2's group check is tested below
                 lis.close()
         for bad in (["-1"], ["01"], [str(UID_MAX + 1)], ["4294967296"], ["12345678901"], ["S-1-5-18"], [""],
                     [" 1"], ["1 "], ["abc"], ["١"], [1000], [None], "1000"):
@@ -503,6 +503,143 @@ class PeerLinux(unittest.TestCase):
         src = open(peer_linux.__file__, encoding="utf-8").read()
         for token in ("/proc", "environ", "getenv", "cmdline", "psutil"):
             self.assertNotIn(token, src)
+
+    # ------------------------------------------------------------------------- WF-232 S2: the socket's group
+
+    def socket_gid(self) -> int:
+        """The group a new file in self.dir takes: the directory's when it is setgid, else this process's."""
+        st = os.stat(self.dir)
+        return st.st_gid if st.st_mode & stat.S_ISGID else os.getegid()
+
+    def test_s2_listen_refuses_a_group_that_admits_a_client_not(self) -> None:
+        """The client's account has another primary group and is no member of the socket's: setup S8 is missing."""
+        gid = self.socket_gid()
+        entry = _Entry("wf-s2-outsider", gid + 1)
+        with mock.patch("pwd.getpwuid", return_value=entry), \
+                mock.patch("grp.getgrgid", return_value=_Group([])):
+            with self.assertRaises(OSError) as cm:
+                peer_linux.listen(self.addr(), ["3999101"])
+        self.assertEqual(cm.exception.errno, errno.EACCES)
+        self.assertIn(f"the socket's group {gid} does not admit client account(s) 3999101", str(cm.exception))
+        self.assertFalse(os.path.lexists(self.addr()))  # the bound file is not left behind
+
+    def test_s2_listen_accepts_a_group_that_admits_each_client(self) -> None:
+        gid = self.socket_gid()
+        entries = {3999101: _Entry("wf-s2-primary", gid), 3999102: _Entry("wf-s2-member", gid + 1)}
+        with mock.patch("pwd.getpwuid", side_effect=entries.__getitem__), \
+                mock.patch("grp.getgrgid", return_value=_Group(["wf-s2-member"])):
+            lis = self.listen(self.addr(), ["3999101", "3999102"])
+        self.assertEqual(os.lstat(lis.address).st_gid, gid)
+
+
+class _Entry:
+    """The two fields of a `pwd` entry that S2's check reads."""
+
+    def __init__(self, name: str, gid: int) -> None:
+        self.pw_name, self.pw_gid = name, gid
+
+
+class _Group:
+    """The one field of a `grp` entry that S2's check reads."""
+
+    def __init__(self, members: list[str]) -> None:
+        self.gr_mem = members
+
+
+class GroupProblem(unittest.TestCase):
+    """WF-232 S2: `_group_problem`'s rule, on every platform, with stand-in `pwd` and `grp` modules and the broker's
+    uid fixed at 1000. Group 1000 stands for the broker's primary group, and group 5000 for `<wf-clients>`."""
+
+    USERS = {2001: _Entry("b1", 1000 + 1001), 2002: _Entry("b2", 2002), 2003: _Entry("r1", 5000)}
+    GROUPS = {1000: _Group([]), 5000: _Group(["b1", "b2"])}
+
+    def setUp(self) -> None:
+        if peer_linux is None:
+            self.fail(f"wfcore.peer_linux cannot be imported: {IMPORT_ERROR!r}")
+        pwd = type(sys)("pwd")
+        pwd.getpwuid = self.USERS.__getitem__  # KeyError for an unknown uid, as pwd raises
+        grp = type(sys)("grp")
+        grp.getgrgid = self.GROUPS.__getitem__
+        self.enterContext(mock.patch.dict(sys.modules, {"pwd": pwd, "grp": grp}))
+        self.enterContext(mock.patch.object(os, "geteuid", return_value=1000, create=True))
+
+    def test_s2_clients_outside_the_group_are_named(self) -> None:
+        self.assertEqual(peer_linux._group_problem(1000, ("2001", "2002", "2003")),
+                         "the socket's group 1000 does not admit client account(s) 2001, 2002, 2003, so its 0660 "
+                         "group bits give them no access; setup S8 gives the socket's directory the client group "
+                         "(SPEC-ii section 8.3)")
+
+    def test_s2_a_member_or_a_primary_group_admits(self) -> None:
+        self.assertIsNone(peer_linux._group_problem(5000, ("2001", "2002", "2003")))  # b1, b2 members; r1 primary
+
+    def test_s2_one_outsider_is_enough(self) -> None:
+        self.GROUPS[5001] = _Group(["b1"])
+        self.addCleanup(self.GROUPS.pop, 5001)
+        self.assertIn("client account(s) 2002, 2003,", peer_linux._group_problem(5001, ("2001", "2002", "2003")))
+
+    def test_s2_the_own_uid_and_an_id_with_no_account_entry_are_not_checked(self) -> None:
+        self.assertIsNone(peer_linux._group_problem(5000, ("1000", "3999101")))
+        self.assertIsNone(peer_linux._group_problem(1000, ()))
+
+    def test_s2_a_gid_with_no_group_entry_matches_only_primary_groups(self) -> None:
+        self.assertIsNone(peer_linux._group_problem(2002, ("2002",)))
+        self.assertIn("client account(s) 2001", peer_linux._group_problem(7777, ("2001",)))
+
+
+@unittest.skipUnless(LINUX, SKIP)
+class GroupThroughWfbroker(test_wf.Base):
+    """WF-232 S2 end to end: wfbroker refuses to start as broker-config, and leaves no socket.
+
+    WF-237: without the group check `wfbroker.main` starts serving and never returns, so it runs in a daemon thread
+    and the test fails within BOUND_S instead of hanging; a broker that came up is stopped through its own `--stop`."""
+
+    BOUND_S = 5.0
+
+    def setUp(self) -> None:
+        env = mock.patch.dict(os.environ)
+        env.start()
+        self.addCleanup(env.stop)
+        for name in SCRUB:
+            os.environ.pop(name, None)
+        super().setUp()
+        self.new_job()
+        base = tempfile.gettempdir()
+        self.sockdir = tempfile.mkdtemp(prefix="wfpl-", dir=base if len(base.encode("utf-8")) <= 40 else "/tmp")
+        self.addCleanup(os.rmdir, self.sockdir)
+
+    def main_within_bound(self, wfbroker, argv: list[str], emitted: list[dict], address: str) -> int:
+        """`wfbroker.main(argv)`'s exit code, if it returns within BOUND_S without reporting `broker-ready`.
+        Otherwise the test fails within the bound: a broker that reported ready is stopped first (its `--stop`,
+        from this account, is the stop it serves), and a thread that is still running is a daemon, so it never
+        keeps the run from ending."""
+        exits: list[int] = []
+        thread = threading.Thread(target=lambda: exits.append(wfbroker.main(argv)), daemon=True)
+        thread.start()
+        end = time.monotonic() + self.BOUND_S
+        while thread.is_alive() and time.monotonic() < end:
+            if any(e.get("code") == "broker-ready" for e in emitted):
+                wfbroker.main(["--stop", "--address", address])
+                thread.join(self.BOUND_S)
+                self.fail("wfbroker.main started serving (broker-ready) instead of refusing as broker-config: the "
+                          "socket's group was not checked; the broker was stopped")
+            thread.join(0.02)
+        if thread.is_alive():
+            self.fail(f"wfbroker.main neither returned nor reported ready within {self.BOUND_S:g} s")
+        return exits[0]
+
+    def test_s2_a_group_that_admits_no_client_is_broker_config(self) -> None:
+        import wfbroker
+        emitted: list[dict] = []
+        address = os.path.join(self.sockdir, "b.sock")
+        with mock.patch.object(wfbroker, "_emit", emitted.append), \
+                mock.patch("pwd.getpwuid", return_value=_Entry("wf-s2-outsider", os.getegid() + 1)), \
+                mock.patch("grp.getgrgid", return_value=_Group([])):
+            code = self.main_within_bound(
+                wfbroker, ["--db", self.db, "--address", address, "--client-account", "3999101"], emitted, address)
+        self.assertEqual(code, 1)
+        self.assertEqual([(e["ok"], e["code"], e["check"]) for e in emitted], [(False, "broker-config", "address")])
+        self.assertIn("does not admit client account(s) 3999101", emitted[0]["error"])
+        self.assertFalse(os.path.lexists(address))
 
 
 if __name__ == "__main__":

@@ -404,6 +404,55 @@ class Call(_Env):
         self.assertEqual(rec.call_args.args[0], ADDR)
 
 
+class Truncated(_Env):
+    """WF-232 S1: a response the broker cut to TRUNCATED_KEYS (section 1.4) reaches the caller marked as cut, and the
+    plain-text output says so in one line; an uncut response is returned and printed unchanged."""
+
+    BIG = {"ok": True, "outcome": "OK", "job": "j", "seq": 3, "rows": ["x" * 1024] * (8 * 1024 + 8)}
+    NOTE = "truncated: the broker cut this result to its key fields; it was over the response bound (section 1.4)\n"
+
+    def big_frame(self) -> bytes:
+        framed, code, truncated = wire.response(0, self.BIG, peer_account=FAKE["B1"], broker_account=FAKE["own"],
+                                                broker_wfcore=WFCORE)
+        self.assertEqual((code, truncated), (0, True))
+        return framed
+
+    def main_out(self, framed: bytes, *argv: str) -> str:
+        out = io.StringIO()
+        with mock.patch.object(peer, "connect", return_value=fakes.ScriptChannel(framed)), \
+                mock.patch.object(sys, "argv", ["wf", *argv, "--broker", ADDR, "status", "j"]), \
+                contextlib.redirect_stdout(out):
+            self.assertEqual(wf.main(), 0)
+        return out.getvalue()
+
+    def test_s1_call_carries_truncated_to_the_caller(self):
+        ch = fakes.ScriptChannel(self.big_frame())
+        code, res = client.call(ADDR, Call.REQ, connect=lambda address, deadline: ch)
+        self.assertEqual((code, res), (0, {"ok": True, "outcome": "OK", "job": "j", "seq": 3, "truncated": True}))
+        self.assertTrue(ch.closed)
+
+    def test_s1_an_uncut_result_gains_no_key(self):
+        code, res = client.call(ADDR, Call.REQ, connect=lambda a, d: fakes.ScriptChannel(_response(0, {"ok": True})))
+        self.assertEqual((code, res), (0, {"ok": True}))
+
+    def test_s1_plain_text_prints_one_note_line(self):
+        self.assertEqual(self.main_out(self.big_frame()), 'outcome="OK" job="j" seq=3\n' + self.NOTE)
+        self.assertEqual(self.main_out(_response(0, {"ok": True, "outcome": "OK", "job": "j"})),
+                         'outcome="OK" job="j"\n')
+
+    def test_s1_a_cut_refusal_prints_the_note_too(self):
+        cut = {"ok": False, "code": "rejected", "outcome": "REFUSED", "truncated": True}
+        out = io.StringIO()
+        with mock.patch.object(wf, "run", return_value=(1, dict(cut))), mock.patch.object(sys, "argv", ["wf", "x"]), \
+                contextlib.redirect_stdout(out):
+            self.assertEqual(wf.main(), 1)
+        self.assertEqual(out.getvalue(), "rejected: REFUSED\n" + self.NOTE)
+
+    def test_s1_json_carries_the_flag(self):
+        res = json.loads(self.main_out(self.big_frame(), "--json"))
+        self.assertEqual(res, {"ok": True, "outcome": "OK", "job": "j", "seq": 3, "truncated": True})
+
+
 class NoBroker(_Env, test_wf.Base):
     """BRK-1: no broker at the address; WF_DB is also set; nothing is sent or written, and there is no fallback."""
 
