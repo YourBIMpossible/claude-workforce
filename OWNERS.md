@@ -433,5 +433,6 @@ Package text: WorkForce collab `contracts/b2fix3/PACKAGE-FIX3-II-F1.md` `33c48ec
 |---|---|---|---|
 | F1-A | Lazy | `fix3/ii-f1-a` `12c3d0b` | S1 client.py + wf.py text-mode print; S3 test_fix3ii_e2e.py (ID-13); S4 test_fix3ii_broker.py (BRK-5); test_fix3ii_client.py |
 | F1-B | Lazy (reassigned from MyBuddy) | `fix3/ii-f1-b` `c3daf0a` | S2 peer_linux.py socket-group check + test_fix3ii_peer_linux.py |
+| F1-C | Lazy | `fix3/ii-f1-c` `d2ac974` (from `e705c05`) | S2's wfbroker test bounded (fails within 5 s, never hangs); test_fix3ii_peer_linux.py only |
 
-No owner rows were moved: the lanes worked under the package's owned-paths table, and every changed path stays registered to its original lane (F3-BRK, F3-E2E, F3-OSI-L). `fix3/ii-f1-integration` (on main `e6eb709`) merges F1-A then F1-B, `--no-ff`; each equals git's automatic merge. Review: Twin WF-234 PASS 0/0/3.
+No owner rows were moved: the lanes worked under the package's owned-paths table, and every changed path stays registered to its original lane (F3-BRK, F3-E2E, F3-OSI-L). `fix3/ii-f1-integration` (on main `e6eb709`) merges F1-A then F1-B, `--no-ff`; each equals git's automatic merge; F1-C follows the same way. Review: Twin WF-234 PASS 0/0/3; F1-C Twin WF-238 PASS 0/0/2.
