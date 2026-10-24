@@ -533,9 +533,12 @@ def _dispatch(args: argparse.Namespace, db: str, caller: peer.Caller | None = No
             # §4.4b: the originating command invokes resolve once with its own attempt id. An injected
             # commit-error leaves the marker for the fixture to resolve explicitly (TC-3/TC-6 setups).
             injected = any(f.startswith("commit-error") for f in out.get("faults_used", []))
+            # D5 S1 (WF-242): `resolve` is not brokered for a worker account (_NOT_BROKERED), so a brokered worker's
+            # call does not run it either; the result keeps its `action` line, for the owner's account to run.
+            brokered_worker = caller is not None and not caller.own
             if injected:
                 out["auto_resolve"] = {"outcome": "SKIPPED", "reason": "injected commit-error fault"}
-            elif out.get("job") and out.get("seq") and out.get("attempt_id"):
+            elif not brokered_worker and out.get("job") and out.get("seq") and out.get("attempt_id"):
                 try:
                     out["auto_resolve"] = commands.resolve(db, out["job"], int(out["seq"]), out["attempt_id"], None, OpLog())
                 except WfError as rexc:
