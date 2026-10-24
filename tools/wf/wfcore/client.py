@@ -62,7 +62,12 @@ def call(address: str, request: dict, *, connect: Callable[[str, float], Any] | 
         try:
             channel.send_all(wire.frame(body), deadline)
         except TimeoutError as exc:  # the connect bound runs until the request is sent (section 1.4)
-            return unavailable(address, exc)
+            # D5 S9 (WF-242): part of the frame may have gone out, but the broker reads only a whole request
+            # (section 1.8 step 1), so it received none and ran nothing; the code stays broker-unavailable.
+            code, res = unavailable(address, exc)
+            res["error"] = (f"the request was not sent in full within {CONNECT_BOUND_S:g} s: the broker received no "
+                            f"complete request and ran nothing ({type(exc).__name__}: {exc})")
+            return code, res
         except OSError as exc:  # the broker may have read the whole frame before the connection broke
             return lost(msg_id, f"the request could not be sent in full: {type(exc).__name__}: {exc}")
         deadline = time.monotonic() + RESPONSE_BOUND_S
