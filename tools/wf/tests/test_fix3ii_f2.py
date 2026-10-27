@@ -7,11 +7,17 @@
   revoke (a guard: the code already holds it).
 - S9: a send timeout's text says the broker received no complete request and ran nothing; the code stays
   `broker-unavailable`.
+
+F2's fix round (WF-248; Twin WF-247 n1 and n2):
+- n1: the response is always sent once `wire.response` has built it; reading the log fields back can never stop it.
+- n2: S6's refused binds are refused before `validate_bind`, so no account map is consulted.
 """
 from __future__ import annotations
 
 import json
 import os
+import time
+import types
 import unittest
 from unittest import mock
 
@@ -20,7 +26,7 @@ import test_wf  # noqa: F401  (puts tools/wf on sys.path)
 import fix3ii_fakes as fakes
 import test_fix3ii_broker as tb
 import wf
-from wfcore import accounts, bind, client, commands, peer, wire
+from wfcore import accounts, bind, broker, client, commands, peer, wire
 from wfcore import db as dbm
 from wfcore.db import WfCommitUncertain, WfError
 
@@ -175,9 +181,8 @@ class S6BindAndCheckCallerNameTheSameGrant(tb._Env, test_wf.Base):
                 self.assertEqual([c["accepted"] for c in mine], [True])
                 self.assertIsNotNone(mine[0]["bind_map"])
                 self.assertEqual(mine[0]["bind_map"], mine[0]["in_force"])  # the same grant's map
-            else:
-                self.assertFalse(any(c["accepted"] for c in mine))
-                self.assertTrue(all(c["bind_map"] is None for c in mine), mine)  # no grant in force: no map is used
+            else:  # WF-248 (Twin n2): refused before `validate_bind`, so no account map is consulted at all
+                self.assertEqual(mine, [])
 
     def test_s6_bind_and_map_in_force_agree_across_grant_regrant_expiry_and_revoke(self):
         self.new_job()
@@ -202,6 +207,51 @@ class S6BindAndCheckCallerNameTheSameGrant(tb._Env, test_wf.Base):
         self.assertEqual([c["accepted"] for c in self.calls], [True, True, True])  # C1, then B1 under G1, R1 under G2
         self.assertEqual(self.calls[0]["bind_map"], self.calls[0]["in_force"])
         self.assertNotEqual(self.calls[1]["bind_map"], self.calls[2]["bind_map"])  # the re-grant changed the map in force
+
+
+class Fix1ResponseAlwaysSent(tb._Broker):
+    """WF-248 (Twin WF-247 n1): at `0c89fb7` the broker re-read the sent frame with the strict `wire.decode` before
+    sending it. A lone surrogate in a result (written as an escape by `encode_response`) made that read raise, so the
+    connection closed unanswered. Once `wire.response` has built the frame, the frame is sent."""
+
+    def sent_body(self, who: str) -> bytes:
+        """The response body `who` receives, raw: the client's own strict decode is not under test."""
+        ch = self.transport.connect(self.address, time.monotonic() + 5, (FAKE[who], 1))
+        try:
+            ch.send_all(wire.frame(wire.encode_request({"v": 1, "op": "run", "argv": G + ["whoami"], "inputs": {},
+                                                        "wfcore": WFCORE})), time.monotonic() + 5)
+            try:
+                return wire.read_frame(ch, time.monotonic() + 10, wire.MAX_RESPONSE_BYTES)
+            except EOFError:
+                self.fail("the broker closed the connection without sending the response")
+        finally:
+            ch.close()
+
+    def built_body(self, who: str, reply: tuple[int, dict]) -> bytes:
+        data, _, _ = wire.response(*reply, peer_account=FAKE[who], broker_account=FAKE["own"], broker_wfcore=WFCORE)
+        return data[wire.HEADER.size:]
+
+    def logged(self) -> tuple:
+        self.wait_for(lambda: len(self.log_lines()) >= 1, "the log line")
+        line = self.log_lines()[-1]
+        return line["exit"], line["code"], line["reason"], line.get("truncated")
+
+    def test_fix1_a_result_with_a_lone_surrogate_is_sent_and_logged_as_sent(self):
+        reply = (0, {"ok": True, "outcome": "COMMITTED", "note": "\ud800"})
+        self.serving(run=self.recording_run(reply=reply))
+        self.assertEqual(self.sent_body("B1"), self.built_body("B1", reply))
+        self.assertEqual(self.logged(), (0, "COMMITTED", None, False))
+
+    def test_fix1_a_failed_read_of_the_log_fields_still_sends_the_response(self):
+        reply = (0, {"ok": True, "outcome": "COMMITTED"})
+
+        def fail(*_a, **_k):
+            raise ValueError("the log read failed")
+
+        self.enterContext(mock.patch.object(broker, "json", types.SimpleNamespace(loads=fail, dumps=json.dumps)))
+        self.serving(run=self.recording_run(reply=reply))
+        self.assertEqual(self.sent_body("B1"), self.built_body("B1", reply))
+        self.assertEqual(self.logged(), (0, "internal-error", "log-decode", False))
 
 
 class S9SendTimeoutText(tb._Env):
