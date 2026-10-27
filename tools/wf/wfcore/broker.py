@@ -151,11 +151,17 @@ class Broker:
                                                            broker_account=self.own_account, broker_wfcore=self.wfcore)
                 # D5 S5 (WF-242): the log records what is sent: an unencodable result went out as internal-error,
                 # and a cut one as its TRUNCATED_KEYS, so `code` and `reason` come from the encoded response.
-                sent = wire.decode(data[wire.HEADER.size:])["result"]
+                # WF-248 (Twin WF-247 n1): read back with the plain json.loads, not the strict wire.decode: the body is
+                # the broker's own ASCII, and a lone surrogate in a result (an escape there) must not cost the client
+                # its answer. Reading the log fields never stops the send.
                 entry["exit"], entry["truncated"] = exit_code, truncated
-                code = sent.get("code", sent.get("outcome"))
-                entry["code"] = code if isinstance(code, str) else None
-                entry["reason"] = refusal_name(sent)
+                try:
+                    sent = json.loads(data[wire.HEADER.size:])["result"]
+                    code = sent.get("code", sent.get("outcome"))
+                    entry["code"] = code if isinstance(code, str) else None
+                    entry["reason"] = refusal_name(sent)
+                except Exception:  # noqa: BLE001 -- the log never stops the send
+                    entry["code"], entry["reason"] = "internal-error", "log-decode"
                 try:
                     channel.send_all(data, time.monotonic() + WRITE_BOUND_S)
                 except OSError:  # TimeoutError, BrokenPipeError, ConnectionError: the outcome stands (A1 item 1)
