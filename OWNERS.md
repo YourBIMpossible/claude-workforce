@@ -436,3 +436,14 @@ Package text: WorkForce collab `contracts/b2fix3/PACKAGE-FIX3-II-F1.md` `33c48ec
 | F1-C | Lazy | `fix3/ii-f1-c` `d2ac974` (from `e705c05`) | S2's wfbroker test bounded (fails within 5 s, never hangs); test_fix3ii_peer_linux.py only |
 
 No owner rows were moved: the lanes worked under the package's owned-paths table, and every changed path stays registered to its original lane (F3-BRK, F3-E2E, F3-OSI-L). `fix3/ii-f1-integration` (on main `e6eb709`) merges F1-A then F1-B, `--no-ff`; each equals git's automatic merge; F1-C follows the same way. Review: Twin WF-234 PASS 0/0/3; F1-C Twin WF-238 PASS 0/0/2.
+
+## Package FIX3-II-F2 2026-10-24 (fix 1's follow-up for the D5 review's SHOULD-FIX S1–S9; coordinator Zen "Workforce Dev", lane D)
+
+Package text: WorkForce collab `contracts/b2fix3/PACKAGE-FIX3-II-F2.md` `df997d6b` (frozen with SHA256SUMS), on Twin's WF-242 D5 review `57029aa9`.
+
+| Lane | Worker | Branch | Scope |
+|---|---|---|---|
+| F2-A | Lazy | `fix3/ii-f2-a` `6637b1a` | S1 wf.py (no auto-resolve in brokered worker calls); S5 broker.py (log as sent, `truncated`); S9 client.py (send-timeout text); S6 guard test; test_fix3ii_f2.py (new) |
+| F2-A fix1 | Lazy | `fix3/ii-f2-a-fix1` `da50f96` (from `0c89fb7`) | broker.py logging block: the response is always sent, log fields read back with json.loads (Twin WF-247 n1); test_fix3ii_f2.py (n2); review MyBuddy WF-250 PASS |
+
+No owner rows were moved: every changed path stays registered to its original lane. README lines for S1, S2, S3, S4, S5, S7, S8 and S9 are applied by lane D. `fix3/ii-f2-integration` (on main `16b4543`) merges F2-A `--no-ff`, equal to git's automatic merge. Review: Twin WF-247 PASS 0/0/2.

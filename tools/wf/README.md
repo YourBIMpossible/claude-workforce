@@ -163,12 +163,13 @@ The block hash covers the map. The latest activated grant's map is in force, als
 `marker-unwritable` (the marker write raises OSError). It is honoured only
 when the ledger is under `fixtures\tmp\`; for any other path `wf` refuses to run (exit 2, `faults-not-allowed`).
 Auto-resolve is skipped for injected COMMIT errors so fixtures can resolve explicitly.
+Through the broker, a worker account's call does not auto-resolve. It returns the `action` line for the broker's own account to run, because `resolve` is not served to workers.
 
 ## Identity and limits
 
 - `--role`, `--session` and `--generation` are typed fields checked for consistency. They do not authenticate anyone.
   `same-session` refusal compares typed values only.
-- Through the broker (`--broker`), the connecting account decides a role claim before any other check:
+- Through the broker (`--broker`), every write decides its role claim by the connecting account. That comes after the broker's own `wire` and `not-brokered` refusals (`wf.py:362-394`), and inside the write after its contract and job checks (`commands.py:245-251`, `:1193-1195`), before any other check of the claim. The reads `status`, `digest`, `verify`, `grant-check` and `whoami` decide no claim:
   - A builder or reviewer claim passes only for an account in the map in force under that role, bound by a `bind` row to the claimed session. Otherwise it is `rejected(caller-mismatch)`, with `account`, `claimed_role` and `claimed_session`.
   - An account in no map in force is `rejected(caller-unattributed)`.
   - The broker's own account may claim any role but builder and reviewer.
@@ -207,10 +208,12 @@ Auto-resolve is skipped for injected COMMIT errors so fixtures can resolve expli
 - **`--json` stays with the client; `--oplog` is sent.**
 - **A broker refusal is exit 1:**
   - `rejected(caller-mismatch)`, `rejected(caller-unattributed)`, `rejected(not-brokered)`, `rejected(version-mismatch)` and `rejected(wire)`;
-  - `broker-unavailable`, with `reason` `no-endpoint`, `busy` or `access-denied`;
+  - `broker-unavailable`, with `reason` `no-endpoint`, `busy` or `access-denied`; `busy` also covers a request not sent in full within the connect bound: the broker received no complete request and ran nothing;
   - `broker-response-lost`. Re-send the same command with `--msg-id <msg_id>`: a command that committed answers `DUPLICATE-IGNORED`, and no second row is written.
   - An exception inside the broker's run is `internal-error`, exit 4.
 - **Not served to a worker account** (`rejected(not-brokered)`): `job abandon`, `resolve`, `export`, `checkpoint`, `observe`, `backup`, `verify` with `--restored`, `--gate-file` or `--gate-sha`, and `gate print-install`. The broker's own account runs every command.
+- **What a brokered result carries:** a write's result keeps its `db` field, the broker's ledger path, as in direct mode (`wf.py:561`). Every response also names the broker's account and wfcore sha (`broker.account`, `broker.wfcore`). Both reach worker accounts.
+- **Error text may reach the client, never the log:** the OS or platform error from reading the peer's account (`caller-unattributed`, `wfcore/broker.py:185`), and the text of an exception inside the broker's run (`internal-error`, `:213`), are sent in the response's `error`. The log holds no error text: `reason` is only a refusal name.
 
 ## `wf whoami [job]`
 - **Direct:** prints this process's account, with `note: direct mode: no account check`.
@@ -234,7 +237,8 @@ Auto-resolve is skipped for injected COMMIT errors so fixtures can resolve expli
   - when ready, `{"ok": true, "code": "broker-ready", "address", "pid", "account", "wfcore", "db"}`;
   - after a stop, `{"ok": true, "code": "broker-stopped", "served": <n>}`.
 - **It serves one request at a time.**
-- **The log** is `<root>\runtime\broker\broker-log.jsonl`, one JSON line per connection, with the keys `ts`, `peer`, `pid`, `op`, `cmd`, `job`, `msg_id`, `exit`, `code`, `reason` and `ms`.
+- **The log** is `<root>\runtime\broker\broker-log.jsonl`, one JSON line per connection, with the keys `ts`, `peer`, `pid`, `op`, `cmd`, `job`, `msg_id`, `exit`, `code`, `reason`, `truncated` and `ms`.
+  - `code`, `reason` and `truncated` describe the response as sent: an unencodable result is logged as the `internal-error` it was answered as, and `truncated` is true when the result was cut to its key fields.
   - A key is null where the step that sets it was not reached.
   - `reason` names a refusal, for example `caller-mismatch` (AMENDMENT-FIX3-II-A2 item 3); it is null for any other result.
   - It never holds argv values or inputs.
@@ -245,6 +249,8 @@ Auto-resolve is skipped for injected COMMIT errors so fixtures can resolve expli
   - Windows: `\\.\pipe\wf-broker-<16 hex>`;
   - Linux: `<root>/runtime/broker/wf.sock`.
 - **Linux broker socket** (FIX3-II F3-OSI-L): the broker listens on an AF_UNIX socket at an absolute path of at most 107 bytes of UTF-8 (`<root>/runtime/broker/wf.sock`). Its mode is set to 0660 before it listens; the owner, the group and the directory are left as setup makes them. A stale socket file is replaced, and a live one makes a second broker refuse to start; the first broker then sees one empty connection, which it closes unanswered. The caller's account is the `SO_PEERCRED` uid; its pid is for the log only.
+- **The socket's group is checked, never set** (WF-232 S2): the broker refuses to start (`broker-config`, check `address`) when the socket's group does not admit each client account it can look up, by primary group or by membership. A client uid with no passwd entry is not checked, because its groups cannot be read. The broker still admits that uid by `--client-account`, and it can connect only if the socket's group bits admit it. Setup S2 creates every worker account with an entry (`wfcore/peer_linux.py:79-110`).
+- **Setup S8 gives `runtime/broker/` the setgid bit,** with group `<wf-clients>` (SPEC-ii §8.3: mode 2710 rather than 0710). A new file takes its directory's group only when the directory is setgid. Without it the socket takes the broker's primary group, and the group check refuses to start.
 
 ## Tests
 
