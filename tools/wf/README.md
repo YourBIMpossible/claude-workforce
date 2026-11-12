@@ -213,7 +213,7 @@ Through the broker, a worker account's call does not auto-resolve. It returns th
   - An exception inside the broker's run is `internal-error`, exit 4.
 - **Not served to a worker account** (`rejected(not-brokered)`): `job abandon`, `resolve`, `export`, `checkpoint`, `observe`, `backup`, `verify` with `--restored`, `--gate-file` or `--gate-sha`, and `gate print-install`. The broker's own account runs every command.
 - **What a brokered result carries:** a write's result keeps its `db` field, the broker's ledger path, as in direct mode (`wf.py:561`). Every response also names the broker's account and wfcore sha (`broker.account`, `broker.wfcore`). Both reach worker accounts.
-- **Error text may reach the client, never the log:** the OS or platform error from reading the peer's account (`caller-unattributed`, `wfcore/broker.py:185`), and the text of an exception inside the broker's run (`internal-error`, `:213`), are sent in the response's `error`. The log holds no error text: `reason` is only a refusal name.
+- **Error text may reach the client, never the log:** the OS or platform error from reading the peer's account (`caller-unattributed`, `wfcore/broker.py:191`), and the text of an exception inside the broker's run (`internal-error`, `:218-220`), are sent in the response's `error`. The log holds no error text: `reason` is only a refusal name.
 
 ## `wf whoami [job]`
 - **Direct:** prints this process's account, with `note: direct mode: no account check`.
