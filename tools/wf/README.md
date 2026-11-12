@@ -240,7 +240,7 @@ Through the broker, a worker account's call does not auto-resolve. It returns th
 - **The log** is `<root>\runtime\broker\broker-log.jsonl`, one JSON line per connection, with the keys `ts`, `peer`, `pid`, `op`, `cmd`, `job`, `msg_id`, `exit`, `code`, `reason`, `truncated` and `ms`.
   - `code`, `reason` and `truncated` describe the response as sent: an unencodable result is logged as the `internal-error` it was answered as, and `truncated` is true when the result was cut to its key fields.
   - A key is null where the step that sets it was not reached.
-  - `reason` names a refusal, for example `caller-mismatch` (AMENDMENT-FIX3-II-A2 item 3); it is null for any other result.
+  - `reason` names a refusal, for example `caller-mismatch` (AMENDMENT-FIX3-II-A2 item 3). One value is not a refusal: `log-decode`, logged with `code` `internal-error` when the broker cannot read its own encoded response back (broker.py:163-164). `reason` is null for every other result.
   - It never holds argv values or inputs.
   - At 16 MiB the log is renamed to `broker-log.1.jsonl`, replacing the previous one. Rotation touches only those two files.
 - **Refusal events are recorded only in this rotating log,** each with its `reason`; no refusal writes a ledger row, a marker or an export.
